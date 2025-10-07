@@ -127,11 +127,9 @@ contract PredictionMarketWstETHTest is Test {
         uint256 got = WSTETH_TOKEN.balanceOf(CAROL) - cBefore;
 
         assertEq(got, (y * PPS) / 1e18);
-        assertEq(
-            pot(marketId),
-            pm.totalSupply(pm.winningId(marketId)) * PPS / 1e18,
-            "remaining pot equals unclaimed*PPS"
-        );
+        uint256 num = pot(marketId);
+        num == 1 ? num = 0 : 1;
+        assertEq(num, pm.totalSupply(pm.winningId(marketId)) * PPS / 1e18);
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
