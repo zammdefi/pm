@@ -397,6 +397,7 @@ contract PredictionAMM is ERC6909Minimal {
 
         // Path-fair EV charge into pot (fee-aware Simpson):
         wstIn = _fairChargeYesWithFee(rYes, rNo, yesOut, FEE_BPS);
+        require(wstIn != 0, InsufficientWst());
 
         // Collect wstETH
         if (inIsETH) {
@@ -457,6 +458,7 @@ contract PredictionAMM is ERC6909Minimal {
         require(oppIn <= oppInMax, SlippageOppIn());
 
         wstIn = _fairChargeNoWithFee(rYes, rNo, noOut, FEE_BPS);
+        require(wstIn != 0, InsufficientWst());
 
         if (inIsETH) {
             uint256 z = ZSTETH.exactETHToWSTETH{value: msg.value}(address(this));
