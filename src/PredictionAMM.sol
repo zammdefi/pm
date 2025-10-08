@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-/*────────────────────────────────────────────────────────
-| Minimal ERC6909 (Modified from Solmate)
-|────────────────────────────────────────────────────────*/
 abstract contract ERC6909Minimal {
     event OperatorSet(address indexed owner, address indexed operator, bool approved);
     event Approval(
@@ -51,32 +48,13 @@ abstract contract ERC6909Minimal {
     }
 }
 
-/*────────────────────────────────────────────────────────
-| External tokens / Lido zap
-|────────────────────────────────────────────────────────*/
-IERC20 constant WSTETH = IERC20(0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0);
-
-interface IERC20 {
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-}
-
-IZSTETH constant ZSTETH = IZSTETH(0x000000000088649055D9D23362B819A5cfF11f02);
-
-interface IZSTETH {
-    function exactETHToWSTETH(address to) external payable returns (uint256 wstOut);
-}
-
-/*────────────────────────────────────────────────────────
-| Minimal ZAMM interface (constant product ERC6909)
-|────────────────────────────────────────────────────────*/
 interface IZAMM {
     struct PoolKey {
         uint256 id0;
         uint256 id1;
         address token0;
         address token1;
-        uint256 feeOrHook; // bps fee or flags|hookAddr
+        uint256 feeOrHook;
     }
 
     function pools(uint256 poolId)
@@ -111,7 +89,6 @@ interface IZAMM {
         uint256 deadline
     ) external payable returns (uint256 amountIn);
 
-    // Transient balance helpers
     function deposit(address token, uint256 id, uint256 amount) external payable;
     function recoverTransientBalance(address token, uint256 id, address to)
         external
@@ -149,6 +126,7 @@ contract PredictionAMM is ERC6909Minimal {
     error NoCirculating();
     error NotClosable();
     error SeedBothSides();
+    error InvalidReceiver();
 
     /*──────── storage ──────*/
     struct Market {
@@ -162,7 +140,7 @@ contract PredictionAMM is ERC6909Minimal {
     }
 
     uint256 constant Q = 1e18;
-    uint256 constant FEE_BPS = 10; // 0.10% pool fee
+    uint256 constant FEE_BPS = 10; // 0.1% pool fee
 
     // ZAMM singleton
     IZAMM constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
@@ -179,6 +157,8 @@ contract PredictionAMM is ERC6909Minimal {
     );
     event Seeded(uint256 indexed marketId, uint256 yesSeed, uint256 noSeed, uint256 liquidity);
     event Bought(address indexed buyer, uint256 indexed id, uint256 sharesOut, uint256 wstIn);
+    event Sold(address indexed seller, uint256 indexed id, uint256 sharesIn, uint256 wstOut);
+
     event Resolved(uint256 indexed marketId, bool outcome);
     event Claimed(address indexed claimer, uint256 indexed id, uint256 shares, uint256 payout);
     event Closed(uint256 indexed marketId, uint256 ts, address indexed by);
@@ -215,11 +195,11 @@ contract PredictionAMM is ERC6909Minimal {
     }
 
     function name(uint256 id) public pure returns (string memory) {
-        return string(abi.encodePacked("PM-", _toString(id)));
+        return string(abi.encodePacked("PAMM-", _toString(id)));
     }
 
     function symbol(uint256) public pure returns (string memory) {
-        return "PM";
+        return "PAMM";
     }
 
     /*──────── lifecycle ───*/
@@ -332,7 +312,7 @@ contract PredictionAMM is ERC6909Minimal {
 
         // Simpson: Δq * (p0 + 4*pMid + p1) / 6:
         uint256 sum = p0 + (pMid << 2) + p1;
-        charge = mulDiv(yesOut, sum, 6 * Q);
+        charge = mulDivUp(yesOut, sum, 6 * Q);
     }
 
     // NO buy (YES -> NO)
@@ -358,7 +338,58 @@ contract PredictionAMM is ERC6909Minimal {
         uint256 p1 = _price1e18(rYesEnd, rYesEnd + rNoEnd);
 
         uint256 sum = p0 + (pMid << 2) + p1;
-        charge = mulDiv(noOut, sum, 6 * Q);
+        charge = mulDivUp(noOut, sum, 6 * Q);
+    }
+
+    // YES sell (YES -> NO)
+    function _fairRefundYesWithFee(uint256 rYes, uint256 rNo, uint256 yesIn, uint256 feeBps)
+        internal
+        pure
+        returns (uint256 refund)
+    {
+        // p0 = EV of YES share at start = rNo/(rYes+rNo)
+        uint256 p0 = mulDiv(rNo, 1e18, rYes + rNo);
+
+        // midpoint (simulate half the input along the SELL path):
+        uint256 inHalf = yesIn / 2;
+        uint256 outHalf = _getAmountOut(inHalf, rYes, rNo, feeBps);
+        uint256 rYesMid = rYes + inHalf;
+        uint256 rNoMid = rNo - outHalf;
+        uint256 pMid = mulDiv(rNoMid, 1e18, rYesMid + rNoMid);
+
+        // end:
+        uint256 outAll = _getAmountOut(yesIn, rYes, rNo, feeBps);
+        uint256 rYesEnd = rYes + yesIn;
+        uint256 rNoEnd = rNo - outAll;
+        uint256 p1 = mulDiv(rNoEnd, 1e18, rYesEnd + rNoEnd);
+
+        // Simpson:
+        uint256 sum = p0 + (pMid << 2) + p1;
+        refund = mulDiv(yesIn, sum, 6 * 1e18);
+    }
+
+    // NO sell (NO -> YES)
+    function _fairRefundNoWithFee(uint256 rYes, uint256 rNo, uint256 noIn, uint256 feeBps)
+        internal
+        pure
+        returns (uint256 refund)
+    {
+        // p0(NO) = 1 - pYES = rYes/(rYes+rNo)
+        uint256 p0 = mulDiv(rYes, 1e18, rYes + rNo);
+
+        uint256 inHalf = noIn / 2;
+        uint256 outHalf = _getAmountOut(inHalf, rNo, rYes, feeBps);
+        uint256 rNoMid = rNo + inHalf;
+        uint256 rYesMid = rYes - outHalf;
+        uint256 pMid = mulDiv(rYesMid, 1e18, rYesMid + rNoMid);
+
+        uint256 outAll = _getAmountOut(noIn, rNo, rYes, feeBps);
+        uint256 rNoEnd = rNo + noIn;
+        uint256 rYesEnd = rYes - outAll;
+        uint256 p1 = mulDiv(rYesEnd, 1e18, rYesEnd + rNoEnd);
+
+        uint256 sum = p0 + (pMid << 2) + p1;
+        refund = mulDiv(noIn, sum, 6 * 1e18);
     }
 
     /*──────── primary buys (path-fair EV; pot grows) ────*/
@@ -404,10 +435,10 @@ contract PredictionAMM is ERC6909Minimal {
             uint256 z = ZSTETH.exactETHToWSTETH{value: msg.value}(address(this));
             require(z >= wstIn, InsufficientZap());
             m.pot += wstIn;
-            if (z > wstIn) WSTETH.transfer(msg.sender, z - wstIn);
+            if (z > wstIn) IERC20(WSTETH).transfer(msg.sender, z - wstIn);
         } else {
             require(wstInMax >= wstIn, InsufficientWst());
-            WSTETH.transferFrom(msg.sender, address(this), wstIn);
+            IERC20(WSTETH).transferFrom(msg.sender, address(this), wstIn);
             m.pot += wstIn;
         }
 
@@ -464,10 +495,10 @@ contract PredictionAMM is ERC6909Minimal {
             uint256 z = ZSTETH.exactETHToWSTETH{value: msg.value}(address(this));
             require(z >= wstIn, InsufficientZap());
             m.pot += wstIn;
-            if (z > wstIn) WSTETH.transfer(msg.sender, z - wstIn);
+            if (z > wstIn) IERC20(WSTETH).transfer(msg.sender, z - wstIn);
         } else {
             require(wstInMax >= wstIn, InsufficientWst());
-            WSTETH.transferFrom(msg.sender, address(this), wstIn);
+            IERC20(WSTETH).transferFrom(msg.sender, address(this), wstIn);
             m.pot += wstIn;
         }
 
@@ -484,26 +515,137 @@ contract PredictionAMM is ERC6909Minimal {
         emit Bought(to, noId, noOut, wstIn);
     }
 
-    function transferFrom(address sender, address receiver, uint256 id, uint256 amount)
-        public
-        returns (bool)
-    {
-        if (msg.sender != sender) {
-            // Fast path: allow ZAMM to pull PM-owned balances without any SLOADs:
-            if (sender == address(this) && msg.sender == address(ZAMM)) {
-                // no-op: authorized
-            } else if (!isOperator[sender][msg.sender]) {
-                uint256 allowed = allowance[sender][msg.sender][id];
-                if (allowed != type(uint256).max) {
-                    allowance[sender][msg.sender][id] = allowed - amount;
-                }
-            }
+    function sellYesViaPool(
+        uint256 marketId,
+        uint256 yesIn,
+        uint256 wstOutMin,
+        uint256 oppOutMin,
+        address to
+    ) public nonReentrant returns (uint256 wstOut, uint256 oppOut) {
+        Market storage m = markets[marketId];
+        require(m.resolver != address(0), MarketNotFound());
+        require(!m.resolved && block.timestamp < m.close, MarketClosed());
+        require(yesIn != 0, AmountZero());
+
+        uint256 yesId = marketId;
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
+
+        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
+        require(rYes > 0 && rNo > 0, PoolNotSeeded());
+        require(yesIn < rYes, InsufficientLiquidity()); // keep denominator healthy
+
+        bool zeroForOne = (key.id0 == yesId); // YES -> NO if id0 is YES
+
+        // 1) Deterministic pool out (exact-in):
+        oppOut = _getAmountOut(yesIn, zeroForOne ? rYes : rNo, zeroForOne ? rNo : rYes, FEE_BPS);
+        require(oppOut >= oppOutMin, InsufficientLiquidity());
+
+        // 2) Path-fair EV refund, floored to pot:
+        uint256 fair = _fairRefundYesWithFee(rYes, rNo, yesIn, FEE_BPS);
+        uint256 potBal = m.pot;
+        wstOut = fair > potBal ? potBal : fair;
+        require(wstOut >= wstOutMin, InsufficientWst());
+
+        // 3) Pay refund:
+        m.pot = potBal - wstOut;
+        IERC20(WSTETH).transfer(to, wstOut);
+
+        // 4) Debit user's YES and fix totalSupply immediately:
+        _burn(msg.sender, yesId, yesIn);
+        totalSupply[yesId] -= yesIn;
+
+        // 5) Transient-mint YES to PM, swap to NO out for PM, then sweep:
+        _mint(address(this), yesId, yesIn);
+        totalSupply[yesId] += yesIn;
+        ZAMM.deposit(address(this), yesId, yesIn);
+        ZAMM.swapExactOut(
+            key,
+            oppOut, // exact NO to PM
+            yesIn, // cap YES spent
+            zeroForOne, // YES -> NO
+            address(this),
+            block.timestamp
+        );
+        // Sweep any leftover YES (rounding/slack)
+        uint256 retYes = ZAMM.recoverTransientBalance(address(this), yesId, address(this));
+        if (retYes != 0) {
+            _burn(address(this), yesId, retYes);
+            totalSupply[yesId] -= retYes;
         }
 
-        balanceOf[sender][id] -= amount;
-        balanceOf[receiver][id] += amount;
-        emit Transfer(msg.sender, sender, receiver, id, amount);
-        return true;
+        // 6) Burn the NO received from pool (reduce NO supply deterministically):
+        _burn(address(this), noId, oppOut);
+        totalSupply[noId] -= oppOut;
+
+        emit Sold(msg.sender, yesId, yesIn, wstOut);
+        return (wstOut, oppOut);
+    }
+
+    function sellNoViaPool(
+        uint256 marketId,
+        uint256 noIn,
+        uint256 wstOutMin,
+        uint256 oppOutMin,
+        address to
+    ) public nonReentrant returns (uint256 wstOut, uint256 oppOut) {
+        Market storage m = markets[marketId];
+        require(m.resolver != address(0), MarketNotFound());
+        require(!m.resolved && block.timestamp < m.close, MarketClosed());
+        require(noIn != 0, AmountZero());
+
+        uint256 yesId = marketId;
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
+
+        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
+        require(rYes > 0 && rNo > 0, PoolNotSeeded());
+        require(noIn < rNo, InsufficientLiquidity()); // guard
+
+        bool zeroForOne = (key.id0 == noId); // NO -> YES if id0 is NO
+
+        // 1) Deterministic pool out (exact-in):
+        oppOut = _getAmountOut(noIn, zeroForOne ? rNo : rYes, zeroForOne ? rYes : rNo, FEE_BPS);
+        require(oppOut >= oppOutMin, InsufficientLiquidity());
+
+        // 2) Path-fair EV refund, floored to pot:
+        uint256 fair = _fairRefundNoWithFee(rYes, rNo, noIn, FEE_BPS);
+        uint256 potBal = m.pot;
+        wstOut = fair > potBal ? potBal : fair;
+        require(wstOut >= wstOutMin, InsufficientWst());
+
+        // 3) Pay refund:
+        m.pot = potBal - wstOut;
+        IERC20(WSTETH).transfer(to, wstOut);
+
+        // 4) Debit user's NO and fix totalSupply immediately:
+        _burn(msg.sender, noId, noIn);
+        totalSupply[noId] -= noIn;
+
+        // 5) Transient-mint NO to PM, swap to YES out for PM, then sweep:
+        _mint(address(this), noId, noIn);
+        totalSupply[noId] += noIn;
+        ZAMM.deposit(address(this), noId, noIn);
+        ZAMM.swapExactOut(
+            key,
+            oppOut, // exact YES to PM
+            noIn, // cap NO spent
+            zeroForOne, // NO -> YES
+            address(this),
+            block.timestamp
+        );
+        uint256 retNo = ZAMM.recoverTransientBalance(address(this), noId, address(this));
+        if (retNo != 0) {
+            _burn(address(this), noId, retNo);
+            totalSupply[noId] -= retNo;
+        }
+
+        // 6) Burn the YES received from pool (reduce YES supply deterministically):
+        _burn(address(this), yesId, oppOut);
+        totalSupply[yesId] -= oppOut;
+
+        emit Sold(msg.sender, noId, noIn, wstOut);
+        return (wstOut, oppOut);
     }
 
     /*──────── resolution / claims ───────*/
@@ -526,7 +668,7 @@ contract PredictionAMM is ERC6909Minimal {
             uint256 fee = (m.pot * feeBps) / 10_000;
             if (fee != 0) {
                 m.pot -= fee;
-                WSTETH.transfer(m.resolver, fee);
+                IERC20(WSTETH).transfer(m.resolver, fee);
             }
         }
 
@@ -569,9 +711,65 @@ contract PredictionAMM is ERC6909Minimal {
         totalSupply[winId] -= userShares;
 
         m.pot -= payout;
-        WSTETH.transfer(to, payout);
+        IERC20(WSTETH).transfer(to, payout);
 
         emit Claimed(to, winId, userShares, payout);
+    }
+
+    /*──────── transfer / transferFrom ───────*/
+    function transfer(address receiver, uint256 id, uint256 amount)
+        public
+        override(ERC6909Minimal)
+        returns (bool)
+    {
+        // Disallow arbitrary parking at PM or ZAMM:
+        if (receiver == address(this)) {
+            // Only ZAMM may send back residuals to PM, or PM may move internally:
+            if (msg.sender != address(this) && msg.sender != address(ZAMM)) {
+                revert InvalidReceiver();
+            }
+        } else if (receiver == address(ZAMM)) {
+            // Never allow users to push their own tokens into ZAMM.
+            // PM itself also shouldn't "transfer" into ZAMM via this path (it uses deposit + transient mints).
+            revert InvalidReceiver();
+        }
+
+        return ERC6909Minimal.transfer(receiver, id, amount);
+    }
+
+    function transferFrom(address sender, address receiver, uint256 id, uint256 amount)
+        public
+        returns (bool)
+    {
+        // Block arbitrary parking at PM or ZAMM, even when ZAMM is the caller:
+        if (receiver == address(this)) {
+            // Allow only ZAMM to sweep residuals back to PM or PM-internal ops:
+            if (msg.sender != address(this) && msg.sender != address(ZAMM)) {
+                revert InvalidReceiver();
+            }
+        } else if (receiver == address(ZAMM)) {
+            // Only allow PM-owned tokens to go into ZAMM (transient LP/swaps):
+            if (sender != address(this)) {
+                revert InvalidReceiver();
+            }
+        }
+
+        if (msg.sender != sender) {
+            // Fast path: allow ZAMM to pull PM-owned balances without SLOADs:
+            if (!(sender == address(this) && msg.sender == address(ZAMM))) {
+                if (!isOperator[sender][msg.sender]) {
+                    uint256 allowed = allowance[sender][msg.sender][id];
+                    if (allowed != type(uint256).max) {
+                        allowance[sender][msg.sender][id] = allowed - amount;
+                    }
+                }
+            }
+        }
+
+        balanceOf[sender][id] -= amount;
+        balanceOf[receiver][id] += amount;
+        emit Transfer(msg.sender, sender, receiver, id, amount);
+        return true;
     }
 
     /*──────── views & quotes (UX) ───────*/
@@ -592,6 +790,7 @@ contract PredictionAMM is ERC6909Minimal {
     }
 
     /// Quote helpers for frontends (fee-aware, path-fair)
+    // ---------- BUY QUOTES ----------
     function quoteBuyYes(uint256 marketId, uint256 yesOut)
         public
         view
@@ -611,7 +810,7 @@ contract PredictionAMM is ERC6909Minimal {
         bool zeroForOne = (key.id0 == getNoId(marketId));
         oppIn = _getAmountIn(yesOut, zeroForOne ? rNo : rYes, zeroForOne ? rYes : rNo, FEE_BPS);
 
-        // p0 and p1 for display
+        // p0 and p1 for display:
         p0_num = rNo;
         p0_den = rYes + rNo;
         uint256 rYesEnd = rYes - yesOut;
@@ -649,6 +848,73 @@ contract PredictionAMM is ERC6909Minimal {
         p1_den = rYesEnd + rNoEnd;
 
         wstInFair = _fairChargeNoWithFee(rYes, rNo, noOut, FEE_BPS);
+    }
+
+    // ---------- SELL QUOTES ----------
+    function quoteSellYes(uint256 marketId, uint256 yesIn)
+        public
+        view
+        returns (
+            uint256 oppOut,
+            uint256 wstOutFair,
+            uint256 p0_num,
+            uint256 p0_den,
+            uint256 p1_num,
+            uint256 p1_den
+        )
+    {
+        IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
+        (uint256 rYes, uint256 rNo) = _poolReserves(key, marketId);
+        require(yesIn != 0 && rYes > 0 && rNo > 0 && yesIn < rYes, InsufficientLiquidity());
+
+        oppOut = _getAmountOut(
+            yesIn, (key.id0 == marketId) ? rYes : rNo, (key.id0 == marketId) ? rNo : rYes, FEE_BPS
+        );
+
+        p0_num = rNo; // pYES = rNo / (rYes + rNo)
+        p0_den = rYes + rNo;
+        uint256 rYesEnd = rYes + yesIn;
+        uint256 rNoEnd = rNo - oppOut;
+        p1_num = rNoEnd;
+        p1_den = rYesEnd + rNoEnd;
+
+        uint256 fair = _fairRefundYesWithFee(rYes, rNo, yesIn, FEE_BPS);
+        uint256 potBal = markets[marketId].pot;
+        wstOutFair = fair > potBal ? potBal : fair;
+    }
+
+    function quoteSellNo(uint256 marketId, uint256 noIn)
+        public
+        view
+        returns (
+            uint256 oppOut,
+            uint256 wstOutFair,
+            uint256 p0_num,
+            uint256 p0_den,
+            uint256 p1_num,
+            uint256 p1_den
+        )
+    {
+        uint256 yesId = marketId;
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
+        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
+        require(noIn != 0 && rYes > 0 && rNo > 0 && noIn < rNo, InsufficientLiquidity());
+
+        oppOut = _getAmountOut(
+            noIn, (key.id0 == noId) ? rNo : rYes, (key.id0 == noId) ? rYes : rNo, FEE_BPS
+        );
+
+        p0_num = rYes; // pNO = rYes / (rYes + rNo)
+        p0_den = rYes + rNo;
+        uint256 rNoEnd = rNo + noIn;
+        uint256 rYesEnd = rYes - oppOut;
+        p1_num = rYesEnd;
+        p1_den = rYesEnd + rNoEnd;
+
+        uint256 fair = _fairRefundNoWithFee(rYes, rNo, noIn, FEE_BPS);
+        uint256 potBal = markets[marketId].pot;
+        wstOutFair = fair > potBal ? potBal : fair;
     }
 
     /*──────── view getters (UI & indexing) ───*/
@@ -984,6 +1250,19 @@ contract PredictionAMM is ERC6909Minimal {
     }
 }
 
+IERC20 constant WSTETH = IERC20(0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0);
+
+interface IERC20 {
+    function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
+IZSTETH constant ZSTETH = IZSTETH(0x000000000088649055D9D23362B819A5cfF11f02);
+
+interface IZSTETH {
+    function exactETHToWSTETH(address to) external payable returns (uint256 wstOut);
+}
+
 /*────────────────────────────────────────────────────────
 | mulDiv helper (Solady)
 |────────────────────────────────────────────────────────*/
@@ -997,5 +1276,16 @@ function mulDiv(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {
             revert(0x1c, 0x04)
         }
         z := div(z, d)
+    }
+}
+
+function mulDivUp(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {
+    assembly ("memory-safe") {
+        z := mul(x, y)
+        if iszero(mul(or(iszero(x), eq(div(z, x), y)), d)) {
+            mstore(0x00, 0xad251c27)
+            revert(0x1c, 0x04)
+        }
+        z := add(iszero(iszero(mod(z, d))), div(z, d))
     }
 }

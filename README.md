@@ -4,6 +4,8 @@ A minimalist, gas-efficient prediction market for **binary (YES/NO)** questions.
 
 Deployed to Ethereum: [`0x0000000000337f99F242D11AF1908469B0424C8D`](https://etherscan.io/address/0x0000000000337f99f242d11af1908469b0424c8d#code)
 
+PAMM: [`0x000000000088B4B43A69f8CDa34d93eD1d6f1431`](https://etherscan.io/address/0x000000000088B4B43A69f8CDa34d93eD1d6f1431#code)
+
 > ⚠️ **Heads-up:** This is a **parimutuel pool with free exits**, not a price-discovery AMM. “Odds” are purely **implied by deposits** and can be moved by reversible flows.
 
 ---

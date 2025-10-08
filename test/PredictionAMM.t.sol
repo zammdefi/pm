@@ -859,7 +859,7 @@ contract PredictionAMM_MainnetFork is Test {
         string memory n2 = pm.name(pm.getNoId(marketId));
         assertGt(bytes(n).length, 0);
         assertGt(bytes(n2).length, 0);
-        assertEq(pm.symbol(0), "PM");
+        assertEq(pm.symbol(0), "PAMM");
     }
 
     function test_ApproveAndTransfer_Erc6909_Basics() public {
@@ -1494,6 +1494,411 @@ contract PredictionAMM_MainnetFork is Test {
         assertEq(tsLast, t, "timestamp last");
         assertEq(kLast, k, "kLast");
         assertEq(lpSupply, s, "lpSupply");
+    }
+
+    // ===============================
+    // NEW: SELL PATH TESTS
+    // ===============================
+
+    function test_SellYesViaPool_BasicHappyPath() public {
+        // ALICE buys some YES to have inventory
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        (uint256 wInBuy,) =
+            pm.buyYesViaPool(marketId, 5_000e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+        assertGt(wInBuy, 0);
+
+        uint256 yesBalBefore = pm.balanceOf(ALICE, marketId);
+        uint256 potBefore = _pot(marketId);
+
+        // Quote exact sell for half of ALICE's YES
+        uint256 sellAmt = yesBalBefore / 2;
+        (
+            uint256 oppOutQ,
+            uint256 wstOutFairQ,
+            ,
+            ,
+            , // p0/p1 not needed for this assertion
+        ) = pm.quoteSellYes(marketId, sellAmt);
+
+        // Execute sell with tight bounds matching quote
+        vm.prank(ALICE);
+        (uint256 wOut, uint256 oppOut) =
+            pm.sellYesViaPool(marketId, sellAmt, wstOutFairQ, oppOutQ, ALICE);
+
+        // Cash paid out, YES burned from user
+        assertEq(wOut, wstOutFairQ, "paid fair EV refund");
+        assertEq(oppOut, oppOutQ, "pool out matches quote");
+        assertEq(pm.balanceOf(ALICE, marketId), yesBalBefore - sellAmt, "YES reduced");
+        assertEq(_pot(marketId), potBefore - wOut, "pot decreased by refund");
+    }
+
+    function test_SellNoViaPool_BasicHappyPath() public {
+        // BOB buys some NO to have inventory
+        vm.startPrank(BOB);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(BOB);
+        WSTETH.approve(address(pm), type(uint256).max);
+        (uint256 wInBuy,) =
+            pm.buyNoViaPool(marketId, 4_000e9, false, type(uint256).max, type(uint256).max, BOB);
+        vm.stopPrank();
+        assertGt(wInBuy, 0);
+
+        uint256 noBalBefore = pm.balanceOf(BOB, noId);
+        uint256 potBefore = _pot(marketId);
+
+        uint256 sellAmt = noBalBefore / 2;
+        (uint256 oppOutQ, uint256 wstOutFairQ,,,,) = pm.quoteSellNo(marketId, sellAmt);
+
+        vm.prank(BOB);
+        (uint256 wOut, uint256 oppOut) =
+            pm.sellNoViaPool(marketId, sellAmt, wstOutFairQ, oppOutQ, BOB);
+
+        assertEq(wOut, wstOutFairQ, "paid fair EV refund");
+        assertEq(oppOut, oppOutQ, "pool out matches quote");
+        assertEq(pm.balanceOf(BOB, noId), noBalBefore - sellAmt, "NO reduced");
+        assertEq(_pot(marketId), potBefore - wOut, "pot decreased by refund");
+    }
+
+    function test_RoundTrip_BuyThenSell_PotApproximatelyNeutral() public {
+        // Alice buys YES then immediately sells the same size
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        uint256 pot0 = _pot(marketId);
+
+        uint256 buyOut = 6_000e9;
+        (uint256 oppInQ, uint256 wstInFairQ,,,,) = pm.quoteBuyYes(marketId, buyOut);
+        vm.prank(ALICE);
+        (uint256 wIn, uint256 oppIn) =
+            pm.buyYesViaPool(marketId, buyOut, false, wstInFairQ, oppInQ, ALICE);
+        assertEq(oppIn, oppInQ);
+        assertEq(_pot(marketId), pot0 + wIn, "pot increased by buy EV");
+
+        // Now quote a sell for the same number of YES
+        (uint256 oppOutQ, uint256 wstOutFairQ,,,,) = pm.quoteSellYes(marketId, buyOut);
+        vm.prank(ALICE);
+        (uint256 wOut, uint256 oppOut) =
+            pm.sellYesViaPool(marketId, buyOut, wstOutFairQ, oppOutQ, ALICE);
+        assertEq(oppOut, oppOutQ);
+
+        uint256 pot2 = _pot(marketId);
+        // Buy EV in minus Sell EV out should be ~0 (allow tiny rounding slack)
+        uint256 diff = pot2 > pot0 ? pot2 - pot0 : pot0 - pot2;
+        assertLe(diff, 3, "pot ~ neutral over immediate round-trip");
+    }
+
+    function test_Sell_Revert_AfterClose() public {
+        // Give ALICE some YES
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.5 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(marketId, 2_000e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+
+        _warpPastClose();
+
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellYes(marketId, 1_000e9);
+        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.prank(ALICE);
+        pm.sellYesViaPool(marketId, 1_000e9, wstOutQ, oppOutQ, ALICE);
+    }
+
+    function test_QuoteSellYes_MatchesExecution() public {
+        // Seed YES balance
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(marketId, 3_000e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+
+        uint256 sellAmt = 1_234e9;
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellYes(marketId, sellAmt);
+
+        vm.prank(ALICE);
+        (uint256 wOut, uint256 oppOut) =
+            pm.sellYesViaPool(marketId, sellAmt, wstOutQ, oppOutQ, ALICE);
+
+        // Allow <=1 wei rounding slop
+        assertLe(wOut > wstOutQ ? wOut - wstOutQ : wstOutQ - wOut, 1, "wst out ~= quote");
+        assertEq(oppOut, oppOutQ, "oppOut equals quote");
+    }
+
+    function test_QuoteSellNo_MatchesExecution() public {
+        // Seed NO balance
+        vm.startPrank(BOB);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(BOB);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyNoViaPool(marketId, 3_300e9, false, type(uint256).max, type(uint256).max, BOB);
+        vm.stopPrank();
+
+        uint256 sellAmt = 777e9;
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellNo(marketId, sellAmt);
+
+        vm.prank(BOB);
+        (uint256 wOut, uint256 oppOut) = pm.sellNoViaPool(marketId, sellAmt, wstOutQ, oppOutQ, BOB);
+
+        assertLe(wOut > wstOutQ ? wOut - wstOutQ : wstOutQ - wOut, 1, "wst out ~= quote");
+        assertEq(oppOut, oppOutQ, "oppOut equals quote");
+    }
+
+    function test_QuoteSell_InvalidSize_Reverts() public {
+        // Read current reserves to construct boundary case
+        IZAMM.PoolKey memory key = IZAMM.PoolKey({
+            id0: marketId < noId ? marketId : noId,
+            id1: marketId < noId ? noId : marketId,
+            token0: address(pm),
+            token1: address(pm),
+            feeOrHook: 10
+        });
+        (uint112 r0, uint112 r1,,,,,) = IZAMM(ZAMM_ADDR).pools(
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)))
+        );
+        (uint256 rYes, uint256 rNo) =
+            (key.id0 == marketId) ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+
+        // yesIn >= rYes should revert inside quoteSellYes
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        pm.quoteSellYes(marketId, rYes);
+
+        // noIn >= rNo should revert inside quoteSellNo
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        pm.quoteSellNo(marketId, rNo);
+    }
+
+    function test_SellYes_SlippageBounds() public {
+        // Seed YES
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.8 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(marketId, 2_200e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+
+        uint256 sellAmt = 1_000e9;
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellYes(marketId, sellAmt);
+
+        // Too high oppOutMin => revert
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.prank(ALICE);
+        pm.sellYesViaPool(marketId, sellAmt, 0, oppOutQ + 1, ALICE);
+
+        // Too high wstOutMin => revert (pot can't pay more than fair)
+        vm.expectRevert(PredictionAMM.InsufficientWst.selector);
+        vm.prank(ALICE);
+        pm.sellYesViaPool(marketId, sellAmt, wstOutQ + 1, 0, ALICE);
+
+        // With tight equal-to-quote mins => pass
+        vm.prank(ALICE);
+        pm.sellYesViaPool(marketId, sellAmt, wstOutQ, oppOutQ, ALICE);
+    }
+
+    function test_SellNo_SlippageBounds() public {
+        // Seed NO
+        vm.startPrank(BOB);
+        ZSTETH.exactETHToWSTETH{value: 0.8 ether}(BOB);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyNoViaPool(marketId, 2_500e9, false, type(uint256).max, type(uint256).max, BOB);
+        vm.stopPrank();
+
+        uint256 sellAmt = 900e9;
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellNo(marketId, sellAmt);
+
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.prank(BOB);
+        pm.sellNoViaPool(marketId, sellAmt, 0, oppOutQ + 1, BOB);
+
+        vm.expectRevert(PredictionAMM.InsufficientWst.selector);
+        vm.prank(BOB);
+        pm.sellNoViaPool(marketId, sellAmt, wstOutQ + 1, 0, BOB);
+
+        vm.prank(BOB);
+        pm.sellNoViaPool(marketId, sellAmt, wstOutQ, oppOutQ, BOB);
+    }
+
+    /// Buy YES then immediately sell the same size; pot should be ~neutral.
+    function test_SellYes_RoundTrip_PotNeutralWithinSlack() public {
+        // fund/approve like your other tests
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        uint256 pot0 = _pot(marketId);
+
+        uint256 q = 6_000e9;
+        (uint256 oppInQ, uint256 wstInFairQ,,,,) = pm.quoteBuyYes(marketId, q);
+        vm.prank(ALICE);
+        (uint256 wIn, uint256 oppIn) =
+            pm.buyYesViaPool(marketId, q, false, wstInFairQ, oppInQ, ALICE);
+        assertEq(oppIn, oppInQ);
+        assertEq(_pot(marketId), pot0 + wIn, "buy EV should add to pot");
+
+        (uint256 oppOutQ, uint256 wstOutFairQ,,,,) = pm.quoteSellYes(marketId, q);
+        vm.prank(ALICE);
+        (uint256 wOut, uint256 oppOut) = pm.sellYesViaPool(marketId, q, wstOutFairQ, oppOutQ, ALICE);
+        assertEq(oppOut, oppOutQ, "pool leg should match quote");
+
+        uint256 pot2 = _pot(marketId);
+        uint256 diff = pot2 > pot0 ? pot2 - pot0 : pot0 - pot2;
+        assertLe(diff, 3, "round-trip pot should be ~neutral");
+    }
+
+    function test_SellYes_Accounting() public {
+        // FUND + APPROVE (missing before)
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        // get some YES first
+        vm.startPrank(ALICE);
+        (uint256 oppInQ, uint256 wstInFairQ,,,,) = pm.quoteBuyYes(marketId, 4_000e9);
+        pm.buyYesViaPool(marketId, 4_000e9, false, wstInFairQ, oppInQ, ALICE);
+        vm.stopPrank();
+
+        uint256 yesId = marketId;
+        uint256 noId = pm.getNoId(marketId);
+
+        uint256 aliceYes0 = pm.balanceOf(ALICE, yesId);
+        uint256 noSupply0 = pm.totalSupply(noId);
+        uint256 pot0 = _pot(marketId);
+
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellYes(marketId, 4_000e9);
+        vm.prank(ALICE);
+        (uint256 wOut, uint256 oppOut) =
+            pm.sellYesViaPool(marketId, 4_000e9, wstOutQ, oppOutQ, ALICE);
+
+        assertEq(pm.balanceOf(ALICE, yesId), aliceYes0 - 4_000e9, "YES debited");
+        assertEq(pm.totalSupply(noId), noSupply0 - oppOut, "NO supply burned");
+        assertEq(_pot(marketId), pot0 - wOut, "pot debited by wstOut");
+    }
+
+    function test_SellNo_Accounting() public {
+        // FUND + APPROVE (missing before)
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        // get some NO first
+        vm.startPrank(ALICE);
+        (uint256 oppInQ, uint256 wstInFairQ,,,,) = pm.quoteBuyNo(marketId, 4_000e9);
+        pm.buyNoViaPool(marketId, 4_000e9, false, wstInFairQ, oppInQ, ALICE);
+        vm.stopPrank();
+
+        uint256 yesId = marketId;
+        uint256 noId = pm.getNoId(marketId);
+
+        uint256 aliceNo0 = pm.balanceOf(ALICE, noId);
+        uint256 yesSupply0 = pm.totalSupply(yesId);
+        uint256 pot0 = _pot(marketId);
+
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellNo(marketId, 4_000e9);
+        vm.prank(ALICE);
+        (uint256 wOut, uint256 oppOut) =
+            pm.sellNoViaPool(marketId, 4_000e9, wstOutQ, oppOutQ, ALICE);
+
+        assertEq(pm.balanceOf(ALICE, noId), aliceNo0 - 4_000e9, "NO debited");
+        assertEq(pm.totalSupply(yesId), yesSupply0 - oppOut, "YES supply burned");
+        assertEq(_pot(marketId), pot0 - wOut, "pot debited by wstOut");
+    }
+
+    /// swapExactOut may spend < deposited input; ensure any unused YES is returned.
+    function test_SellYes_ReturnsAnyUnusedInput() public {
+        // FUND + APPROVE (missing before)
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        // buy a small, rounding-prone lot
+        vm.startPrank(ALICE);
+        (uint256 oppInQ, uint256 wstInFairQ,,,,) = pm.quoteBuyYes(marketId, 1_001e9);
+        pm.buyYesViaPool(marketId, 1_001e9, false, wstInFairQ, oppInQ, ALICE);
+        vm.stopPrank();
+
+        uint256 yesId = marketId;
+        uint256 aliceYes0 = pm.balanceOf(ALICE, yesId);
+
+        (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellYes(marketId, 1_001e9);
+        vm.prank(ALICE);
+        pm.sellYesViaPool(marketId, 1_001e9, wstOutQ, oppOutQ, ALICE);
+
+        // Over-debit must not happen (refund path protects us)
+        uint256 aliceYes1 = pm.balanceOf(ALICE, yesId);
+        assertLe(aliceYes0 - aliceYes1, 1_001e9, "refund path should not over-debit");
+    }
+
+    /// For same-size round trip, sell EV should be very close to buy EV; and never exceed pot.
+    function test_SellYes_Quote_PotAwareAndCloseToBuyEV() public {
+        // fund/approve
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        uint256 q = 6_000e9;
+
+        (uint256 oppInQ, uint256 wstInFairQ,,,,) = pm.quoteBuyYes(marketId, q);
+        vm.prank(ALICE);
+        (uint256 wIn,) = pm.buyYesViaPool(marketId, q, false, wstInFairQ, oppInQ, ALICE);
+
+        uint256 potNow = _pot(marketId);
+        (,, uint256 p0n, uint256 p0d,,) = pm.quoteSellYes(marketId, q);
+        (, uint256 wstOutFairQ,,,,) = pm.quoteSellYes(marketId, q);
+
+        // Pot cap respected
+        assertLe(wstOutFairQ, potNow, "sell quote must not exceed pot");
+        // Buy EV ~= Sell EV for immediate round-trip (allow tiny rounding)
+        uint256 evDiff = wIn > wstOutFairQ ? wIn - wstOutFairQ : wstOutFairQ - wIn;
+        assertLe(evDiff, 3, "sell EV should be ~= buy EV for same-size round trip");
+        // sanity: p0 in range
+        assertGt(p0d, 0, "quote sanity");
+    }
+
+    /// After close, selling should revert with MarketClosed (your require uses that error).
+    function test_Sell_Reverts_WhenClosed() public {
+        // warp to just after close
+        (,,,,,,,, uint72 closeTs,,,,,) = pm.getMarket(marketId);
+        vm.warp(uint256(closeTs) + 1);
+
+        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        pm.sellYesViaPool(marketId, 1_000e9, 0, 0, ALICE);
+
+        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        pm.sellNoViaPool(marketId, 1_000e9, 0, 0, ALICE);
+    }
+
+    /// Zero-amount sells revert.
+    function test_SellYes_AmountZero_Reverts() public {
+        vm.expectRevert(PredictionAMM.AmountZero.selector);
+        pm.sellYesViaPool(marketId, 0, 0, 0, ALICE);
+    }
+
+    function test_SellNo_AmountZero_Reverts() public {
+        vm.expectRevert(PredictionAMM.AmountZero.selector);
+        pm.sellNoViaPool(marketId, 0, 0, 0, ALICE);
+    }
+
+    /// Invalid sell sizes in quotes (>= reserve) revert with InsufficientLiquidity.
+    function test_QuoteSell_InvalidSize_Reverts_BothSides() public {
+        // fetch current reserves via getMarket()
+        (,,,,,,,,,, uint256 rYes, uint256 rNo,,) = pm.getMarket(marketId);
+
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        pm.quoteSellYes(marketId, rYes);
+
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        pm.quoteSellNo(marketId, rNo);
+
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        pm.quoteSellYes(marketId, 0);
+
+        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        pm.quoteSellNo(marketId, 0);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
