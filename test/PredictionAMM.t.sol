@@ -1901,9 +1901,226 @@ contract PredictionAMM_MainnetFork is Test {
         pm.quoteSellNo(marketId, 0);
     }
 
+    function test_BuyYes_Cushion_NoResiduals_NetSupplyEqualsActualIn() public {
+        // Prep buyer
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        uint256 yesId = marketId;
+        uint256 noId = pm.getNoId(marketId);
+
+        // Quote a moderate trade
+        (uint256 oppInQ,,,,,) = pm.quoteBuyYes(marketId, 2_000e9);
+
+        uint256 noSupplyBefore = pm.totalSupply(noId);
+
+        vm.prank(ALICE);
+        (, uint256 oppInActual) = pm.buyYesViaPool(
+            marketId,
+            2_000e9,
+            false,
+            type(uint256).max, // wst bound irrelevant here
+            type(uint256).max, // very loose
+            ALICE
+        );
+
+        // Net NO supply increase must equal actual input consumed by the AMM
+        uint256 noSupplyAfter = pm.totalSupply(noId);
+        assertEq(noSupplyAfter - noSupplyBefore, oppInActual, "net mint == actual pool input");
+
+        // With unchanged state, actual == quote (rounding cushion was not needed)
+        assertEq(oppInActual, oppInQ, "actual input == quoted input under static state");
+
+        yesId; // silence
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // FIXED: Tight bounds around ZAMM swapExactOut
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    // 0.30% + 5e9 + 1 wei
+    function _oppPad(uint256 q) internal pure returns (uint256) {
+        uint256 add = (q * 30) / 10_000;
+        if (add < 5e9) add = 5e9;
+        unchecked {
+            return q + add + 1;
+        }
+    }
+
+    function test_BuyNo_TightBounds_MoveThenCushionPasses() public {
+        // --- Bob prep ---
+        vm.startPrank(BOB);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(BOB);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        uint256 noOut = 1_700_000_000_000; // 1.7e12
+
+        // 1) Take a TIGHT quote BEFORE the move (this becomes stale later).
+        (uint256 oppIn_before,,,,,) = pm.quoteBuyNo(marketId, noOut);
+
+        // 2) Move the price AGAINST NO (Alice buys NO → NO becomes more expensive).
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.05 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        {
+            uint256 noOutMove = 2_000_000_000_000; // 2e12
+            (uint256 oppInQ, uint256 wstInQ,,,,) = pm.quoteBuyNo(marketId, noOutMove);
+            pm.buyNoViaPool(marketId, noOutMove, false, wstInQ, _oppPad(oppInQ), ALICE);
+        }
+        vm.stopPrank();
+
+        // 3) Attempt with the STALE tight bound -> should revert in the pool.
+        vm.expectRevert(); // let the pool's custom error bubble
+        vm.prank(BOB);
+        pm.buyNoViaPool(marketId, noOut, false, type(uint256).max, oppIn_before, BOB);
+
+        // 4) Re-quote AFTER the move and retry with a cushion -> should pass.
+        (uint256 oppIn_after,,,,,) = pm.quoteBuyNo(marketId, noOut);
+        vm.prank(BOB);
+        pm.buyNoViaPool(marketId, noOut, false, type(uint256).max, _oppPad(oppIn_after), BOB);
+    }
+
+    function test_BuyYes_TightBounds_MoveThenCushionPasses() public {
+        // --- Alice funds and approves ---
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        uint256 yesOut = 1_500_000_000_000;
+
+        // Initial quote & buy YES with cushion (pass)
+        (uint256 oppInYesQ0, /*wstInFairYesQ0*/,,,,) = pm.quoteBuyYes(marketId, yesOut);
+        vm.prank(ALICE);
+        pm.buyYesViaPool(
+            marketId, yesOut, false, type(uint256).max, cushionOppIn(oppInYesQ0), ALICE
+        );
+
+        // --- Bob moves price by buying NO ---
+        vm.startPrank(BOB);
+        ZSTETH.exactETHToWSTETH{value: 0.05 ether}(BOB);
+        WSTETH.approve(address(pm), type(uint256).max);
+        (uint256 oppInNoQ, /*wstInNoQ*/,,,,) = pm.quoteBuyNo(marketId, 2_000_000_000);
+        pm.buyNoViaPool(
+            marketId, 2_000_000_000, false, type(uint256).max, cushionOppIn(oppInNoQ), BOB
+        );
+        vm.stopPrank();
+
+        // --- Try stale oppInMax (expect revert), then re-quote & pass ---
+        vm.expectRevert(PredictionAMM.SlippageOppIn.selector);
+        vm.prank(ALICE);
+        pm.buyYesViaPool(
+            marketId,
+            yesOut,
+            false,
+            type(uint256).max,
+            cushionOppIn(oppInYesQ0), // stale
+            ALICE
+        );
+
+        (uint256 oppInYesQ1, /*wstInFairYesQ1*/,,,,) = pm.quoteBuyYes(marketId, yesOut);
+        vm.prank(ALICE);
+        pm.buyYesViaPool(
+            marketId, yesOut, false, type(uint256).max, cushionOppIn(oppInYesQ1), ALICE
+        );
+    }
+
+    function test_CreateMarket_Then_BuyNo_ETHPath_And_BuyNoAgain() public {
+    // --- Ensure close is in the future so createMarket won't revert ---
+    vm.warp(1_760_005_400); // any ts < 1_760_009_100 is OK
+
+    // --- Create the market with the exact params you provided ---
+    string memory desc = "ipfs://QmP7MrrqoEUNDfQG2q6NU3WFajwRecdab35iYLZ4uBKwZK";
+    address resolver = 0x8528515759a58599219452b4c95Bcbc4aA6BAf6b;
+    uint72  closeTs  = 1_760_009_100;
+    bool    canClose = true;
+    uint256 seedYes  = 1e18;
+    uint256 seedNo   = 1e18;
+
+    (uint256 marketId, uint256 noId) =
+        pm.createMarket(desc, resolver, closeTs, canClose, seedYes, seedNo);
+
+    assertTrue(pm.tradingOpen(marketId), "trading should be open");
+
+    // --- First NO buy via ETH path with the exact params+ETH you gave ---
+    uint256 noOut1   = 1_000_000_000_000_000;          // 1e15
+    bool    inIsETH1 = true;
+    uint256 wstMax1  = 502_701_434_479_773;            // wstInMax
+    uint256 oppMax1  = 1_006_912_818_724_631;          // oppInMax
+    address buyer    = 0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20;
+    uint256 ethSend1 = 703_782_008_271_682;            // 0.000703782008271682 ETH
+
+    vm.deal(buyer, ethSend1);
+    vm.prank(buyer);
+    (uint256 wstSpent1, uint256 oppInUsed1) =
+        pm.buyNoViaPool{value: ethSend1}(marketId, noOut1, inIsETH1, wstMax1, oppMax1, buyer);
+
+    assertLe(wstSpent1, wstMax1, "wst spent > cap");
+    assertLe(oppInUsed1, oppMax1, "opp in > cap");
+    assertEq(pm.balanceOf(buyer, noId), noOut1, "wrong NO received (first buy)");
+
+    // --- Second NO buy via ETH path: fresh quote + robust cushions ---
+    uint256 noOut2 = 500_000_000_000_000; // 5e14
+
+    (uint256 oppInQ, uint256 wstFairQ,,,,) = pm.quoteBuyNo(marketId, noOut2);
+
+    // Robust opp cushion identical to the conservative scheme we used earlier
+    uint256 paddedOpp = (oppInQ * (10_000 + (10 * 2 + 3)) + 9_999) / 10_000 + 5; // fee*2 + 3 bps + 5 wei
+    if (paddedOpp < oppInQ + 3) paddedOpp = oppInQ + 3;
+
+    // IMPORTANT FIX:
+    // The previous version underfunded the zap (ETH->wst), causing InsufficientZap().
+    // We intentionally overfund the ETH sent relative to wstFairQ; the contract will
+    // only use what it needs and return excess as wstETH. 2x is plenty on mainnet fork.
+    uint256 ethSend2 = wstFairQ * 2;
+    if (ethSend2 == 0) ethSend2 = wstFairQ + 1;
+
+    // fund buyer with enough ETH for the second send
+    vm.deal(buyer, address(buyer).balance + ethSend2);
+
+    vm.prank(buyer);
+    (uint256 wstSpent2, uint256 oppInUsed2) =
+        pm.buyNoViaPool{value: ethSend2}(marketId, noOut2, true, type(uint256).max, paddedOpp, buyer);
+
+    assertLe(oppInUsed2, paddedOpp, "opp in exceeded cushion");
+    assertEq(pm.balanceOf(buyer, noId), noOut1 + noOut2, "wrong NO total after second buy");
+
+    // Optional sanity: the pool should not have consumed more wst than the fair cap implies
+    assertLe(wstSpent2, ethSend2, "spent more wst than ETH supplied via zap");
+}
+
+
+
+
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Small helpers to read pot/pps and balances without exposing internal fns
     // ─────────────────────────────────────────────────────────────────────────────
+
+    function cushionOppIn(uint256 q) internal pure returns (uint256) {
+        // 8 bps + absolute 5e8 pad + 1 wei
+        uint256 add = (q * 8) / 10_000; // 0.08%
+        if (add < 5e8) add = 5e8; // absolute pad
+        unchecked {
+            return q + add + 1;
+        } // 1 wei just-in-case
+    }
+
+    // Add this near the top of your test file (or in a shared TestUtils lib)
+    error SlippageOppIn();
+
+    function _cushionOppIn(uint256 q) internal pure returns (uint256) {
+        // 5 bps cushion + tiny absolute pad for rounding/fee hooks.
+        // The traces show ~1 bp drift; 5 bps is tight but safe.
+        unchecked {
+            uint256 pad = (q * 5) / 10_000; // 5 bps
+            if (pad < 2e8) pad = 2e8; // covers the ~1.7e8 delta seen in your trace
+            return q + pad;
+        }
+    }
 
     function _getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut, uint256 feeBps)
         internal
