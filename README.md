@@ -1,13 +1,19 @@
 # PredictionMarket – Minimal Parimutuel Yes/No Markets (wstETH-collateral)
 
-A minimalist, gas-efficient prediction market for **binary (YES/NO)** questions. Traders mint and burn ERC-6909 shares at **par (1:1)** against **wstETH** up until the market’s close time. After close, a **resolver** declares the outcome and the **entire pot** is paid **pro-rata** to the winning side (minus an optional resolver fee).
+A minimalist, gas-efficient prediction market for **binary (YES/NO)** questions.
+
+## Parimutuel (PM)
+
+Traders mint and burn ERC-6909 shares at **par (1:1)** against **wstETH** up until the market’s close time. 
+
+After close, a **resolver** declares the outcome and the **entire pot** is paid **pro-rata** to the winning side (minus an optional resolver fee).
 
 Deployed to Ethereum: [`0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e`](https://etherscan.io/address/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e#code)
 
-PAMM: [`0x000000000071176401AdA1f2CD7748e28E173FCa`](https://etherscan.io/address/0x000000000071176401AdA1f2CD7748e28E173FCa#code)
-> AMM-variant with time-and-odds-based pricing
+## PAMM
 
-> ⚠️ **Heads-up:** This is a **parimutuel pool with free exits**, not a price-discovery AMM. “Odds” are purely **implied by deposits** and can be moved by reversible flows.
+Deployed to Ethereum: [`0x000000000071176401AdA1f2CD7748e28E173FCa`](https://etherscan.io/address/0x000000000071176401AdA1f2CD7748e28E173FCa#code)
+> AMM-variant with time-and-odds-based pricing
 
 ---
 
