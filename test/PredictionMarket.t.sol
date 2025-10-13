@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 
-import {PredictionMarket} from "../src/PredictionMarket.sol";
+import {PM} from "../src/PM.sol";
 
 // Minimal ERC20 view for balance/approve in tests
 interface IERC20View {
@@ -29,7 +29,7 @@ contract PredictionMarketWstETHTest is Test {
     address internal CAROL = makeAddr("CAROL");
 
     // CUT
-    PredictionMarket internal pm;
+    PM internal pm;
 
     // Market ids
     string internal constant DESC = "Will Shanghai Disneyland close for a week in Q4?";
@@ -48,7 +48,7 @@ contract PredictionMarketWstETHTest is Test {
         vm.deal(CAROL, 100 ether);
         vm.deal(RESOLVER, 1 ether);
 
-        pm = new PredictionMarket();
+        pm = new PM();
 
         // Create a market with far close; tests will warp past close before resolve.
         (marketId, noId) =
@@ -163,7 +163,7 @@ contract PredictionMarketWstETHTest is Test {
         pm.buyNo{value: 1 ether}(marketId, 0, BOB);
 
         vm.prank(RESOLVER);
-        vm.expectRevert(PredictionMarket.MarketNotClosed.selector);
+        vm.expectRevert(PM.MarketNotClosed.selector);
         pm.resolve(marketId, true);
     }
 
@@ -173,16 +173,16 @@ contract PredictionMarketWstETHTest is Test {
 
         _warpPastClose();
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.buyYes{value: 0.5 ether}(marketId, 0, ALICE);
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.buyNo{value: 0.5 ether}(marketId, 0, ALICE);
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.sellYes(marketId, 1, ALICE);
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.sellNo(marketId, 1, ALICE);
     }
 
@@ -283,7 +283,7 @@ contract PredictionMarketWstETHTest is Test {
         pm.resolve(mId, false); // cancels
 
         vm.prank(BOB);
-        vm.expectRevert(PredictionMarket.NoWinningShares.selector);
+        vm.expectRevert(PM.NoWinningShares.selector);
         pm.claim(mId, BOB);
 
         uint256 before = WSTETH_TOKEN.balanceOf(ALICE);
@@ -323,7 +323,7 @@ contract PredictionMarketWstETHTest is Test {
         pm.resolve(marketId, true); // YES wins
 
         vm.prank(BOB);
-        vm.expectRevert(PredictionMarket.NoWinningShares.selector);
+        vm.expectRevert(PM.NoWinningShares.selector);
         pm.claim(marketId, BOB);
 
         uint256 before = WSTETH_TOKEN.balanceOf(ALICE);
@@ -340,22 +340,22 @@ contract PredictionMarketWstETHTest is Test {
     }
 
     function testCreateMarket_InvalidResolver_Reverts() public {
-        vm.expectRevert(PredictionMarket.InvalidResolver.selector);
+        vm.expectRevert(PM.InvalidResolver.selector);
         pm.createMarket("bad", address(0), uint72(block.timestamp + 365 days), false);
     }
 
     function testCreateMarket_Duplicate_Reverts() public {
         vm.prank(ALICE);
-        vm.expectRevert(PredictionMarket.MarketExists.selector);
+        vm.expectRevert(PM.MarketExists.selector);
         pm.createMarket(DESC, RESOLVER, uint72(block.timestamp + 365 days), false);
     }
 
     function testMarketNotFound_BuyAndResolve() public {
         uint256 fake = 0xDEADBEEF;
-        vm.expectRevert(PredictionMarket.MarketNotFound.selector);
+        vm.expectRevert(PM.MarketNotFound.selector);
         pm.buyYes{value: 1 ether}(fake, 0, ALICE);
 
-        vm.expectRevert(PredictionMarket.MarketNotFound.selector);
+        vm.expectRevert(PM.MarketNotFound.selector);
         pm.resolve(fake, true);
     }
 
@@ -370,17 +370,17 @@ contract PredictionMarketWstETHTest is Test {
         vm.prank(RESOLVER);
         pm.resolve(marketId, true);
 
-        vm.expectRevert(PredictionMarket.MarketResolved.selector);
+        vm.expectRevert(PM.MarketResolved.selector);
         pm.buyYes{value: 1 ether}(marketId, 0, ALICE);
-        vm.expectRevert(PredictionMarket.MarketResolved.selector);
+        vm.expectRevert(PM.MarketResolved.selector);
         pm.buyNo{value: 1 ether}(marketId, 0, BOB);
 
         vm.prank(ALICE);
-        vm.expectRevert(PredictionMarket.MarketResolved.selector);
+        vm.expectRevert(PM.MarketResolved.selector);
         pm.sellYes(marketId, 1, ALICE);
 
         vm.prank(BOB);
-        vm.expectRevert(PredictionMarket.MarketResolved.selector);
+        vm.expectRevert(PM.MarketResolved.selector);
         pm.sellNo(marketId, 1, BOB);
     }
 
@@ -583,7 +583,7 @@ contract PredictionMarketWstETHTest is Test {
     }
 
     function testBuyWithWSTETH_AmountZero_Reverts() public {
-        vm.expectRevert(PredictionMarket.AmountZero.selector);
+        vm.expectRevert(PM.AmountZero.selector);
         pm.buyYes(marketId, 0, ALICE);
     }
 
@@ -638,10 +638,10 @@ contract PredictionMarketWstETHTest is Test {
         pm.closeMarket(mid);
 
         // Trading is now blocked
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.buyYes{value: 0.1 ether}(mid, 0, ALICE);
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.sellNo(mid, 1, BOB);
 
         // But resolve is allowed immediately (market is "closed")
@@ -664,7 +664,7 @@ contract PredictionMarketWstETHTest is Test {
         );
 
         vm.prank(RESOLVER);
-        vm.expectRevert(PredictionMarket.CannotClose.selector);
+        vm.expectRevert(PM.CannotClose.selector);
         pm.closeMarket(mid);
     }
 
@@ -675,7 +675,7 @@ contract PredictionMarketWstETHTest is Test {
 
         // Anyone else cannot close
         vm.prank(ALICE);
-        vm.expectRevert(PredictionMarket.OnlyResolver.selector);
+        vm.expectRevert(PM.OnlyResolver.selector);
         pm.closeMarket(mid);
 
         // Resolver can
@@ -700,7 +700,7 @@ contract PredictionMarketWstETHTest is Test {
 
         // Closing again → MarketClosed
         vm.prank(RESOLVER);
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.closeMarket(mid);
 
         // Now resolve (allowed immediately after manual close)
@@ -709,7 +709,7 @@ contract PredictionMarketWstETHTest is Test {
 
         // Closing after resolve → MarketResolved
         vm.prank(RESOLVER);
-        vm.expectRevert(PredictionMarket.MarketResolved.selector);
+        vm.expectRevert(PM.MarketResolved.selector);
         pm.closeMarket(mid);
     }
 
@@ -721,10 +721,10 @@ contract PredictionMarketWstETHTest is Test {
         vm.prank(RESOLVER);
         pm.closeMarket(mid);
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.buyYes{value: 0.1 ether}(mid, 0, ALICE);
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.sellNo(mid, 1, BOB);
     }
 
@@ -738,7 +738,7 @@ contract PredictionMarketWstETHTest is Test {
         vm.prank(RESOLVER);
         pm.closeMarket(mid);
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.buyNo{value: 0.01 ether}(mid, 0, BOB);
     }
 
@@ -764,7 +764,7 @@ contract PredictionMarketWstETHTest is Test {
         assertEq(pm.totalSupply(mid), yBefore, "YES supply unchanged");
         assertEq(pm.totalSupply(pm.getNoId(mid)), nBefore, "NO supply unchanged");
 
-        vm.expectRevert(PredictionMarket.MarketClosed.selector);
+        vm.expectRevert(PM.MarketClosed.selector);
         pm.sellYes(mid, y / 4, ALICE);
     }
 
@@ -949,7 +949,7 @@ contract PredictionMarketWstETHTest is Test {
 
         // Second claim should revert: no remaining shares.
         vm.prank(ALICE);
-        vm.expectRevert(PredictionMarket.NoWinningShares.selector);
+        vm.expectRevert(PM.NoWinningShares.selector);
         pm.claim(mId, ALICE);
     }
 
@@ -1153,7 +1153,7 @@ contract PredictionMarketWstETHTest is Test {
 
     function testSetResolverFeeBps_GuardAbove10000() public {
         vm.prank(RESOLVER);
-        vm.expectRevert(PredictionMarket.FeeOverflow.selector);
+        vm.expectRevert(PM.FeeOverflow.selector);
         pm.setResolverFeeBps(10_001);
     }
 

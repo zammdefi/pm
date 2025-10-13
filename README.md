@@ -2,9 +2,10 @@
 
 A minimalist, gas-efficient prediction market for **binary (YES/NO)** questions. Traders mint and burn ERC-6909 shares at **par (1:1)** against **wstETH** up until the market’s close time. After close, a **resolver** declares the outcome and the **entire pot** is paid **pro-rata** to the winning side (minus an optional resolver fee).
 
-Deployed to Ethereum: [`0x0000000000337f99F242D11AF1908469B0424C8D`](https://etherscan.io/address/0x0000000000337f99f242d11af1908469b0424c8d#code)
+Deployed to Ethereum: [`0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e`](https://etherscan.io/address/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e#code)
 
-PAMM: [`0x000000000088B4B43A69f8CDa34d93eD1d6f1431`](https://etherscan.io/address/0x000000000088B4B43A69f8CDa34d93eD1d6f1431#code)
+PAMM: [`0x000000000071176401AdA1f2CD7748e28E173FCa`](https://etherscan.io/address/0x000000000071176401AdA1f2CD7748e28E173FCa#code)
+> AMM-variant with time-and-odds-based pricing
 
 > ⚠️ **Heads-up:** This is a **parimutuel pool with free exits**, not a price-discovery AMM. “Odds” are purely **implied by deposits** and can be moved by reversible flows.
 

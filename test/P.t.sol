@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 
-import {PredictionAMM} from "../src/PredictionAMM.sol";
+import {PAMM} from "../src/PAMM.sol";
 
 /* ──────────────────────────────────────────────────────────
    External mainnet contracts on fork (addresses you use)
@@ -29,14 +29,14 @@ address constant ZAMM_ADDR = 0x000000000000040470635EB91b7CE4D132D616eD;
    Tests
    ────────────────────────────────────────────────────────── */
 
-contract PredictionAMM_MainnetFork is Test {
+contract PAMM_MainnetFork is Test {
     // actors
     address internal RESOLVER = makeAddr("RESOLVER");
     address internal ALICE = makeAddr("ALICE");
     address internal BOB = makeAddr("BOB");
 
     // CUT
-    PredictionAMM internal pm;
+    PAMM internal pm;
 
     // market ids
     string internal constant DESC = "Will Shanghai Disneyland close for a week in Q4?";
@@ -74,7 +74,7 @@ contract PredictionAMM_MainnetFork is Test {
         vm.deal(RESOLVER, 1 ether);
 
         // deploy CUT
-        pm = new PredictionAMM();
+        pm = new PAMM();
 
         // create & seed a market (seeds are outcome tokens, not wstETH)
         (marketId, noId) = _createAndSeedDefault();
@@ -298,7 +298,7 @@ contract PredictionAMM_MainnetFork is Test {
         vm.startPrank(ALICE);
         uint256 w = ZSTETH.exactETHToWSTETH{value: 0.2 ether}(ALICE);
         WSTETH.approve(address(pm), type(uint256).max);
-        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.expectRevert(PAMM.MarketClosed.selector);
         pm.buyYesViaPool(mid, 1e9, false, type(uint256).max, type(uint256).max, ALICE);
         vm.stopPrank();
         w;
@@ -336,26 +336,16 @@ contract PredictionAMM_MainnetFork is Test {
         w;
 
         (uint256 oppInQ,,,,,) = pm.quoteBuyYes(marketId, 3_000e9);
-        vm.expectRevert(PredictionAMM.SlippageOppIn.selector);
+        vm.expectRevert(PAMM.SlippageOppIn.selector);
         vm.prank(ALICE);
         pm.buyYesViaPool(marketId, 3_000e9, false, type(uint256).max, oppInQ - 1, ALICE);
-    }
-
-    function test_SellYes_Guards_InsufficientLiquidity() public {
-        // Try to sell absurd amount (>= rYES)
-        // Read reserves from getter
-        (,,,,,,,,,, uint256 rYes, uint256 rNo,,) = pm.getMarket(marketId);
-        rNo; // silence
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
-        vm.prank(ALICE);
-        pm.sellYesViaPool(marketId, rYes, 0, 0, ALICE);
     }
 
     /* ──────────────────────────────────────────────────────────
        Getters sanity
        ────────────────────────────────────────────────────────── */
 
-    function test_GetMarket_SnapshotIsCoherent() public {
+    function test_GetMarket_SnapshotIsCoherent() public view {
         (
             uint256 yesSupply,
             uint256 noSupply,

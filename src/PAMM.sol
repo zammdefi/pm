@@ -96,12 +96,12 @@ interface IZAMM {
 }
 
 /*────────────────────────────────────────────────────────
-| PredictionAMM — CPMM-backed YES/NO markets
+| PredictionAMM (PAMM) — CPMM-backed YES/NO markets
 |  • Pool fee = 10 bps (paid to ZAMM with fee switch on)
 |  • Pot in wstETH; PM+ZAMM excluded from payout denominator
 |  • Path-fair EV charging via Simpson’s rule (fee-aware)
 |────────────────────────────────────────────────────────*/
-contract PredictionAMM is ERC6909Minimal {
+contract PAMM is ERC6909Minimal {
     /*──────── errors ───────*/
     error MarketExists();
     error MarketNotFound();
@@ -144,6 +144,20 @@ contract PredictionAMM is ERC6909Minimal {
 
     // ZAMM singleton
     IZAMM constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
+
+    /*──────── pm-AMM tuning (set once at create) ───────*/
+    struct PMTuning {
+        uint32 lateRampStart; // seconds before close to start ramp (0 = off)
+        uint16 lateRampMaxBps; // +bps at T (applied to EV charge; inverse to refunds)
+        uint16 extremeMaxBps; // +bps at extremes p≈0/1 (linear in |p-0.5|)
+    }
+
+    mapping(uint256 => PMTuning) public pmTuning;
+    mapping(uint256 => bool) public pmTuningFinal;
+
+    error TuningBadCaps();
+
+    event PMTuningSet(uint256 indexed marketId, PMTuning t, bool finalized);
 
     uint256[] public allMarkets;
     mapping(uint256 id => Market) public markets;
@@ -237,6 +251,26 @@ contract PredictionAMM is ERC6909Minimal {
             require(seedYes != 0 && seedNo != 0, SeedBothSides());
             _seedYesNoPool(marketId, seedYes, seedNo);
         }
+    }
+
+    function createMarketWithPMTuning(
+        string calldata description,
+        address resolver,
+        uint72 close,
+        bool canClose,
+        uint256 seedYes,
+        uint256 seedNo,
+        PMTuning calldata t
+    ) public returns (uint256 marketId, uint256 noId) {
+        (marketId, noId) = createMarket(description, resolver, close, canClose, seedYes, seedNo);
+
+        // hard caps to avoid crazy tuning
+        if (t.lateRampMaxBps > 2_000 || t.extremeMaxBps > 2_000) revert TuningBadCaps();
+        require(t.lateRampStart == 0 || t.lateRampStart <= close, TuningBadCaps());
+
+        pmTuning[marketId] = t;
+        pmTuningFinal[marketId] = true; // immutable—no updates allowed / placeholder for future tweaks
+        emit PMTuningSet(marketId, t, true);
     }
 
     function _seedYesNoPool(uint256 marketId, uint256 seedYes, uint256 seedNo) internal {
@@ -392,6 +426,36 @@ contract PredictionAMM is ERC6909Minimal {
         refund = mulDiv(noIn, sum, 6 * 1e18);
     }
 
+    function _pmMultBps(uint256 marketId, uint256 rYes, uint256 rNo)
+        internal
+        view
+        returns (uint256 bps)
+    {
+        PMTuning memory t = pmTuning[marketId];
+        if ((t.lateRampStart | t.lateRampMaxBps | t.extremeMaxBps) == 0) return 0;
+
+        // Time ramp (saturating start):
+        if (t.lateRampStart != 0) {
+            Market storage m = markets[marketId];
+            uint256 start = (t.lateRampStart >= m.close) ? 0 : (m.close - t.lateRampStart);
+            if (block.timestamp >= m.close) {
+                bps += t.lateRampMaxBps;
+            } else if (block.timestamp > start) {
+                uint256 elapsed = block.timestamp - start;
+                bps += (uint256(t.lateRampMaxBps) * elapsed) / t.lateRampStart;
+            }
+        }
+
+        if (t.extremeMaxBps != 0) {
+            uint256 den = rYes + rNo;
+            if (den != 0) {
+                uint256 p1e18 = mulDiv(rNo, 1e18, den);
+                uint256 dist = p1e18 > 5e17 ? (p1e18 - 5e17) : (5e17 - p1e18);
+                bps += mulDiv(uint256(t.extremeMaxBps), dist, 5e17);
+            }
+        }
+    }
+
     /*──────── primary buys (path-fair EV; pot grows) ────*/
     function buyYesViaPool(
         uint256 marketId,
@@ -425,19 +489,23 @@ contract PredictionAMM is ERC6909Minimal {
         // ----- Pool quote (fee-aware, order-invariant): pay NO (rNo) to get YES (rYes)
         uint256 quotedIn = _getAmountIn(yesOut, /*reserveIn=*/ rNo, /*reserveOut=*/ rYes, FEE_BPS);
 
-        // Caller’s bound applies to the *raw* quote, not our internal padding.
+        // Caller’s bound applies to the *raw* quote, not our internal padding:
         require(quotedIn <= oppInMax, SlippageOppIn());
 
-        // Compute a safe internal mint (covers rounding), but never exceed caller’s cap.
+        // Compute a safe internal mint (covers rounding), but never exceed caller’s cap:
         uint256 paddedNeeded = mulDivUp(quotedIn, 10_000 + (FEE_BPS * 2 + 3), 10_000) + 5;
         if (paddedNeeded < quotedIn + 3) paddedNeeded = quotedIn + 3;
         uint256 mintIn = paddedNeeded > oppInMax ? oppInMax : paddedNeeded;
 
-        // ----- Path-fair EV charge into pot (fee-aware Simpson)
+        // ----- Path-fair EV charge into pot (fee-aware Simpson):
         wstIn = _fairChargeYesWithFee(rYes, rNo, yesOut, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) wstIn = mulDivUp(wstIn, 10_000 + b, 10_000);
+        }
         require(wstIn != 0, InsufficientWst());
 
-        // Collect wstETH
+        // Collect wstETH:
         if (inIsETH) {
             uint256 z = ZSTETH.exactETHToWSTETH{value: msg.value}(address(this));
             require(z >= wstIn, InsufficientZap());
@@ -454,17 +522,17 @@ contract PredictionAMM is ERC6909Minimal {
         totalSupply[noId] += mintIn;
         ZAMM.deposit(address(this), noId, mintIn);
 
-        // Let AMM consume up to mintIn; capture the actual input used.
+        // Let AMM consume up to mintIn; capture the actual input used:
         uint256 actualIn = ZAMM.swapExactOut(key, yesOut, mintIn, zeroForOne, to, block.timestamp);
 
-        // Sweep any unused NO and burn it immediately (keeps supply exact)
+        // Sweep any unused NO and burn it immediately (keeps supply exact):
         uint256 ret = ZAMM.recoverTransientBalance(address(this), noId, address(this));
         if (ret != 0) {
             _burn(address(this), noId, ret);
             totalSupply[noId] -= ret;
         }
 
-        // Report actual input used (matches quote under identical state)
+        // Report actual input used (matches quote under identical state):
         oppIn = actualIn;
 
         emit Bought(to, yesId, yesOut, wstIn);
@@ -499,22 +567,26 @@ contract PredictionAMM is ERC6909Minimal {
 
         bool zeroForOne = (key.id0 == yesId); // YES -> NO if id0 is YES
 
-        // ----- Pool quote (fee-aware, order-invariant): pay YES (rYes) to get NO (rNo)
+        // ----- Pool quote (fee-aware, order-invariant): pay YES (rYes) to get NO (rNo):
         uint256 quotedIn = _getAmountIn(noOut, /*reserveIn=*/ rYes, /*reserveOut=*/ rNo, FEE_BPS);
 
-        // Caller’s bound applies to the *raw* quote, not our internal padding.
+        // Caller’s bound applies to the *raw* quote, not our internal padding:
         require(quotedIn <= oppInMax, SlippageOppIn());
 
-        // Compute a safe internal mint (covers rounding), but never exceed caller’s cap.
+        // Compute a safe internal mint (covers rounding), but never exceed caller’s cap:
         uint256 paddedNeeded = mulDivUp(quotedIn, 10_000 + (FEE_BPS * 2 + 3), 10_000) + 5;
         if (paddedNeeded < quotedIn + 3) paddedNeeded = quotedIn + 3;
         uint256 mintIn = paddedNeeded > oppInMax ? oppInMax : paddedNeeded;
 
-        // ----- Path-fair EV charge into pot (fee-aware Simpson)
+        // ----- Path-fair EV charge into pot (fee-aware Simpson):
         wstIn = _fairChargeNoWithFee(rYes, rNo, noOut, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) wstIn = mulDivUp(wstIn, 10_000 + b, 10_000);
+        }
         require(wstIn != 0, InsufficientWst());
 
-        // Collect wstETH
+        // Collect wstETH:
         if (inIsETH) {
             uint256 z = ZSTETH.exactETHToWSTETH{value: msg.value}(address(this));
             require(z >= wstIn, InsufficientZap());
@@ -530,17 +602,17 @@ contract PredictionAMM is ERC6909Minimal {
         totalSupply[yesId] += mintIn;
         ZAMM.deposit(address(this), yesId, mintIn);
 
-        // Let AMM consume up to mintIn; capture the actual input used.
+        // Let AMM consume up to mintIn; capture the actual input used:
         uint256 actualIn = ZAMM.swapExactOut(key, noOut, mintIn, zeroForOne, to, block.timestamp);
 
-        // Sweep any unused YES and burn it immediately (keeps supply exact)
+        // Sweep any unused YES and burn it immediately (keeps supply exact):
         uint256 ret = ZAMM.recoverTransientBalance(address(this), yesId, address(this));
         if (ret != 0) {
             _burn(address(this), yesId, ret);
             totalSupply[yesId] -= ret;
         }
 
-        // Report actual input used (matches quote under identical state)
+        // Report actual input used (matches quote under identical state):
         oppIn = actualIn;
 
         emit Bought(to, noId, noOut, wstIn);
@@ -564,16 +636,20 @@ contract PredictionAMM is ERC6909Minimal {
 
         (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
         require(rYes > 0 && rNo > 0, PoolNotSeeded());
-        require(yesIn < rYes, InsufficientLiquidity()); // keep denominator healthy
 
         bool zeroForOne = (key.id0 == yesId); // YES -> NO if id0 is YES
 
         // 1) Deterministic pool out (exact-in):
-        oppOut = _getAmountOut(yesIn, zeroForOne ? rYes : rNo, zeroForOne ? rNo : rYes, FEE_BPS);
+        oppOut = _getAmountOut(yesIn, rYes, rNo, FEE_BPS);
         require(oppOut >= oppOutMin, InsufficientLiquidity());
 
         // 2) Path-fair EV refund, floored to pot:
         uint256 fair = _fairRefundYesWithFee(rYes, rNo, yesIn, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
+        }
+
         uint256 potBal = m.pot;
         wstOut = fair > potBal ? potBal : fair;
         require(wstOut >= wstOutMin, InsufficientWst());
@@ -598,7 +674,7 @@ contract PredictionAMM is ERC6909Minimal {
             address(this),
             block.timestamp
         );
-        // Sweep any leftover YES (rounding/slack)
+        // Sweep any leftover YES (rounding/slack):
         uint256 retYes = ZAMM.recoverTransientBalance(address(this), yesId, address(this));
         if (retYes != 0) {
             _burn(address(this), yesId, retYes);
@@ -631,16 +707,20 @@ contract PredictionAMM is ERC6909Minimal {
 
         (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
         require(rYes > 0 && rNo > 0, PoolNotSeeded());
-        require(noIn < rNo, InsufficientLiquidity()); // guard
 
         bool zeroForOne = (key.id0 == noId); // NO -> YES if id0 is NO
 
         // 1) Deterministic pool out (exact-in):
-        oppOut = _getAmountOut(noIn, zeroForOne ? rNo : rYes, zeroForOne ? rYes : rNo, FEE_BPS);
+        oppOut = _getAmountOut(noIn, rNo, rYes, FEE_BPS);
         require(oppOut >= oppOutMin, InsufficientLiquidity());
 
         // 2) Path-fair EV refund, floored to pot:
         uint256 fair = _fairRefundNoWithFee(rYes, rNo, noIn, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
+        }
+
         uint256 potBal = m.pot;
         wstOut = fair > potBal ? potBal : fair;
         require(wstOut >= wstOutMin, InsufficientWst());
@@ -838,7 +918,7 @@ contract PredictionAMM is ERC6909Minimal {
         (uint256 rYes, uint256 rNo) = _poolReserves(key, marketId);
         require(yesOut < rYes && rYes > 0 && rNo > 0, InsufficientLiquidity());
 
-        // Order-invariant: pay NO (rNo) to get YES (rYes)
+        // Order-invariant: pay NO (rNo) to get YES (rYes):
         oppIn = _getAmountIn(yesOut, /*reserveIn=*/ rNo, /*reserveOut=*/ rYes, FEE_BPS);
 
         // p0 and p1 for display:
@@ -850,6 +930,10 @@ contract PredictionAMM is ERC6909Minimal {
         p1_den = rYesEnd + rNoEnd;
 
         wstInFair = _fairChargeYesWithFee(rYes, rNo, yesOut, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) wstInFair = mulDivUp(wstInFair, 10_000 + b, 10_000);
+        }
     }
 
     function quoteBuyNo(uint256 marketId, uint256 noOut)
@@ -878,6 +962,10 @@ contract PredictionAMM is ERC6909Minimal {
         p1_den = rYesEnd + rNoEnd;
 
         wstInFair = _fairChargeNoWithFee(rYes, rNo, noOut, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) wstInFair = mulDivUp(wstInFair, 10_000 + b, 10_000);
+        }
     }
 
     // ---------- SELL QUOTES ----------
@@ -895,11 +983,9 @@ contract PredictionAMM is ERC6909Minimal {
     {
         IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
         (uint256 rYes, uint256 rNo) = _poolReserves(key, marketId);
-        require(yesIn != 0 && rYes > 0 && rNo > 0 && yesIn < rYes, InsufficientLiquidity());
+        require(yesIn != 0 && rYes > 0 && rNo > 0, InsufficientLiquidity());
 
-        oppOut = _getAmountOut(
-            yesIn, (key.id0 == marketId) ? rYes : rNo, (key.id0 == marketId) ? rNo : rYes, FEE_BPS
-        );
+        oppOut = _getAmountOut(yesIn, rYes, rNo, FEE_BPS);
 
         p0_num = rNo; // pYES = rNo / (rYes + rNo)
         p0_den = rYes + rNo;
@@ -909,6 +995,10 @@ contract PredictionAMM is ERC6909Minimal {
         p1_den = rYesEnd + rNoEnd;
 
         uint256 fair = _fairRefundYesWithFee(rYes, rNo, yesIn, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
+        }
         uint256 potBal = markets[marketId].pot;
         wstOutFair = fair > potBal ? potBal : fair;
     }
@@ -929,11 +1019,9 @@ contract PredictionAMM is ERC6909Minimal {
         uint256 noId = getNoId(marketId);
         IZAMM.PoolKey memory key = _poolKey(yesId, noId);
         (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
-        require(noIn != 0 && rYes > 0 && rNo > 0 && noIn < rNo, InsufficientLiquidity());
+        require(noIn != 0 && rYes > 0 && rNo > 0, InsufficientLiquidity());
 
-        oppOut = _getAmountOut(
-            noIn, (key.id0 == noId) ? rNo : rYes, (key.id0 == noId) ? rYes : rNo, FEE_BPS
-        );
+        oppOut = _getAmountOut(noIn, rNo, rYes, FEE_BPS);
 
         p0_num = rYes; // pNO = rYes / (rYes + rNo)
         p0_den = rYes + rNo;
@@ -943,6 +1031,10 @@ contract PredictionAMM is ERC6909Minimal {
         p1_den = rYesEnd + rNoEnd;
 
         uint256 fair = _fairRefundNoWithFee(rYes, rNo, noIn, FEE_BPS);
+        {
+            uint256 b = _pmMultBps(marketId, rYes, rNo);
+            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
+        }
         uint256 potBal = markets[marketId].pot;
         wstOutFair = fair > potBal ? potBal : fair;
     }
@@ -1222,7 +1314,7 @@ contract PredictionAMM is ERC6909Minimal {
         pure
         returns (uint256 amountIn)
     {
-        // amountIn = floor( reserveIn * amountOut * 10000 / ((reserveOut - amountOut) * (10000 - feeBps)) ) + 1
+        if (amountOut == 0) return 0;
         uint256 numerator = reserveIn * amountOut * 10000;
         uint256 denominator = (reserveOut - amountOut) * (10000 - feeBps);
         amountIn = (numerator / denominator) + 1;
@@ -1233,7 +1325,6 @@ contract PredictionAMM is ERC6909Minimal {
         pure
         returns (uint256 amountOut)
     {
-        // amountOut = floor( amountIn*(10000 - feeBps)*reserveOut / (reserveIn*10000 + amountIn*(10000 - feeBps)) )
         uint256 amountInWithFee = amountIn * (10000 - feeBps);
         uint256 numerator = amountInWithFee * reserveOut;
         uint256 denominator = reserveIn * 10000 + amountInWithFee;
@@ -1287,7 +1378,7 @@ interface IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
-IZSTETH constant ZSTETH = IZSTETH(0x000000000088649055D9D23362B819A5cfF11f02);
+IZSTETH constant ZSTETH = IZSTETH(0x000000000077B216105413Dc45Dc6F6256577c7B);
 
 interface IZSTETH {
     function exactETHToWSTETH(address to) external payable returns (uint256 wstOut);

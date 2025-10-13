@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 
-import {PredictionAMM, IZAMM} from "../src/PredictionAMM.sol";
+import {PAMM, IZAMM} from "../src/PAMM.sol";
 
 // ============ External mainnet contracts on fork ============
 interface IERC20View {
@@ -33,7 +33,7 @@ contract PredictionAMM_MainnetFork is Test {
     address internal BOB = makeAddr("BOB");
 
     // CUT
-    PredictionAMM internal pm;
+    PAMM internal pm;
 
     // market ids
     string internal constant DESC = "Will Shanghai Disneyland close for a week in Q4?";
@@ -72,7 +72,7 @@ contract PredictionAMM_MainnetFork is Test {
         vm.deal(RESOLVER, 1 ether);
 
         // deploy CUT
-        pm = new PredictionAMM();
+        pm = new PAMM();
 
         // create & seed a market: seeds are outcome tokens, not wstETH
         (marketId, noId) = pm.createMarket(
@@ -185,7 +185,7 @@ contract PredictionAMM_MainnetFork is Test {
         pm.closeMarket(mid);
 
         // further trading must revert
-        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.expectRevert(PAMM.MarketClosed.selector);
         vm.prank(ALICE);
         pm.buyYesViaPool(mid, 100e9, false, type(uint256).max, type(uint256).max, ALICE);
 
@@ -255,13 +255,13 @@ contract PredictionAMM_MainnetFork is Test {
         WSTETH.approve(address(pm), type(uint256).max);
         w;
 
-        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.expectRevert(PAMM.MarketClosed.selector);
         vm.prank(ALICE);
         pm.buyYesViaPool(marketId, 100e9, false, type(uint256).max, type(uint256).max, ALICE);
     }
 
     function test_Revert_Resolve_BeforeClose() public {
-        vm.expectRevert(PredictionAMM.MarketNotClosed.selector);
+        vm.expectRevert(PAMM.MarketNotClosed.selector);
         vm.prank(RESOLVER);
         pm.resolve(marketId, true);
     }
@@ -302,7 +302,7 @@ contract PredictionAMM_MainnetFork is Test {
 
         // --- Bob (NO holder) is not a winner -> must revert ---
         vm.prank(BOB);
-        vm.expectRevert(PredictionAMM.NoWinningShares.selector);
+        vm.expectRevert(PAMM.NoWinningShares.selector);
         pm.claim(marketId, BOB);
     }
 
@@ -586,7 +586,7 @@ contract PredictionAMM_MainnetFork is Test {
         (uint256 oppInQ, uint256 wstInQ,,,,) = pm.quoteBuyYes(marketId, 2_500e9);
 
         // With oppInMax = oppInQ-1 => revert
-        vm.expectRevert(PredictionAMM.SlippageOppIn.selector);
+        vm.expectRevert(PAMM.SlippageOppIn.selector);
         vm.prank(ALICE);
         pm.buyYesViaPool(marketId, 2_500e9, false, type(uint256).max, oppInQ - 1, ALICE);
 
@@ -620,13 +620,13 @@ contract PredictionAMM_MainnetFork is Test {
 
     function test_ETHPath_Guards() public {
         // inIsETH but no value
-        vm.expectRevert(PredictionAMM.NoEth.selector);
+        vm.expectRevert(PAMM.NoEth.selector);
         vm.prank(ALICE);
         pm.buyYesViaPool(marketId, 1_000e9, true, 0, type(uint256).max, ALICE);
 
         // not inIsETH but value sent
         vm.deal(ALICE, 1 ether);
-        vm.expectRevert(PredictionAMM.EthNotAllowed.selector);
+        vm.expectRevert(PAMM.EthNotAllowed.selector);
         vm.prank(ALICE);
         pm.buyNoViaPool{value: 0.1 ether}(marketId, 1_000e9, false, 0, type(uint256).max, ALICE);
     }
@@ -637,7 +637,7 @@ contract PredictionAMM_MainnetFork is Test {
         oppInQ; // silence
 
         vm.deal(BOB, 1 wei);
-        vm.expectRevert(PredictionAMM.InsufficientZap.selector);
+        vm.expectRevert(PAMM.InsufficientZap.selector);
         vm.prank(BOB);
         pm.buyNoViaPool{value: 1}(marketId, 5_000e9, true, 0, type(uint256).max, BOB);
 
@@ -702,7 +702,7 @@ contract PredictionAMM_MainnetFork is Test {
         pm.claim(marketId, ALICE);
 
         // 2nd claim must revert (no shares)
-        vm.expectRevert(PredictionAMM.NoWinningShares.selector);
+        vm.expectRevert(PAMM.NoWinningShares.selector);
         vm.prank(ALICE);
         pm.claim(marketId, ALICE);
     }
@@ -757,13 +757,13 @@ contract PredictionAMM_MainnetFork is Test {
         );
 
         vm.warp(block.timestamp + 2 days);
-        vm.expectRevert(PredictionAMM.NoCirculating.selector);
+        vm.expectRevert(PAMM.NoCirculating.selector);
         vm.prank(RESOLVER);
         pm.resolve(mid, true); // either choice reverts
     }
 
     function test_SetResolverFeeBps_Bounds() public {
-        vm.expectRevert(PredictionAMM.FeeOverflow.selector);
+        vm.expectRevert(PAMM.FeeOverflow.selector);
         vm.prank(RESOLVER);
         pm.setResolverFeeBps(1001); // > 10%
 
@@ -775,7 +775,7 @@ contract PredictionAMM_MainnetFork is Test {
 
     function test_CloseMarket_Revert_NotClosable() public {
         // market from setUp() has canClose=false
-        vm.expectRevert(PredictionAMM.NotClosable.selector);
+        vm.expectRevert(PAMM.NotClosable.selector);
         vm.prank(RESOLVER);
         pm.closeMarket(marketId);
     }
@@ -786,10 +786,10 @@ contract PredictionAMM_MainnetFork is Test {
         (uint256 num, uint256 den) = pm.impliedYesProb(marketId);
         assertTrue(den > 0 && num < den);
         // Conservatively try a huge yesOut
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.expectRevert(PAMM.InsufficientLiquidity.selector);
         pm.quoteBuyYes(marketId, type(uint256).max / 2);
 
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.expectRevert(PAMM.InsufficientLiquidity.selector);
         pm.quoteBuyNo(marketId, type(uint256).max / 2);
     }
 
@@ -808,7 +808,7 @@ contract PredictionAMM_MainnetFork is Test {
         (uint256 oppInQ, uint256 wstInFairQ,,,,) = pm.quoteBuyYes(marketId, 2_000e9);
         oppInQ; // silence
 
-        vm.expectRevert(PredictionAMM.InsufficientWst.selector);
+        vm.expectRevert(PAMM.InsufficientWst.selector);
         vm.prank(ALICE);
         pm.buyYesViaPool(marketId, 2_000e9, false, wstInFairQ - 1, type(uint256).max, ALICE);
     }
@@ -832,7 +832,7 @@ contract PredictionAMM_MainnetFork is Test {
         vm.startPrank(BOB);
         ZSTETH.exactETHToWSTETH{value: 0.2 ether}(BOB);
         WSTETH.approve(address(pm), type(uint256).max);
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.expectRevert(PAMM.InsufficientLiquidity.selector);
         pm.buyNoViaPool(marketId, rNo, false, type(uint256).max, type(uint256).max, BOB);
         vm.stopPrank();
 
@@ -943,7 +943,7 @@ contract PredictionAMM_MainnetFork is Test {
         (uint256 oppInQ, uint256 wstInQ,,,,) = pm.quoteBuyNo(marketId, 3_000e9);
 
         // With oppInMax = oppInQ-1 => revert
-        vm.expectRevert(PredictionAMM.SlippageOppIn.selector);
+        vm.expectRevert(PAMM.SlippageOppIn.selector);
         vm.prank(BOB);
         pm.buyNoViaPool(marketId, 3_000e9, false, type(uint256).max, oppInQ - 1, BOB);
 
@@ -958,7 +958,7 @@ contract PredictionAMM_MainnetFork is Test {
 
     function test_CreateMarket_Revert_MarketExists() public {
         // Re-create same market should fail
-        vm.expectRevert(PredictionAMM.MarketExists.selector);
+        vm.expectRevert(PAMM.MarketExists.selector);
         pm.createMarket(DESC, RESOLVER, uint72(block.timestamp + 1 days), false, 1e12, 1e12);
     }
 
@@ -967,7 +967,7 @@ contract PredictionAMM_MainnetFork is Test {
             "late-close", RESOLVER, uint72(block.timestamp + 1 days), true, 1e12, 1e12
         );
         vm.warp(block.timestamp + 2 days);
-        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.expectRevert(PAMM.MarketClosed.selector);
         vm.prank(RESOLVER);
         pm.closeMarket(mid);
     }
@@ -984,13 +984,13 @@ contract PredictionAMM_MainnetFork is Test {
         vm.prank(RESOLVER);
         pm.resolve(marketId, true);
 
-        vm.expectRevert(PredictionAMM.AlreadyResolved.selector);
+        vm.expectRevert(PAMM.AlreadyResolved.selector);
         vm.prank(RESOLVER);
         pm.resolve(marketId, true);
     }
 
     function test_Resolve_Revert_ClaimBeforeResolve() public {
-        vm.expectRevert(PredictionAMM.MarketNotResolved.selector);
+        vm.expectRevert(PAMM.MarketNotResolved.selector);
         vm.prank(ALICE);
         pm.claim(marketId, ALICE);
     }
@@ -1017,16 +1017,16 @@ contract PredictionAMM_MainnetFork is Test {
 
         // Bob (NO holder) is loser ⇒ claim should revert
         vm.prank(BOB);
-        vm.expectRevert(PredictionAMM.NoWinningShares.selector);
+        vm.expectRevert(PAMM.NoWinningShares.selector);
         pm.claim(marketId, BOB);
     }
 
     function test_Quote_UnseededMarket_Reverts() public {
         (uint256 mid,) =
             pm.createMarket("no-seed", RESOLVER, uint72(block.timestamp + 7 days), false, 0, 0);
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.expectRevert(PAMM.InsufficientLiquidity.selector);
         pm.quoteBuyYes(mid, 1e9);
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.expectRevert(PAMM.InsufficientLiquidity.selector);
         pm.quoteBuyNo(mid, 1e9);
     }
 
@@ -1602,7 +1602,7 @@ contract PredictionAMM_MainnetFork is Test {
         _warpPastClose();
 
         (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellYes(marketId, 1_000e9);
-        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.expectRevert(PAMM.MarketClosed.selector);
         vm.prank(ALICE);
         pm.sellYesViaPool(marketId, 1_000e9, wstOutQ, oppOutQ, ALICE);
     }
@@ -1645,30 +1645,6 @@ contract PredictionAMM_MainnetFork is Test {
         assertEq(oppOut, oppOutQ, "oppOut equals quote");
     }
 
-    function test_QuoteSell_InvalidSize_Reverts() public {
-        // Read current reserves to construct boundary case
-        IZAMM.PoolKey memory key = IZAMM.PoolKey({
-            id0: marketId < noId ? marketId : noId,
-            id1: marketId < noId ? noId : marketId,
-            token0: address(pm),
-            token1: address(pm),
-            feeOrHook: 10
-        });
-        (uint112 r0, uint112 r1,,,,,) = IZAMM(ZAMM_ADDR).pools(
-            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)))
-        );
-        (uint256 rYes, uint256 rNo) =
-            (key.id0 == marketId) ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
-
-        // yesIn >= rYes should revert inside quoteSellYes
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
-        pm.quoteSellYes(marketId, rYes);
-
-        // noIn >= rNo should revert inside quoteSellNo
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
-        pm.quoteSellNo(marketId, rNo);
-    }
-
     function test_SellYes_SlippageBounds() public {
         // Seed YES
         vm.startPrank(ALICE);
@@ -1681,12 +1657,12 @@ contract PredictionAMM_MainnetFork is Test {
         (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellYes(marketId, sellAmt);
 
         // Too high oppOutMin => revert
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.expectRevert(PAMM.InsufficientLiquidity.selector);
         vm.prank(ALICE);
         pm.sellYesViaPool(marketId, sellAmt, 0, oppOutQ + 1, ALICE);
 
         // Too high wstOutMin => revert (pot can't pay more than fair)
-        vm.expectRevert(PredictionAMM.InsufficientWst.selector);
+        vm.expectRevert(PAMM.InsufficientWst.selector);
         vm.prank(ALICE);
         pm.sellYesViaPool(marketId, sellAmt, wstOutQ + 1, 0, ALICE);
 
@@ -1706,11 +1682,11 @@ contract PredictionAMM_MainnetFork is Test {
         uint256 sellAmt = 900e9;
         (uint256 oppOutQ, uint256 wstOutQ,,,,) = pm.quoteSellNo(marketId, sellAmt);
 
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
+        vm.expectRevert(PAMM.InsufficientLiquidity.selector);
         vm.prank(BOB);
         pm.sellNoViaPool(marketId, sellAmt, 0, oppOutQ + 1, BOB);
 
-        vm.expectRevert(PredictionAMM.InsufficientWst.selector);
+        vm.expectRevert(PAMM.InsufficientWst.selector);
         vm.prank(BOB);
         pm.sellNoViaPool(marketId, sellAmt, wstOutQ + 1, 0, BOB);
 
@@ -1865,40 +1841,22 @@ contract PredictionAMM_MainnetFork is Test {
         (,,,,,,,, uint72 closeTs,,,,,) = pm.getMarket(marketId);
         vm.warp(uint256(closeTs) + 1);
 
-        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.expectRevert(PAMM.MarketClosed.selector);
         pm.sellYesViaPool(marketId, 1_000e9, 0, 0, ALICE);
 
-        vm.expectRevert(PredictionAMM.MarketClosed.selector);
+        vm.expectRevert(PAMM.MarketClosed.selector);
         pm.sellNoViaPool(marketId, 1_000e9, 0, 0, ALICE);
     }
 
     /// Zero-amount sells revert.
     function test_SellYes_AmountZero_Reverts() public {
-        vm.expectRevert(PredictionAMM.AmountZero.selector);
+        vm.expectRevert(PAMM.AmountZero.selector);
         pm.sellYesViaPool(marketId, 0, 0, 0, ALICE);
     }
 
     function test_SellNo_AmountZero_Reverts() public {
-        vm.expectRevert(PredictionAMM.AmountZero.selector);
+        vm.expectRevert(PAMM.AmountZero.selector);
         pm.sellNoViaPool(marketId, 0, 0, 0, ALICE);
-    }
-
-    /// Invalid sell sizes in quotes (>= reserve) revert with InsufficientLiquidity.
-    function test_QuoteSell_InvalidSize_Reverts_BothSides() public {
-        // fetch current reserves via getMarket()
-        (,,,,,,,,,, uint256 rYes, uint256 rNo,,) = pm.getMarket(marketId);
-
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
-        pm.quoteSellYes(marketId, rYes);
-
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
-        pm.quoteSellNo(marketId, rNo);
-
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
-        pm.quoteSellYes(marketId, 0);
-
-        vm.expectRevert(PredictionAMM.InsufficientLiquidity.selector);
-        pm.quoteSellNo(marketId, 0);
     }
 
     function test_BuyYes_Cushion_NoResiduals_NetSupplyEqualsActualIn() public {
@@ -2010,7 +1968,7 @@ contract PredictionAMM_MainnetFork is Test {
         vm.stopPrank();
 
         // --- Try stale oppInMax (expect revert), then re-quote & pass ---
-        vm.expectRevert(PredictionAMM.SlippageOppIn.selector);
+        vm.expectRevert(PAMM.SlippageOppIn.selector);
         vm.prank(ALICE);
         pm.buyYesViaPool(
             marketId,
@@ -2029,72 +1987,332 @@ contract PredictionAMM_MainnetFork is Test {
     }
 
     function test_CreateMarket_Then_BuyNo_ETHPath_And_BuyNoAgain() public {
-    // --- Ensure close is in the future so createMarket won't revert ---
-    vm.warp(1_760_005_400); // any ts < 1_760_009_100 is OK
+        // --- Ensure close is in the future so createMarket won't revert ---
+        vm.warp(1_760_005_400); // any ts < 1_760_009_100 is OK
 
-    // --- Create the market with the exact params you provided ---
-    string memory desc = "ipfs://QmP7MrrqoEUNDfQG2q6NU3WFajwRecdab35iYLZ4uBKwZK";
-    address resolver = 0x8528515759a58599219452b4c95Bcbc4aA6BAf6b;
-    uint72  closeTs  = 1_760_009_100;
-    bool    canClose = true;
-    uint256 seedYes  = 1e18;
-    uint256 seedNo   = 1e18;
+        // --- Create the market with the exact params you provided ---
+        string memory desc = "ipfs://QmP7MrrqoEUNDfQG2q6NU3WFajwRecdab35iYLZ4uBKwZK";
+        address resolver = 0x8528515759a58599219452b4c95Bcbc4aA6BAf6b;
+        uint72 closeTs = 1_760_009_100;
+        bool canClose = true;
+        uint256 seedYes = 1e18;
+        uint256 seedNo = 1e18;
 
-    (uint256 marketId, uint256 noId) =
-        pm.createMarket(desc, resolver, closeTs, canClose, seedYes, seedNo);
+        (uint256 marketId, uint256 noId) =
+            pm.createMarket(desc, resolver, closeTs, canClose, seedYes, seedNo);
 
-    assertTrue(pm.tradingOpen(marketId), "trading should be open");
+        assertTrue(pm.tradingOpen(marketId), "trading should be open");
 
-    // --- First NO buy via ETH path with the exact params+ETH you gave ---
-    uint256 noOut1   = 1_000_000_000_000_000;          // 1e15
-    bool    inIsETH1 = true;
-    uint256 wstMax1  = 502_701_434_479_773;            // wstInMax
-    uint256 oppMax1  = 1_006_912_818_724_631;          // oppInMax
-    address buyer    = 0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20;
-    uint256 ethSend1 = 703_782_008_271_682;            // 0.000703782008271682 ETH
+        // --- First NO buy via ETH path with the exact params+ETH you gave ---
+        uint256 noOut1 = 1_000_000_000_000_000; // 1e15
+        bool inIsETH1 = true;
+        uint256 wstMax1 = 502_701_434_479_773; // wstInMax
+        uint256 oppMax1 = 1_006_912_818_724_631; // oppInMax
+        address buyer = 0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20;
+        uint256 ethSend1 = 703_782_008_271_682; // 0.000703782008271682 ETH
 
-    vm.deal(buyer, ethSend1);
-    vm.prank(buyer);
-    (uint256 wstSpent1, uint256 oppInUsed1) =
-        pm.buyNoViaPool{value: ethSend1}(marketId, noOut1, inIsETH1, wstMax1, oppMax1, buyer);
+        vm.deal(buyer, ethSend1);
+        vm.prank(buyer);
+        (uint256 wstSpent1, uint256 oppInUsed1) =
+            pm.buyNoViaPool{value: ethSend1}(marketId, noOut1, inIsETH1, wstMax1, oppMax1, buyer);
 
-    assertLe(wstSpent1, wstMax1, "wst spent > cap");
-    assertLe(oppInUsed1, oppMax1, "opp in > cap");
-    assertEq(pm.balanceOf(buyer, noId), noOut1, "wrong NO received (first buy)");
+        assertLe(wstSpent1, wstMax1, "wst spent > cap");
+        assertLe(oppInUsed1, oppMax1, "opp in > cap");
+        assertEq(pm.balanceOf(buyer, noId), noOut1, "wrong NO received (first buy)");
 
-    // --- Second NO buy via ETH path: fresh quote + robust cushions ---
-    uint256 noOut2 = 500_000_000_000_000; // 5e14
+        // --- Second NO buy via ETH path: fresh quote + robust cushions ---
+        uint256 noOut2 = 500_000_000_000_000; // 5e14
 
-    (uint256 oppInQ, uint256 wstFairQ,,,,) = pm.quoteBuyNo(marketId, noOut2);
+        (uint256 oppInQ, uint256 wstFairQ,,,,) = pm.quoteBuyNo(marketId, noOut2);
 
-    // Robust opp cushion identical to the conservative scheme we used earlier
-    uint256 paddedOpp = (oppInQ * (10_000 + (10 * 2 + 3)) + 9_999) / 10_000 + 5; // fee*2 + 3 bps + 5 wei
-    if (paddedOpp < oppInQ + 3) paddedOpp = oppInQ + 3;
+        // Robust opp cushion identical to the conservative scheme we used earlier
+        uint256 paddedOpp = (oppInQ * (10_000 + (10 * 2 + 3)) + 9_999) / 10_000 + 5; // fee*2 + 3 bps + 5 wei
+        if (paddedOpp < oppInQ + 3) paddedOpp = oppInQ + 3;
 
-    // IMPORTANT FIX:
-    // The previous version underfunded the zap (ETH->wst), causing InsufficientZap().
-    // We intentionally overfund the ETH sent relative to wstFairQ; the contract will
-    // only use what it needs and return excess as wstETH. 2x is plenty on mainnet fork.
-    uint256 ethSend2 = wstFairQ * 2;
-    if (ethSend2 == 0) ethSend2 = wstFairQ + 1;
+        // IMPORTANT FIX:
+        // The previous version underfunded the zap (ETH->wst), causing InsufficientZap().
+        // We intentionally overfund the ETH sent relative to wstFairQ; the contract will
+        // only use what it needs and return excess as wstETH. 2x is plenty on mainnet fork.
+        uint256 ethSend2 = wstFairQ * 2;
+        if (ethSend2 == 0) ethSend2 = wstFairQ + 1;
 
-    // fund buyer with enough ETH for the second send
-    vm.deal(buyer, address(buyer).balance + ethSend2);
+        // fund buyer with enough ETH for the second send
+        vm.deal(buyer, address(buyer).balance + ethSend2);
 
-    vm.prank(buyer);
-    (uint256 wstSpent2, uint256 oppInUsed2) =
-        pm.buyNoViaPool{value: ethSend2}(marketId, noOut2, true, type(uint256).max, paddedOpp, buyer);
+        vm.prank(buyer);
+        (uint256 wstSpent2, uint256 oppInUsed2) = pm.buyNoViaPool{value: ethSend2}(
+            marketId, noOut2, true, type(uint256).max, paddedOpp, buyer
+        );
 
-    assertLe(oppInUsed2, paddedOpp, "opp in exceeded cushion");
-    assertEq(pm.balanceOf(buyer, noId), noOut1 + noOut2, "wrong NO total after second buy");
+        assertLe(oppInUsed2, paddedOpp, "opp in exceeded cushion");
+        assertEq(pm.balanceOf(buyer, noId), noOut1 + noOut2, "wrong NO total after second buy");
 
-    // Optional sanity: the pool should not have consumed more wst than the fair cap implies
-    assertLe(wstSpent2, ethSend2, "spent more wst than ETH supplied via zap");
-}
+        // Optional sanity: the pool should not have consumed more wst than the fair cap implies
+        assertLe(wstSpent2, ethSend2, "spent more wst than ETH supplied via zap");
+    }
 
+    // ===============================
+    // pm-AMM EV bump: targeted tests
+    // ===============================
 
+    function test_PM_Tuning_Finalized_AtCreation() public {
+        PAMM.PMTuning memory t =
+            PAMM.PMTuning({lateRampStart: 1 days, lateRampMaxBps: 200, extremeMaxBps: 300});
+        (uint256 mid,) = pm.createMarketWithPMTuning(
+            "finalized",
+            RESOLVER,
+            uint72(block.timestamp + 10 days),
+            false,
+            1_000_000e9,
+            1_000_000e9,
+            t
+        );
+        assertTrue(pm.pmTuningFinal(mid), "tuning is finalized");
+        // sanity: getter returns same fields
+        (uint32 s, uint16 lm, uint16 em) = pm.pmTuning(mid);
+        assertEq(s, t.lateRampStart);
+        assertEq(lm, t.lateRampMaxBps);
+        assertEq(em, t.extremeMaxBps);
+    }
 
+    // ================
+    // Extra confidence
+    // ================
 
+    // Re-declare a couple events for expectEmit
+    event Closed(uint256 indexed marketId, uint256 ts, address indexed by);
+    event PMTuningSet(uint256 indexed marketId, PAMM.PMTuning t, bool finalized);
+    event Bought(address indexed buyer, uint256 indexed id, uint256 sharesOut, uint256 wstIn);
+
+    function test_PM_TuningCaps_Revert_WhenOverLimit() public {
+        PAMM.PMTuning memory bad1 =
+            PAMM.PMTuning({lateRampStart: 1 days, lateRampMaxBps: 2001, extremeMaxBps: 0});
+        vm.expectRevert(PAMM.TuningBadCaps.selector);
+        pm.createMarketWithPMTuning(
+            "caps1", RESOLVER, uint72(block.timestamp + 5 days), false, 1e12, 1e12, bad1
+        );
+
+        PAMM.PMTuning memory bad2 =
+            PAMM.PMTuning({lateRampStart: 0, lateRampMaxBps: 0, extremeMaxBps: 2001});
+        vm.expectRevert(PAMM.TuningBadCaps.selector);
+        pm.createMarketWithPMTuning(
+            "caps2", RESOLVER, uint72(block.timestamp + 5 days), false, 1e12, 1e12, bad2
+        );
+    }
+
+    function test_PM_DefaultTuning_NoBump_EvenNearClose() public {
+        (uint256 mid,) = pm.createMarket(
+            "no-bump", RESOLVER, uint72(block.timestamp + 3 days), false, 1_000_000e9, 1_000_000e9
+        );
+
+        // fund + approve
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        // move near close; with default tuning we expect exact fair charge
+        (,,,, uint72 closeTs,,) = pm.markets(mid);
+        vm.warp(uint256(closeTs) - 1);
+        (uint256 oppQ, uint256 fairQ,,,,) = pm.quoteBuyYes(mid, 2_000e9);
+
+        vm.prank(ALICE);
+        (uint256 wIn,) = pm.buyYesViaPool(mid, 2_000e9, false, type(uint256).max, oppQ, ALICE);
+
+        assertLe(wIn > fairQ ? wIn - fairQ : fairQ - wIn, 1, "no bump when tuning unset");
+        // also sanity: tuning view is zeros
+        (uint32 s, uint16 lm, uint16 em) = pm.pmTuning(mid);
+        assertEq(s, 0);
+        assertEq(lm, 0);
+        assertEq(em, 0);
+    }
+
+    function test_InvalidReceiver_TransferBlocks_ToPMandZAMM() public {
+        // give ALICE some YES
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(marketId, 1e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+
+        vm.expectRevert(PAMM.InvalidReceiver.selector);
+        vm.prank(ALICE);
+        pm.transfer(address(pm), marketId, 1);
+
+        vm.expectRevert(PAMM.InvalidReceiver.selector);
+        vm.prank(ALICE);
+        pm.transfer(ZAMM_ADDR, marketId, 1);
+
+        vm.expectRevert(PAMM.InvalidReceiver.selector);
+        vm.prank(ALICE);
+        pm.transferFrom(ALICE, address(pm), marketId, 1);
+
+        vm.expectRevert(PAMM.InvalidReceiver.selector);
+        vm.prank(ALICE);
+        pm.transferFrom(ALICE, ZAMM_ADDR, marketId, 1);
+    }
+
+    function test_OnlyResolver_CanCloseAndResolve_RevertsForOthers() public {
+        vm.expectRevert(PAMM.OnlyResolver.selector);
+        vm.prank(ALICE);
+        pm.closeMarket(marketId);
+
+        _warpPastClose();
+        vm.expectRevert(PAMM.OnlyResolver.selector);
+        vm.prank(BOB);
+        pm.resolve(marketId, true);
+    }
+
+    function test_CreateMarket_InputValidation_Reverts() public {
+        // invalid resolver
+        vm.expectRevert(PAMM.InvalidResolver.selector);
+        pm.createMarket("x", address(0), uint72(block.timestamp + 1 days), false, 1, 1);
+
+        // invalid close (<= now)
+        vm.expectRevert(PAMM.InvalidClose.selector);
+        pm.createMarket("y", RESOLVER, uint72(block.timestamp), false, 1, 1);
+
+        // seed only one side => revert
+        vm.expectRevert(PAMM.SeedBothSides.selector);
+        pm.createMarket("z", RESOLVER, uint72(block.timestamp + 1 days), false, 1_000, 0);
+        vm.expectRevert(PAMM.SeedBothSides.selector);
+        pm.createMarket("z2", RESOLVER, uint72(block.timestamp + 1 days), false, 0, 1_000);
+    }
+
+    function test_SupportsInterface_ERC165_And_Custom() public view {
+        // ERC165
+        assertTrue(pm.supportsInterface(0x01ffc9a7));
+        // ERC6909Minimal's interface id used in contract (0x0f632fb3)
+        assertTrue(pm.supportsInterface(0x0f632fb3));
+        // random should be false
+        assertFalse(pm.supportsInterface(0xffffffff));
+    }
+
+    function test_SetOperator_EnablesTransferFrom_WithoutAllowance() public {
+        // give ALICE YES
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.25 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(marketId, 2e9, false, type(uint256).max, type(uint256).max, ALICE);
+        // set BOB as operator
+        pm.setOperator(BOB, true);
+        vm.stopPrank();
+
+        uint256 bobBefore = pm.balanceOf(BOB, marketId);
+        vm.prank(BOB);
+        pm.transferFrom(ALICE, BOB, marketId, 1e9);
+        assertEq(pm.balanceOf(BOB, marketId), bobBefore + 1e9, "operator pull works");
+    }
+
+    function test_CloseMarket_SetsCloseAndEmitsEvent_AndBlocksSell() public {
+        // create closable market
+        (uint256 mid,) = pm.createMarket(
+            "closable", RESOLVER, uint72(block.timestamp + 10 days), true, 1e12, 1e12
+        );
+        // give ALICE some YES
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(mid, 1e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+
+        // expect Closed event
+        vm.expectEmit(true, true, true, true);
+        emit Closed(mid, block.timestamp + 1, RESOLVER); // ts checked loosely by Foundry
+        vm.warp(block.timestamp + 1);
+        vm.prank(RESOLVER);
+        pm.closeMarket(mid);
+
+        // check timestamp wrote through and sells are blocked
+        (,,,, uint72 closeTs,,) = pm.markets(mid);
+        assertEq(closeTs, uint72(block.timestamp), "close set to now");
+
+        vm.expectRevert(PAMM.MarketClosed.selector);
+        vm.prank(ALICE);
+        pm.sellYesViaPool(mid, 1e7, 0, 0, ALICE);
+    }
+
+    function test_Claim_ToDifferentRecipient() public {
+        // ALICE buys YES
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.5 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(marketId, 5e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+
+        _warpPastClose();
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, true);
+
+        uint256 pps = _pps(marketId);
+        uint256 bal = pm.balanceOf(ALICE, marketId);
+        uint256 expectPayout = mulDiv(bal, pps, 1e18);
+
+        uint256 bobBefore = WSTETH.balanceOf(BOB);
+        vm.prank(ALICE);
+        pm.claim(marketId, BOB);
+        assertEq(WSTETH.balanceOf(BOB) - bobBefore, expectPayout, "payout routed to 'to'");
+        assertEq(pm.balanceOf(ALICE, marketId), 0, "shares burned");
+    }
+
+    function test_CreateMarketWithPMTuning_EmitsEvent_And_BoughtEmits() public {
+        PAMM.PMTuning memory t =
+            PAMM.PMTuning({lateRampStart: 1 days, lateRampMaxBps: 300, extremeMaxBps: 400});
+
+        // Deterministic ids (same as the contract will compute)
+        string memory DESCx = "emit-test";
+        uint256 expectedMid = pm.getMarketId(DESCx, RESOLVER);
+        uint256 expectedNoId = pm.getNoId(expectedMid);
+
+        // Record all logs during creation so we can search for the ones we care about.
+        vm.recordLogs();
+        (uint256 mid,) = pm.createMarketWithPMTuning(
+            DESCx, RESOLVER, uint72(block.timestamp + 10 days), false, 1e12, 1e12, t
+        );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Event signatures
+        bytes32 CREATED_SIG = keccak256("Created(uint256,uint256,string,address)");
+        bytes32 TUNINGSET_SIG = keccak256("PMTuningSet(uint256,(uint32,uint16,uint16),bool)");
+
+        bool sawCreated = false;
+        bool sawTuning = false;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            // Created(marketId indexed, noId indexed, description, resolver)
+            if (logs[i].topics.length > 0 && logs[i].topics[0] == CREATED_SIG) {
+                assertEq(logs[i].topics[1], bytes32(expectedMid), "Created.marketId mismatch");
+                assertEq(logs[i].topics[2], bytes32(expectedNoId), "Created.noId mismatch");
+                sawCreated = true;
+            }
+            // PMTuningSet(marketId indexed, PMTuning t, bool finalized)
+            if (logs[i].topics.length > 0 && logs[i].topics[0] == TUNINGSET_SIG) {
+                assertEq(logs[i].topics[1], bytes32(expectedMid), "PMTuningSet.marketId mismatch");
+
+                (PAMM.PMTuning memory tDecoded, bool finalized) =
+                    abi.decode(logs[i].data, (PAMM.PMTuning, bool));
+
+                assertEq(tDecoded.lateRampStart, t.lateRampStart, "lateRampStart");
+                assertEq(tDecoded.lateRampMaxBps, t.lateRampMaxBps, "lateRampMaxBps");
+                assertEq(tDecoded.extremeMaxBps, t.extremeMaxBps, "extremeMaxBps");
+                assertTrue(finalized, "finalized");
+                sawTuning = true;
+            }
+        }
+        assertTrue(sawCreated, "Created not emitted");
+        assertTrue(sawTuning, "PMTuningSet not emitted");
+
+        // ---- Verify a Bought event on a subsequent buy (separate tx → expectEmit works) ----
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.2 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        vm.expectEmit(true, true, false, false); // check buyer + id topics only
+        emit Bought(ALICE, mid, 0, 0);
+        vm.prank(ALICE);
+        pm.buyYesViaPool(mid, 1e9, false, type(uint256).max, type(uint256).max, ALICE);
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Small helpers to read pot/pps and balances without exposing internal fns
@@ -2160,6 +2378,273 @@ contract PredictionAMM_MainnetFork is Test {
         _noId = pm.getNoId(yesId);
         yesBal = pm.balanceOf(who, yesId);
         noBal = pm.balanceOf(who, _noId);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Helpers mirroring contract math (for expectations in tests)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    function _mulDivUp(uint256 x, uint256 y, uint256 d) internal pure returns (uint256) {
+        unchecked {
+            uint256 z = x * y;
+            return z / d + (z % d == 0 ? 0 : 1);
+        }
+    }
+
+    function _price1e18(uint256 num, uint256 den) internal pure returns (uint256) {
+        return mulDiv(num, 1e18, den);
+    }
+
+    function _getAmountOut_test(
+        uint256 amountIn,
+        uint256 reserveIn,
+        uint256 reserveOut,
+        uint256 feeBps
+    ) internal pure returns (uint256 amountOut) {
+        uint256 amountInWithFee = amountIn * (10000 - feeBps);
+        uint256 numerator = amountInWithFee * reserveOut;
+        uint256 denominator = reserveIn * 10000 + amountInWithFee;
+        amountOut = numerator / denominator;
+    }
+
+    function _fairChargeYesWithFee_test(uint256 rYes, uint256 rNo, uint256 yesOut, uint256 feeBps)
+        internal
+        pure
+        returns (uint256 charge)
+    {
+        uint256 p0 = _price1e18(rNo, rYes + rNo);
+
+        uint256 outHalf = yesOut / 2;
+        uint256 inHalf = _getAmountIn(outHalf, rNo, rYes, feeBps);
+        uint256 rYesMid = rYes - outHalf;
+        uint256 rNoMid = rNo + inHalf;
+        uint256 pMid = _price1e18(rNoMid, rYesMid + rNoMid);
+
+        uint256 inAll = _getAmountIn(yesOut, rNo, rYes, feeBps);
+        uint256 rYesEnd = rYes - yesOut;
+        uint256 rNoEnd = rNo + inAll;
+        uint256 p1 = _price1e18(rNoEnd, rYesEnd + rNoEnd);
+
+        uint256 sum = p0 + (pMid << 2) + p1;
+        charge = _mulDivUp(yesOut, sum, 6 * 1e18);
+    }
+
+    function _fairRefundYesWithFee_test(uint256 rYes, uint256 rNo, uint256 yesIn, uint256 feeBps)
+        internal
+        pure
+        returns (uint256 refund)
+    {
+        uint256 p0 = _price1e18(rNo, rYes + rNo);
+
+        uint256 inHalf = yesIn / 2;
+        uint256 outHalf = _getAmountOut_test(inHalf, rYes, rNo, feeBps);
+        uint256 rYesMid = rYes + inHalf;
+        uint256 rNoMid = rNo - outHalf;
+        uint256 pMid = _price1e18(rNoMid, rYesMid + rNoMid);
+
+        uint256 outAll = _getAmountOut_test(yesIn, rYes, rNo, feeBps);
+        uint256 rYesEnd = rYes + yesIn;
+        uint256 rNoEnd = rNo - outAll;
+        uint256 p1 = _price1e18(rNoEnd, rYesEnd + rNoEnd);
+
+        uint256 sum = p0 + (pMid << 2) + p1;
+        refund = mulDiv(yesIn, sum, 6 * 1e18);
+    }
+
+    function _pmBps(uint256 mid) internal view returns (uint256 bps) {
+        // getMarket returns:
+        // 0 yesSupply, 1 noSupply, 2 resolver, 3 resolved, 4 outcome, 5 pot, 6 pps,
+        // 7 desc, 8 closeTs, 9 canClose, 10 rYes, 11 rNo, 12 pYes_num, 13 pYes_den
+        (,,,,,,,, uint72 closeTs,, uint256 rYes, uint256 rNo,,) = pm.getMarket(mid);
+        (uint32 lateStart, uint16 lateMax, uint16 extremeMax) = pm.pmTuning(mid);
+
+        if ((lateStart | lateMax | extremeMax) == 0) return 0;
+
+        // time ramp
+        if (lateStart != 0) {
+            if (block.timestamp >= closeTs) {
+                bps += lateMax;
+            } else if (block.timestamp > uint256(closeTs) - lateStart) {
+                uint256 elapsed = block.timestamp - (uint256(closeTs) - lateStart);
+                bps += (uint256(lateMax) * elapsed) / lateStart;
+            }
+        }
+
+        // extremes ramp
+        if (extremeMax != 0) {
+            uint256 den = rYes + rNo;
+            if (den != 0) {
+                uint256 p1e18 = mulDiv(rNo, 1e18, den); // pYES ≈ rNO/(rYES+rNO)
+                uint256 dist = p1e18 > 5e17 ? (p1e18 - 5e17) : (5e17 - p1e18); // |p-0.5|
+                bps += mulDiv(uint256(extremeMax), dist, 5e17);
+            }
+        }
+    }
+
+    function _readReserves(uint256 mid)
+        internal
+        view
+        returns (uint256 rYes, uint256 rNo, uint256 poolId, uint32 tsLast)
+    {
+        (poolId, rYes, rNo, tsLast,,) = pm.getPool(mid);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Corrected tests
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    function test_PM_TimeRamp_BuyYes_BumpIncreasesTowardClose() public {
+        (uint256 mid,) = pm.createMarketWithPMTuning(
+            "time-ramp",
+            RESOLVER,
+            uint72(block.timestamp + 3 days),
+            false,
+            1e12,
+            1e12,
+            PAMM.PMTuning({lateRampStart: 2 days, lateRampMaxBps: 300, extremeMaxBps: 0})
+        );
+
+        uint256 out = 200e9; // < rYes (1e12)
+
+        // Far from window → no bump
+        vm.warp(block.timestamp + 1 hours);
+        (uint256 rYes0, uint256 rNo0,,) = _readReserves(mid);
+        (, uint256 w0,,,,) = pm.quoteBuyYes(mid, out);
+        uint256 base0 = _fairChargeYesWithFee_test(rYes0, rNo0, out, 10);
+        assertLe(w0 > base0 ? w0 - base0 : base0 - w0, 1, "no bump far from window");
+
+        // Mid-window
+        (,,,,,,,, uint72 closeTs,,,,,) = pm.getMarket(mid);
+        vm.warp(uint256(closeTs) - 1 days);
+        (uint256 rYes1, uint256 rNo1,,) = _readReserves(mid);
+        (, uint256 w1,,,,) = pm.quoteBuyYes(mid, out);
+        uint256 base1 = _fairChargeYesWithFee_test(rYes1, rNo1, out, 10);
+        uint256 bpsMid = _pmBps(mid);
+        uint256 exp1 = _mulDivUp(base1, 10_000 + bpsMid, 10_000);
+        assertLe(w1 > exp1 ? w1 - exp1 : exp1 - w1, 1, "mid-window bump applied");
+
+        // At/after close → full bump
+        vm.warp(uint256(closeTs) + 1);
+        (uint256 rYes2, uint256 rNo2,,) = _readReserves(mid);
+        (, uint256 w2,,,,) = pm.quoteBuyYes(mid, out);
+        uint256 base2 = _fairChargeYesWithFee_test(rYes2, rNo2, out, 10);
+        uint256 bpsFull = _pmBps(mid);
+        uint256 exp2 = _mulDivUp(base2, 10_000 + bpsFull, 10_000);
+        assertLe(w2 > exp2 ? w2 - exp2 : exp2 - w2, 1, "full time bump applied");
+    }
+
+    function test_PM_Extremes_BuyYes_BumpGrowsWithDistanceFromHalf() public {
+        (uint256 mid,) = pm.createMarketWithPMTuning(
+            "extremes-only",
+            RESOLVER,
+            uint72(block.timestamp + 30 days),
+            false,
+            1e12,
+            1e12,
+            PAMM.PMTuning({lateRampStart: 0, lateRampMaxBps: 0, extremeMaxBps: 400})
+        );
+
+        uint256 out = 300e9; // < rYes (1e12)
+
+        // Near 50/50
+        (uint256 rYes0, uint256 rNo0,,) = _readReserves(mid);
+        (, uint256 w0,,,,) = pm.quoteBuyYes(mid, out);
+        uint256 base0 = _fairChargeYesWithFee_test(rYes0, rNo0, out, 10);
+        uint256 bps0 = _pmBps(mid);
+        uint256 exp0 = _mulDivUp(base0, 10_000 + bps0, 10_000);
+        assertLe(w0 > exp0 ? w0 - exp0 : exp0 - w0, 1, "initial extremes bump");
+
+        // Push away from 0.5 by buying NO (keep < rNo)
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 0.5 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        (uint256 oppInQ, uint256 wstFairQ,,,,) = pm.quoteBuyNo(mid, 600e9); // < rNo (1e12)
+        pm.buyNoViaPool(mid, 600e9, false, wstFairQ, oppInQ, ALICE);
+        vm.stopPrank();
+
+        (uint256 rYes1, uint256 rNo1,,) = _readReserves(mid);
+        (, uint256 w1,,,,) = pm.quoteBuyYes(mid, out);
+        uint256 base1 = _fairChargeYesWithFee_test(rYes1, rNo1, out, 10);
+        uint256 bps1 = _pmBps(mid);
+        uint256 exp1 = _mulDivUp(base1, 10_000 + bps1, 10_000);
+        assertLe(w1 > exp1 ? w1 - exp1 : exp1 - w1, 1, "extremes bump applied");
+        assertGt(bps1, bps0, "bump grows with |p-0.5|");
+    }
+
+    function test_PM_SellYes_BumpReducesRefund_AsDesigned() public {
+        (uint256 mid,) = pm.createMarketWithPMTuning(
+            "sell-bump",
+            RESOLVER,
+            uint72(block.timestamp + 10 days),
+            false,
+            1e12,
+            1e12,
+            PAMM.PMTuning({lateRampStart: 3 days, lateRampMaxBps: 200, extremeMaxBps: 150})
+        );
+
+        // Put EV in pot and acquire YES (keep < rYes)
+        vm.startPrank(ALICE);
+        ZSTETH.exactETHToWSTETH{value: 1 ether}(ALICE);
+        WSTETH.approve(address(pm), type(uint256).max);
+        pm.buyYesViaPool(mid, 600e9, false, type(uint256).max, type(uint256).max, ALICE);
+        vm.stopPrank();
+
+        // Middle of time window
+        (,,,,,,,, uint72 closeTs,,,,,) = pm.getMarket(mid);
+        vm.warp(uint256(closeTs) - 36 hours);
+
+        uint256 sellAmt = 200e9; // strictly < current rYes
+        (uint256 oppOutQ, uint256 wstOutFair,,,,) = pm.quoteSellYes(mid, sellAmt);
+
+        (uint256 rYes, uint256 rNo,,) = _readReserves(mid);
+        uint256 baseRefund = _fairRefundYesWithFee_test(rYes, rNo, sellAmt, 10);
+        uint256 bps = _pmBps(mid);
+        uint256 expectedRefund = mulDiv(baseRefund, 10_000, 10_000 + bps);
+
+        uint256 pot = _pot(mid);
+        if (expectedRefund > pot) expectedRefund = pot;
+
+        assertLe(
+            wstOutFair > expectedRefund ? wstOutFair - expectedRefund : expectedRefund - wstOutFair,
+            1,
+            "refund = fair/(1+bps), capped by pot"
+        );
+        assertGt(oppOutQ, 0);
+    }
+
+    function test_PM_Combined_TimePlusExtremes_AdditiveOnBuys() public {
+        (uint256 mid,) = pm.createMarketWithPMTuning(
+            "combined",
+            RESOLVER,
+            uint72(block.timestamp + 5 days),
+            false,
+            1e12,
+            1e12,
+            PAMM.PMTuning({lateRampStart: 3 days, lateRampMaxBps: 250, extremeMaxBps: 300})
+        );
+
+        uint256 out = 500e9; // < rYes
+
+        // Move price away from 0.5 via NO buys (keep < rNo)
+        vm.startPrank(BOB);
+        ZSTETH.exactETHToWSTETH{value: 0.7 ether}(BOB);
+        WSTETH.approve(address(pm), type(uint256).max);
+        (uint256 oppInQ, uint256 wstFairQ,,,,) = pm.quoteBuyNo(mid, 600e9); // < rNo
+        pm.buyNoViaPool(mid, 600e9, false, wstFairQ, oppInQ, BOB);
+        vm.stopPrank();
+
+        // Warp into time window
+        (,,,,,,,, uint72 closeTs,,,,,) = pm.getMarket(mid);
+        vm.warp(uint256(closeTs) - 1 days);
+
+        (uint256 rYes, uint256 rNo,,) = _readReserves(mid);
+        (, uint256 w,,,,) = pm.quoteBuyYes(mid, out);
+
+        uint256 base = _fairChargeYesWithFee_test(rYes, rNo, out, 10);
+        uint256 bps = _pmBps(mid);
+        uint256 expected = _mulDivUp(base, 10_000 + bps, 10_000);
+
+        assertLe(w > expected ? w - expected : expected - w, 1, "combined bump applied");
     }
 }
 

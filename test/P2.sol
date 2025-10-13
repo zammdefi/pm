@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 
-import {PredictionAMM} from "../src/PredictionAMM.sol";
+import {PAMM} from "../src/PAMM.sol";
 
 /* ──────────────────────────────────────────────────────────
    External mainnet contracts on fork (addresses you use)
@@ -36,7 +36,7 @@ contract PredictionAMM_MainnetFork is Test {
     address internal BOB = makeAddr("BOB");
 
     // CUT
-    PredictionAMM internal pm;
+    PAMM internal pm;
 
     // market ids
     string internal constant DESC = "Will Shanghai Disneyland close for a week in Q4?";
@@ -44,7 +44,7 @@ contract PredictionAMM_MainnetFork is Test {
     uint256 internal noId; // NO id
 
     // error selectors
-    bytes4 immutable ERR_SlippageOppIn = PredictionAMM.SlippageOppIn.selector; // 0x098fb561
+    bytes4 immutable ERR_SlippageOppIn = PAMM.SlippageOppIn.selector; // 0x098fb561
 
     /* ───────── helpers that match your contract ───────── */
 
@@ -77,7 +77,7 @@ contract PredictionAMM_MainnetFork is Test {
         vm.deal(RESOLVER, 1 ether);
 
         // deploy CUT
-        pm = new PredictionAMM();
+        pm = new PAMM();
 
         // create & seed a market (seeds are outcome tokens, not wstETH)
         (marketId, noId) = _createAndSeedDefault();

@@ -72,13 +72,13 @@ interface IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
-IZSTETH constant ZSTETH = IZSTETH(0x000000000088649055D9D23362B819A5cfF11f02);
+IZSTETH constant ZSTETH = IZSTETH(0x000000000077B216105413Dc45Dc6F6256577c7B);
 
 interface IZSTETH {
     function exactETHToWSTETH(address to) external payable returns (uint256 wstOut);
 }
 
-contract PredictionMarket is ERC6909 {
+contract PM is ERC6909 {
     error MarketExists();
     error MarketClosed();
     error MarketNotFound();
