@@ -6,10 +6,6 @@ import "forge-std/console2.sol";
 
 import {PAMM} from "../src/PAMM.sol";
 
-/* ──────────────────────────────────────────────────────────
-   External mainnet contracts on fork (addresses you use)
-   ────────────────────────────────────────────────────────── */
-
 interface IERC20Like {
     function balanceOf(address) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);

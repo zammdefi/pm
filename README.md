@@ -1,278 +1,194 @@
-# PredictionMarket – Minimal Parimutuel Yes/No Markets (wstETH-collateral)
+# Prediction AMM & Parimutuel — **YES/NO** Markets (wstETH collateral)
 
-A minimalist, gas-efficient prediction market for **binary (YES/NO)** questions.
+Two minimal onchain mechanisms for binary questions:
 
-## Parimutuel (PM)
+* **PAMM** — a **pot-split, CPMM-priced** prediction AMM (no orderbook, no external LPs).
+* **PM** — a **pure parimutuel**: trade at par until close, then winners split the pot.
 
-Traders mint and burn ERC-6909 shares at **par (1:1)** against **wstETH** up until the market’s close time. 
-
-After close, a **resolver** declares the outcome and the **entire pot** is paid **pro-rata** to the winning side (minus an optional resolver fee).
-
-Deployed to Ethereum: [`0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e`](https://etherscan.io/address/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e#code)
-
-## PAMM
-
-Deployed to Ethereum: [`0x000000000071176401AdA1f2CD7748e28E173FCa`](https://etherscan.io/address/0x000000000071176401AdA1f2CD7748e28E173FCa#code)
-> AMM-variant with time-and-odds-based pricing
+Both use **wstETH** as collateral and mint **ERC-6909** YES/NO shares.
 
 ---
 
-## Table of contents
+## TL;DR for traders
 
-* [Why this exists](#why-this-exists)
-* [Key properties](#key-properties)
-* [How it works](#how-it-works)
-* [Contract layout](#contract-layout)
-* [Core flows](#core-flows)
-* [Programmatic API](#programmatic-api)
-* [Events](#events)
-* [Security & trust model](#security--trust-model)
-* [Economic notes & trade-offs](#economic-notes--trade-offs)
-* [UX nuances](#ux-nuances)
-* [Recommendations / “nice to have”](#recommendations--nice-to-have)
-* [Local development](#local-development)
-* [License](#license)
+* **These are *not* fixed-$1 claims.** At resolution, **winners split a pot**.
+* In **PAMM**, your PnL depends on:
+  **(A)** what you effectively paid (**average EV per share**), and
+  **(B)** the **final payout per winning share = pot ÷ circulating winning shares**
+  *(“circulating” excludes protocol & pool balances).*
+* In **PM**, you buy/sell **1:1 vs wstETH** until close; then winners split the pot.
+* You can **profit by trading** before resolution if the price (implied probability) moves in your favor.
+* Longer trading windows usually reduce surprises at resolution.
 
 ---
 
-## Why this exists
+## Contract addresses (Ethereum mainnet)
 
-Most onchain prediction markets couple trading with pricing (AMMs, orderbooks, etc.). This repo aims for the **smallest possible surface area**: a **parimutuel mechanism** where:
-
-* 1 wstETH in => 1 share out (YES or NO),
-* 1 share in => 1 wstETH out (until close),
-* At resolution, the pot goes to the winning side pro-rata.
-
-It’s simple to integrate, easy to reason about, and cheap to use.
+* **PAMM** (AMM variant): `0x000000000071176401AdA1f2CD7748e28E173FCa`
+* **PM** (pure parimutuel): `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e`
+* Collateral: **wstETH** `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0`
+* ETH→wstETH helper (**ZSTETH**): `0x000000000077B216105413Dc45Dc6F6256577c7B`
+* PAMM backend (**ZAMM** singleton CPMM): `0x000000000000040470635EB91b7CE4D132D616eD`
 
 ---
 
-## Key properties
+## What’s the difference?
 
-* **Binary markets**: Each market mints two ERC-6909 tokens:
+### PAMM — **Pot-split AMM (pari-mutuel–style)**
 
-  * YES: id = `getMarketId(description, resolver)`
-  * NO: id = `getNoId(yesId)`
-* **Collateral**: `wstETH` (ERC-20). Buying with `ETH` is auto-wrapped via `ZSTETH.exactETHToWSTETH`.
-* **At-par trading** *(pre-close)*: Buy or sell shares **1:1** vs. wstETH — no slippage, no spread.
-* **Parimutuel settlement** *(post-close)*: Entire `pot` paid to winners pro-rata after optional resolver fee.
-* **Resolver permissions**:
-  * Can close early if the market was created with `canClose = true`.
-  * Must resolve after `close`.
-  * May set a **resolver fee** (capped at 10%) via `setResolverFeeBps`.
-* **Implied odds**: `yesSupply / (yesSupply + noSupply)` for display only; **not enforceable pricing**.
+* **Pricing/liquidity:** Constant-product pool of **protocol-minted YES/NO** shares (CPMM).
+  No orderbook, no **external** LPs; trades are bounded by pool reserves & slippage.
+* **Cashflows during trading:**
 
----
+  * **Buys** pay an **EV charge** (fee-aware path integral) into the **pot**.
+  * **Sells** receive a **refund** from the pot (fee-aware), **capped by the pot**.
+* **Resolution:** Winners get
+  `payout/share = pot ÷ circulating winning shares`
+  where “circulating” **excludes** PAMM & ZAMM balances.
+  Optional **resolver fee** (≤10%) is skimmed before payouts.
+* **Fees & tuning:** CPMM fee = **10 bps** (paid to ZAMM). PAMM supports optional **time/extreme bps** that can increase buy charges and decrease sell refunds.
 
-## How it works
-
-1. **Create**
-
-   * Anyone calls `createMarket(description, resolver, close, canClose)`.
-   * Market ids are deterministic from `(description, resolver)`.
-   * Trading is open immediately and ends when `block.timestamp >= close` (or earlier if resolver closes and `canClose = true`).
-
-2. **Trade (pre-close)**
-
-   * **Buy YES/NO (wstETH)**: `amount` transferred in ⇒ `amount` shares minted ⇒ `pot += amount`.
-   * **Buy with ETH**: ETH is routed through `ZSTETH` to wstETH, then same as above.
-   * **Sell YES/NO**: Burn shares at par ⇒ receive wstETH ⇒ `pot -= amount`.
-
-3. **Resolve (post-close)**
-
-   * Resolver calls `resolve(marketId, outcome)`.
-   * If **both sides nonzero**:
-     * optional resolver fee is skimmed from `pot`;
-     * `payoutPerShare = pot / winningSupply` (fixed-point, 1e18 scale).
-   * If **one side zero**:
-     * `payoutPerShare = 0` ⇒ the market becomes **refund mode** (redeem shares 1:1).
-
-4. **Claim**
-   * Winners burn shares and receive `shares * payoutPerShare`.
-   * In **refund mode**, any shares (YES or NO) redeem 1:1.
+**Key implication:** Holding the winning side **does not automatically mean profit**. If the side was crowded (many paid high EV), the final payout/share can be below what late buyers paid.
 
 ---
 
-## Contract layout
+### PM — **Pure parimutuel (at-par until close)**
 
-* `ERC6909` — minimalist multi-token standard (from Solmate).
-* **Constants**
-  * `WSTETH`: `IERC20` (mainnet address baked in)
-  * `ZSTETH`: wrapper to swap exact ETH → wstETH
-* **PredictionMarket** — the market logic
-  * `createMarket`, `closeMarket`, `buyYes`, `buyNo`, `sellYes`, `sellNo`, `resolve`, `claim`
-  * Views for market/user pagination, odds, winners, trading status
-  * Non-reentrancy via transient storage guard
-* Helpers
-  * `mulDiv` w/ checked overflow
-  * Deterministic id helpers: `getMarketId`, `getNoId`
-  * ERC-6909 metadata: `name(id)`, `symbol()`
+* **Before close:** Buy/sell YES or NO **1:1 vs wstETH**. No slippage, no spread.
+  (Buying with ETH auto-wraps through ZSTETH.)
+* **After close:** Resolver sets outcome; winners split the pot pro-rata
+  (optional resolver fee ≤10% first).
+  If **one side is zero** at resolution, contract enters **refund mode** (all shares redeem 1:1).
 
 ---
 
-## Core flows
+## Quick trader guide (PAMM)
 
-### Create a market
+### Reading the price
 
-```solidity
-(uint256 yesId, uint256 noId) = (
-    pm.getMarketId("Will X happen by 2025-12-31?", resolver),
-    pm.getNoId(pm.getMarketId("Will X happen by 2025-12-31?", resolver))
-);
+* Implied **p(YES)** comes from CPMM reserves. UI shows it; it moves when people trade.
 
-(uint256 marketId, uint256 createdNoId) = pm.createMarket({
-    description: "Will X happen by 2025-12-31?",
-    resolver: resolver,
-    close: uint72(block.timestamp + 7 days),
-    canClose: true
-});
+### What you pay / receive
+
+* **Buy YES (size = `q`) at price path `p`:** pay roughly the **area under `p`** for `q` (your **EV charge**, fee-aware).
+* **Sell YES (`q`):** receive the mirrored **EV refund** (fee-aware), **capped by `pot`**.
+
+Small, instant buy→sell round-trips lose a little to the fee/tuning/rounding wedge.
+
+### Profit conditions
+
+* **At resolution:** profit if
+  `your avg EV paid/share < payout/share`
+* **Before resolution (swing-trading):** profit if the **sell refund per share** (after fee/tuning) exceeds your **avg EV paid/share**. Pot must be sufficient.
+
+### Payout math (at resolution)
+
+```
+payout/share = pot ÷ circulating_winning_shares
+circulating_winning_shares = totalSupply[winner]
+                             − balanceOf[PAMM][winner]
+                             − balanceOf[ZAMM][winner]
 ```
 
-### Buy YES with wstETH
+* Shares **sold back** before close are burned and **don’t** count as circulating.
+* Optional resolver fee is taken **before** computing `payout/share`.
 
-```solidity
-WSTETH.approve(address(pm), 10e18);
-pm.buyYes(marketId, 10e18, msg.sender); // mints 10 YES, pot += 10 wstETH
-```
+### Mini examples
 
-### Buy NO with ETH (auto-wrap)
+**A) Crowded winner (late buyers can lose)**
 
-```solidity
-pm.buyNo{value: 1 ether}(marketId, 0, msg.sender); // routes via ZSTETH → mints YES/NO at par
-```
+* A buys 100 YES around 0.40 → pot ≈ 40; circYES = 100
+* B buys 100 YES around 0.70 → pot ≈ 110; circYES = 200
+* YES wins ⇒ `payout/share = 110/200 = 0.55`
+  A profits (paid ~0.40), B loses (paid ~0.70), despite being right.
 
-### Sell back (pre-close)
+**B) Profit by selling before resolution**
 
-```solidity
-pm.sellYes(marketId, 5e18, msg.sender); // burns 5 YES, returns 5 wstETH, pot -= 5
-pm.sellNo(marketId, 2e18, msg.sender);  // burns 2 NO, returns 2 wstETH, pot -= 2
-```
-
-### Resolve (post-close)
-
-```solidity
-pm.resolve(marketId, /* outcome */ true); // true = YES wins, false = NO wins
-```
-
-If both sides had deposits, `payoutPerShare` becomes nonzero. Otherwise the market is in **refund mode** (`payoutPerShare == 0`).
-
-### Claim
-
-```solidity
-pm.claim(marketId, msg.sender); // burns winning shares and pays wstETH pro-rata
-
-// In refund mode (payoutPerShare == 0), call claim() once per token id you hold.
-```
+* After A’s 0.40 buy, price rises to 0.65; A sells 100 ⇒ refund ≈ 65 (from pot); those 100 YES burn.
+* New pot ≈ 45; circYES = 100. If YES wins, `payout/share = 0.45`.
+  A realized PnL on the trade; B (still holding) gets 0.45 per share at close.
 
 ---
 
-## Programmatic API
+## Quick trader guide (PM)
 
-### Creation & control
-
-| Function                                               | Description                                                                                                                |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `createMarket(description, resolver, close, canClose)` | Creates a new market. Reverts if `close <= now` or resolver is zero, or market exists.                                     |
-| `closeMarket(marketId)`                                | **Resolver-only**, only if `canClose = true`, only **before** scheduled close; sets `close = block.timestamp`.             |
-| `resolve(marketId, outcome)`                           | **Resolver-only**, only **after** close; computes fee (if any), sets `payoutPerShare`, marks resolved.                     |
-| `setResolverFeeBps(bps)`                               | Sets resolver’s fee (0…1000 bps = 0%…10%). **Applies to all markets resolved by this resolver at the time of resolution.** |
-
-### Trading & claiming
-
-| Function                        | Description                                                                               |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| `buyYes(marketId, amount, to)`  | Mint YES for wstETH (via `amount`) or ETH (`msg.value`). Increases `pot`. Pre-close only. |
-| `buyNo(marketId, amount, to)`   | Mint NO similarly. Pre-close only.                                                        |
-| `sellYes(marketId, amount, to)` | Burn YES and withdraw wstETH at par. Pre-close only.                                      |
-| `sellNo(marketId, amount, to)`  | Burn NO and withdraw wstETH at par. Pre-close only.                                       |
-| `claim(marketId, to)`           | After resolve: pay winners `shares * payoutPerShare`. In refund mode, pays 1:1 per share. |
-
-### Views
-
-| Function                             | Returns                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `getMarket(marketId)`                | `(yesSupply, noSupply, resolver, resolved, outcome, pot, payoutPerShare, desc)`            |
-| `getMarkets(start, count)`           | Batched page across `allMarkets` with the above per-market fields.                         |
-| `getUserMarkets(user, start, count)` | User balances and claimables across a page of markets.                                     |
-| `tradingOpen(marketId)`              | True if resolver set, not resolved, and `now < close`.                                     |
-| `impliedYesOdds(marketId)`           | `(numerator, denominator)` where `odds = num/denom = yes / (yes + no)` (**display only**). |
-| `winningId(marketId)`                | Winning token id **only if** resolved and `payoutPerShare != 0`; else `0`.                 |
-| `marketCount()`                      | Number of created markets.                                                                 |
+* **Buy/sell at par** until close: 1 wstETH ↔ 1 YES/NO share.
+* **Resolve:** Winners split pot; payout/share = `pot ÷ winningSupply`.
+* **Refund mode:** If a side had zero supply at resolve, everyone redeems **1:1**.
 
 ---
 
-## Events
+## For integrators / power users
 
-* `Created(marketId, noId, description, resolver)`
-* `Closed(marketId, closedAt, by)`
-* `Bought(buyer, id, amount)`
-* `Sold(seller, id, amount)`
-* `Resolved(marketId, outcome)`
-* `Claimed(claimer, id, shares, payout)`
-* `ResolverFeeSet(resolver, bps)`
-* ERC-6909: `Transfer`, `Approval`, `OperatorSet`
+### PAMM: core flows (names may differ slightly on your client)
+
+* **Create:** `createMarket(description, resolver, close, canClose, seedYes, seedNo [, tuning])`
+  Seeds the CPMM with protocol-minted YES/NO (both sides required).
+* **Buy YES/NO via pool:**
+  `buyYesViaPool(marketId, yesOut, inIsETH, wstInMax, oppInMax, to)`
+  `buyNoViaPool(marketId,  noOut, inIsETH, wstInMax, oppInMax, to)`
+  Emits `Bought(..., wstIn)`; pot increases by `wstIn`.
+* **Sell YES/NO via pool:**
+  `sellYesViaPool(marketId, yesIn, wstOutMin, oppOutMin, to)`
+  `sellNoViaPool(marketId,  noIn,  wstOutMin, oppOutMin, to)`
+  Emits `Sold(..., wstOut)`; pot decreases by `wstOut`.
+  *Refunds are floored to current `pot`.*
+* **Resolve & claim:**
+  `resolve(marketId, outcome)` (optional resolver fee applied)
+  `claim(marketId, to)` pays `shares * payoutPerShare` (Q-scaled 1e18 fixed-point).
+
+**Handy views (quotes & state):**
+
+* `quoteBuyYes/quoteBuyNo` → `(oppIn, wstInFair, p0, p1)` fee-aware, path-fair.
+* `quoteSellYes/quoteSellNo` → `(oppOut, wstOutFair, p0, p1)` with pot floor.
+* `impliedYesProb`, `getMarket`, `getMarkets`, `getUserMarkets`, `winningId`, `getPool`.
+
+**Fees & tuning:**
+
+* CPMM fee: **10 bps** (to ZAMM).
+* **PM tuning bps** (optional): late-time ramp and extremes multiplier.
+* **Resolver fee**: per-resolver setting, capped at **10%**.
+
+**Edge semantics:**
+
+* **Auto-flip at resolve:** if resolver picks a side with **zero circulating** while the other side **> 0**, the outcome **flips** to the side that actually has circulating winners. If **both** sides have zero circulating, resolution reverts (no winners).
+
+### PM: core flows
+
+* `createMarket(description, resolver, close, canClose)`
+* `buyYes/buyNo(amount, to)` — par mint; supports ETH via ZSTETH.
+* `sellYes/sellNo(amount, to)` — par burn (pre-close).
+* `resolve(marketId, outcome)` — optional resolver fee ≤10%; if one side’s supply is zero, enters **refund mode** (`payoutPerShare = 0`).
+* `claim(marketId, to)` — winners get `shares * payoutPerShare`. In refund mode, **any** shares redeem **1:1**.
+
+**Views:** `getMarket`, `getMarkets`, `getUserMarkets`, `tradingOpen`, `impliedYesOdds`, `winningId`.
 
 ---
 
-## Security & trust model
+## Key properties & trade-offs (honest mode)
 
-* **Collateral safety**: Uses wstETH (standard ERC-20). The ETH path depends on `ZSTETH.exactETHToWSTETH`.
-* **Reentrancy**: All state-changing entrypoints that move funds are protected with a transient-storage guard.
-* **Math safety**: `mulDiv` checks for overflow/invalid division; fixed-point `payoutPerShare` (1e18) keeps rounding small.
-* **Resolver trust**:
-  * Resolver can **early-close** if `canClose = true`.
-  * Resolver sets **fee bps** globally for itself; the fee in force at *resolution time* is used.
-  * Resolver decides final **outcome**; no onchain dispute process here.
-
-> If trust minimization is required, wrap the resolver in a multisig, governance, or external oracle.
+* **No orderbook, no external LPs.** Liquidity is **protocol-owned** (PAMM) or par at mint/burn (PM).
+* **PAMM is path-dependent:** buys add to the pot; sells withdraw; late flow can change payout/share.
+* **Winning ≠ guaranteed profit (PAMM):** crowded winners can push payout/share below what late buyers paid.
+* **Refunds are pot-capped (PAMM):** large sells may be limited by pot balance.
+* **Resolver trust:** the resolver picks the outcome and sets an optional fee (≤10%). Consider a multisig/oracle wrapper if needed.
 
 ---
 
-## Economic notes & trade-offs
+## UX tips we surface in the app
 
-* **No pricing curve**: Buy/sell at par. “Odds” are **deposit ratios**, so they’re cheap to manipulate and **not binding prices**.
-* **Bank-run incentive**: Losers can exit at par right before close, shrinking the pot. Winners who don’t exit-dance can be penalized by timing risk.
-* **Refund mode**: If only one side has deposits at resolution, everyone gets 1:1 back.
-* **Fee dynamics**: The resolver can change fee bps up to resolution time (bounded to 10%). This is visible onchain but can be adversarial from a UX standpoint.
-
----
-
-## UX nuances
-
-* **Claiming in refund mode**: `claim()` handles one token id at a time; if a user holds both YES and NO, they’ll need two calls.
-* **Odds labeling**: Always label `impliedYesOdds()` as *implied by deposits*, not *market price*.
+* Show **“Est. payout/share now”** = `pot ÷ current circulating winning shares` *(subject to change)*.
+* Show each trader’s **avg EV paid/share**.
+* Call out **profit condition**: profit only if `avg EV paid/share < payout/share`.
+* Flag **reserve/slippage limits** and **pot-floor** on sells.
 
 ---
 
 ## Local development
 
-* **Solidity**: `^0.8.30`
-* **Dependencies**: Solmate-style ERC-6909 is embedded here (no external import needed at runtime).
-* **Tests**: Write your own Foundry/Hardhat tests targeting:
-  * create/close/resolve/claim paths,
-  * ETH and wstETH buy flows,
-  * fee application at resolution,
-  * refund mode correctness,
-  * reentrancy guard.
-
-### Example (Foundry skeleton)
-
-```sh
-forge test
-```
-
-```solidity
-contract PredictionMarketTest is Test {
-    PredictionMarket pm;
-    address resolver = vm.addr(1);
-    function setUp() public {
-        pm = new PredictionMarket();
-        // mock wstETH/ZSTETH if you’re on a local fork or create adapters
-    }
-}
-```
-
-> Mainnet constants (`WSTETH`, `ZSTETH`) are hard-coded; for local tests you’ll likely mock or fork mainnet.
+* Solidity `^0.8.30`.
+* Mainnet constants are in the contracts; for local tests, mock or fork mainnet.
+* Suggested testing: create/close/resolve/claim, ETH & wstETH paths, resolver fee, refund mode (PM), Simpson-based quotes (PAMM), reentrancy guard.
 
 ---
 
@@ -284,4 +200,4 @@ MIT — see `LICENSE`.
 
 ### Disclaimers
 
-This codebase is research/educational in spirit. Use at your own risk. Nothing herein is investment advice. If deploying to production, perform a **full security review**, add **robust tests**, and consider the **resolver trust** implications for your users.
+This code is experimental. No warranties. **Do your own research**, review the code, and consider a full third-party audit before production use. Nothing herein is investment advice.
