@@ -62,6 +62,19 @@ Both use **wstETH** as collateral and mint **ERC-6909** YES/NO shares.
 
 ---
 
+## Choosing Between **PAMM** and **PM**
+
+| Use case                                      | Choose **PAMM**                    | Choose **PM** |
+| --------------------------------------------- | ---------------------------------- | ------------- |
+| Continuous prices, trade without an orderbook | ✅                                  | —             |
+| One-sided trading (no direct counterparty)    | ✅ (within reserve/slippage limits) | —             |
+| At-par mint/burn before close                 | —                                  | ✅             |
+| Minimal surface & easiest mental model        | ⚠️ path-dependent                  | ✅             |
+| Lower surprise at resolution                  | ⚠️ crowded winners can lose        | ✅             |
+| Fixed-$1-style payoff guarantee               | ❌                                  | ❌             |
+
+---
+
 ## Quick trader guide (PAMM)
 
 ### Reading the price
@@ -138,20 +151,17 @@ circulating_winning_shares = totalSupply[winner]
   `claim(marketId, to)` pays `shares * payoutPerShare` (Q-scaled 1e18 fixed-point).
 
 **Handy views (quotes & state):**
-
-* `quoteBuyYes/quoteBuyNo` → `(oppIn, wstInFair, p0, p1)` fee-aware, path-fair.
-* `quoteSellYes/quoteSellNo` → `(oppOut, wstOutFair, p0, p1)` with pot floor.
-* `impliedYesProb`, `getMarket`, `getMarkets`, `getUserMarkets`, `winningId`, `getPool`.
+`quoteBuyYes/quoteBuyNo` → `(oppIn, wstInFair, p0, p1)` fee-aware, path-fair.
+`quoteSellYes/quoteSellNo` → `(oppOut, wstOutFair, p0, p1)` with pot floor.
+`impliedYesProb`, `getMarket`, `getMarkets`, `getUserMarkets`, `winningId`, `getPool`.
 
 **Fees & tuning:**
-
-* CPMM fee: **10 bps** (to ZAMM).
-* **PM tuning bps** (optional): late-time ramp and extremes multiplier.
-* **Resolver fee**: per-resolver setting, capped at **10%**.
+CPMM fee **10 bps** (to ZAMM).
+Optional **time/extreme bps**.
+**Resolver fee**: per-resolver setting, capped at **10%**.
 
 **Edge semantics:**
-
-* **Auto-flip at resolve:** if resolver picks a side with **zero circulating** while the other side **> 0**, the outcome **flips** to the side that actually has circulating winners. If **both** sides have zero circulating, resolution reverts (no winners).
+**Auto-flip at resolve:** if resolver picks a side with **zero circulating** while the other side **> 0**, the outcome **flips** to the side that actually has circulating winners. If **both** sides have zero circulating, resolution reverts (no winners).
 
 ### PM: core flows
 
@@ -165,7 +175,46 @@ circulating_winning_shares = totalSupply[winner]
 
 ---
 
-## Key properties & trade-offs (honest mode)
+## Common surprises & answers (PAMM)
+
+* **“I won but lost money—how?”**
+  If many traders piled into the same winning side late at high EV, the final **payout/share** can be below what some paid. That’s inherent to **pot-split** with no external LPs.
+* **“Can I trade without an opposite taker?”**
+  Yes—pricing/liquidity come from a CPMM with **protocol-owned YES/NO reserves** (no external LPs). Size is bounded by **reserves** and **slippage**.
+* **“Are sells guaranteed?”**
+  Refunds are **capped by the pot**. In thin pots, very large sells can be limited.
+* **“Does the resolver pick fees later?”**
+  The resolver can set a fee (≤10%). It is skimmed **at resolution**.
+
+---
+
+## Accounting invariants (PAMM)
+
+For a single market over its lifecycle:
+
+```
+Σ(EV charges from buys)
+− Σ(refunds to sellers pre-close)
+− resolverFeePaid
+− Σ(claims to winners post-close)
+≈ 0   (up to rounding)
+```
+
+Use this to sanity-check indexers/analytics.
+
+---
+
+## Indexing notes
+
+When computing per-user PnL:
+
+* **Deposits:** EV charges from `Bought(...)` (PAMM) or `buy*` amounts (PM).
+* **Withdrawals:** pre-close **refunds** from `Sold(...)` (PAMM) and post-resolve **claims** from `Claimed(...)`.
+* **Resolver fee:** track `ResolverFeeSet` and the transfer at `resolve()`; it leaves the system.
+
+---
+
+## Key properties & trade-offs
 
 * **No orderbook, no external LPs.** Liquidity is **protocol-owned** (PAMM) or par at mint/burn (PM).
 * **PAMM is path-dependent:** buys add to the pot; sells withdraw; late flow can change payout/share.
@@ -175,12 +224,12 @@ circulating_winning_shares = totalSupply[winner]
 
 ---
 
-## UX tips we surface in the app
+## UX tips to surface in apps
 
 * Show **“Est. payout/share now”** = `pot ÷ current circulating winning shares` *(subject to change)*.
 * Show each trader’s **avg EV paid/share**.
 * Call out **profit condition**: profit only if `avg EV paid/share < payout/share`.
-* Flag **reserve/slippage limits** and **pot-floor** on sells.
+* Flag **reserve/slippage limits** and the **pot floor** on sells.
 
 ---
 
@@ -188,7 +237,17 @@ circulating_winning_shares = totalSupply[winner]
 
 * Solidity `^0.8.30`.
 * Mainnet constants are in the contracts; for local tests, mock or fork mainnet.
-* Suggested testing: create/close/resolve/claim, ETH & wstETH paths, resolver fee, refund mode (PM), Simpson-based quotes (PAMM), reentrancy guard.
+* Suggested tests: create/close/resolve/claim, ETH & wstETH paths, resolver fee, refund mode (PM), Simpson-based quotes (PAMM), reentrancy guard.
+
+---
+
+## Glossary
+
+* **Pot:** wstETH pool that funds refunds during trading and pays winners at resolution.
+* **EV charge / refund:** fee-aware path integral the buyer pays / seller receives.
+* **Circulating winning shares (PAMM):** totalSupply minus PAMM/ZAMM balances.
+* **Resolver fee:** optional fee (≤10%) skimmed from pot at resolution.
+* **CPMM / ZAMM:** constant-product AMM & its singleton contract used by PAMM.
 
 ---
 
@@ -200,4 +259,4 @@ MIT — see `LICENSE`.
 
 ### Disclaimers
 
-This code is experimental. No warranties. **Do your own research**, review the code, and consider a full third-party audit before production use. Nothing herein is investment advice.
+This code is experimental. No warranties. **Do your own research**, review the code, and consider your own full third-party audit before production use. Nothing herein is investment advice.
