@@ -3,14 +3,15 @@ solc_version = "0.8.30"
 evm_version = "prague"
 
 optimizer = true
-optimizer_runs = 9_999_999
+optimizer_runs = 3333
 
 via_ir = true
 
 remappings = [
   "@solady=lib/solady/",
   "@soledge=lib/soledge/",
-  "@forge=lib/forge-std/src/"
+  "@forge=lib/forge-std/src/",
+  "@zamm=lib/ZAMM/src/"
 ]
 
 [profile.via-ir]

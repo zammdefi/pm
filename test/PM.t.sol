@@ -21,7 +21,7 @@ interface IZSTETH {
 
 IZSTETH constant ZSTETH_ZAP = IZSTETH(0x000000000088649055D9D23362B819A5cfF11f02);
 
-contract PredictionMarketWstETHTest is Test {
+contract PMTest is Test {
     // Actors
     address internal RESOLVER = makeAddr("RESOLVER");
     address internal ALICE = makeAddr("ALICE");
@@ -924,11 +924,7 @@ contract PredictionMarketWstETHTest is Test {
         pm.resolve(mId, true);
 
         (
-            ,
-            ,
-            ,
-            ,
-            , // yesSupply, noSupply, resolver, resolved, outcome (unused here)
+            ,,,,, // yesSupply, noSupply, resolver, resolved, outcome (unused here)
             uint256 potBefore,
             uint256 PPS,
         ) = pm.getMarket(mId);
@@ -1002,7 +998,10 @@ contract PredictionMarketWstETHTest is Test {
     function testResolverFee_DefaultZero_NoFeeApplied() public {
         // fee defaults to 0
         (uint256 mid,) = pm.createMarket(
-            "fee=0 default", RESOLVER, uint72(block.timestamp + 2 days), false /*canClose*/
+            "fee=0 default",
+            RESOLVER,
+            uint72(block.timestamp + 2 days),
+            false /*canClose*/
         );
 
         // Seed both sides

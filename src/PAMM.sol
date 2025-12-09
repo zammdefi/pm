@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+/// @notice Minimal ERC6909-style multi-token base for YES/NO shares.
 abstract contract ERC6909Minimal {
     event OperatorSet(address indexed owner, address indexed operator, bool approved);
     event Approval(
@@ -14,40 +15,50 @@ abstract contract ERC6909Minimal {
     mapping(address => mapping(uint256 => uint256)) public balanceOf;
     mapping(address => mapping(address => mapping(uint256 => uint256))) public allowance;
 
-    function transfer(address receiver, uint256 id, uint256 amount) public virtual returns (bool) {
+    function transfer(address receiver, uint256 id, uint256 amount) public returns (bool) {
         balanceOf[msg.sender][id] -= amount;
-        balanceOf[receiver][id] += amount;
+        unchecked {
+            balanceOf[receiver][id] += amount; // Safe: totalSupply is tracked
+        }
         emit Transfer(msg.sender, msg.sender, receiver, id, amount);
         return true;
     }
 
-    function approve(address spender, uint256 id, uint256 amount) public virtual returns (bool) {
+    function approve(address spender, uint256 id, uint256 amount) public returns (bool) {
         allowance[msg.sender][spender][id] = amount;
         emit Approval(msg.sender, spender, id, amount);
         return true;
     }
 
-    function setOperator(address operator, bool approved) public virtual returns (bool) {
+    function setOperator(address operator, bool approved) public returns (bool) {
         isOperator[msg.sender][operator] = approved;
         emit OperatorSet(msg.sender, operator, approved);
         return true;
     }
 
-    function supportsInterface(bytes4 interfaceId) public view virtual returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
         return interfaceId == 0x01ffc9a7 || interfaceId == 0x0f632fb3;
     }
 
-    function _mint(address receiver, uint256 id, uint256 amount) internal virtual {
-        balanceOf[receiver][id] += amount;
+    function _mint(address receiver, uint256 id, uint256 amount) internal {
+        unchecked {
+            balanceOf[receiver][id] += amount; // Safe: totalSupply is tracked
+        }
         emit Transfer(msg.sender, address(0), receiver, id, amount);
     }
 
-    function _burn(address sender, uint256 id, uint256 amount) internal virtual {
+    function _burn(address sender, uint256 id, uint256 amount) internal {
         balanceOf[sender][id] -= amount;
         emit Transfer(msg.sender, sender, address(0), id, amount);
     }
 }
 
+/// @notice Minimal ERC20 interface.
+interface IERC20 {
+    function decimals() external view returns (uint8);
+}
+
+/// @notice ZAMM interface for LP operations.
 interface IZAMM {
     struct PoolKey {
         uint256 id0;
@@ -80,6 +91,21 @@ interface IZAMM {
         uint256 deadline
     ) external payable returns (uint256 amount0, uint256 amount1, uint256 liquidity);
 
+    function deposit(address token, uint256 id, uint256 amount) external payable;
+
+    function recoverTransientBalance(address token, uint256 id, address to)
+        external
+        returns (uint256 amount);
+
+    function swapExactIn(
+        PoolKey calldata poolKey,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        bool zeroForOne,
+        address to,
+        uint256 deadline
+    ) external returns (uint256 amountOut);
+
     function swapExactOut(
         PoolKey calldata poolKey,
         uint256 amountOut,
@@ -87,1251 +113,166 @@ interface IZAMM {
         bool zeroForOne,
         address to,
         uint256 deadline
-    ) external payable returns (uint256 amountIn);
+    ) external returns (uint256 amountIn);
 
-    function deposit(address token, uint256 id, uint256 amount) external payable;
-    function recoverTransientBalance(address token, uint256 id, address to)
+    function removeLiquidity(
+        PoolKey calldata poolKey,
+        uint256 liquidity,
+        uint256 amount0Min,
+        uint256 amount1Min,
+        address to,
+        uint256 deadline
+    ) external returns (uint256 amount0, uint256 amount1);
+
+    function transferFrom(address from, address to, uint256 id, uint256 amount)
         external
-        returns (uint256 amount);
+        returns (bool);
 }
 
-/*────────────────────────────────────────────────────────
-| PredictionAMM (PAMM) — CPMM-backed YES/NO markets
-|  • Pool fee = 10 bps (paid to ZAMM with fee switch on)
-|  • Pot in wstETH; PM+ZAMM excluded from payout denominator
-|  • Path-fair EV charging via Simpson’s rule (fee-aware)
-|────────────────────────────────────────────────────────*/
+/// @title PAMM V1
+/// @notice Prediction-market collateral vault with per-market collateral:
+///         - Supports ETH (address(0)) and any ERC20 with varying decimals
+///         - Fully-collateralised YES/NO shares (ERC6909)
+///         - 1 winning share redeems for 10^decimals collateral units
+/// @dev Trading/LP happens on a separate AMM (e.g. ZAMM).
 contract PAMM is ERC6909Minimal {
-    /*──────── errors ───────*/
-    error MarketExists();
-    error MarketNotFound();
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    error AmountZero();
+    error FeeOverflow();
+    error NotClosable();
+    error InvalidClose();
     error MarketClosed();
-    error MarketNotClosed();
-    error MarketResolved();
-    error MarketNotResolved();
+    error MarketExists();
     error OnlyResolver();
+    error ExcessiveInput();
+    error MarketNotFound();
+    error DeadlineExpired();
+    error InvalidReceiver();
     error InvalidResolver();
     error AlreadyResolved();
-    error NoWinningShares();
-    error AmountZero();
-    error InvalidClose();
-    error FeeOverflow();
-    error PoolNotSeeded();
-    error InsufficientLiquidity();
-    error SlippageOppIn();
-    error InsufficientZap();
-    error InsufficientWst();
-    error NoEth();
-    error EthNotAllowed();
-    error NoCirculating();
-    error NotClosable();
-    error SeedBothSides();
-    error InvalidReceiver();
+    error InvalidDecimals();
+    error MarketNotClosed();
+    error InvalidETHAmount();
+    error InvalidCollateral();
+    error InvalidSwapAmount();
+    error InsufficientOutput();
+    error CollateralTooSmall();
+    error WrongCollateralType();
 
-    /*──────── storage ──────*/
-    struct Market {
-        address resolver;
-        bool resolved;
-        bool outcome; // true=YES wins, false=NO wins
-        bool canClose; // resolver can early-close
-        uint72 close; // trading close timestamp
-        uint256 pot; // wstETH collateral pool
-        uint256 payoutPerShare; // Q-scaled
-    }
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
 
-    uint256 constant Q = 1e18;
-    uint256 constant FEE_BPS = 10; // 0.1% pool fee
-
-    // ZAMM singleton
-    IZAMM constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
-
-    /*──────── pm-AMM tuning (set once at create) ───────*/
-    struct PMTuning {
-        uint32 lateRampStart; // seconds before close to start ramp (0 = off)
-        uint16 lateRampMaxBps; // +bps at T (applied to EV charge; inverse to refunds)
-        uint16 extremeMaxBps; // +bps at extremes p≈0/1 (linear in |p-0.5|)
-    }
-
-    mapping(uint256 => PMTuning) public pmTuning;
-    mapping(uint256 => bool) public pmTuningFinal;
-
-    error TuningBadCaps();
-
-    event PMTuningSet(uint256 indexed marketId, PMTuning t, bool finalized);
-
-    uint256[] public allMarkets;
-    mapping(uint256 id => Market) public markets;
-    mapping(uint256 id => uint256) public totalSupply;
-    mapping(uint256 id => string) public descriptions;
-    mapping(address resolver => uint16) public resolverFeeBps;
-
-    /*──────── events ───────*/
     event Created(
-        uint256 indexed marketId, uint256 indexed noId, string description, address resolver
+        uint256 indexed marketId,
+        uint256 indexed noId,
+        string description,
+        address resolver,
+        address collateral,
+        uint8 decimals,
+        uint64 close,
+        bool canClose
     );
-    event Seeded(uint256 indexed marketId, uint256 yesSeed, uint256 noSeed, uint256 liquidity);
-    event Bought(address indexed buyer, uint256 indexed id, uint256 sharesOut, uint256 wstIn);
-    event Sold(address indexed seller, uint256 indexed id, uint256 sharesIn, uint256 wstOut);
-
-    event Resolved(uint256 indexed marketId, bool outcome);
-    event Claimed(address indexed claimer, uint256 indexed id, uint256 shares, uint256 payout);
     event Closed(uint256 indexed marketId, uint256 ts, address indexed by);
+    event Split(
+        address indexed user, uint256 indexed marketId, uint256 shares, uint256 collateralIn
+    );
+    event Merged(
+        address indexed user, uint256 indexed marketId, uint256 shares, uint256 collateralOut
+    );
+    event Resolved(uint256 indexed marketId, bool outcome);
+    event Claimed(address indexed user, uint256 indexed marketId, uint256 shares, uint256 payout);
     event ResolverFeeSet(address indexed resolver, uint16 bps);
 
-    constructor() payable {}
+    /*//////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
 
-    /*──────── id helpers ───*/
-    function getMarketId(string calldata description, address resolver)
-        public
-        pure
-        returns (uint256)
-    {
-        return uint256(keccak256(abi.encodePacked("PMARKET:YES", description, resolver)));
+    struct Market {
+        address resolver; // who can resolve (20 bytes)
+        uint8 decimals; // collateral decimals (1 byte)
+        bool resolved; // outcome set? (1 byte)
+        bool outcome; // YES wins if true (1 byte)
+        bool canClose; // resolver can early-close (1 byte)
+        uint64 close; // resolve allowed after (8 bytes) -- slot 1: 32 bytes
+        address collateral; // collateral token (address(0) = ETH) -- slot 2
+        uint256 collateralLocked; // collateral locked for market -- slot 3
     }
 
-    function getNoId(uint256 marketId) public pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked("PMARKET:NO", marketId)));
-    }
+    /*//////////////////////////////////////////////////////////////
+                               CONSTANTS
+    //////////////////////////////////////////////////////////////*/
 
-    function _poolKey(uint256 yesId, uint256 noId) internal view returns (IZAMM.PoolKey memory k) {
-        (uint256 id0, uint256 id1) = (yesId < noId) ? (yesId, noId) : (noId, yesId);
-        k = IZAMM.PoolKey({
-            id0: id0,
-            id1: id1,
-            token0: address(this),
-            token1: address(this),
-            feeOrHook: FEE_BPS
-        });
-    }
+    /// @notice ETH sentinel value.
+    address constant ETH = address(0);
 
-    function _poolId(IZAMM.PoolKey memory k) internal pure returns (uint256 id) {
-        id = uint256(keccak256(abi.encode(k.id0, k.id1, k.token0, k.token1, k.feeOrHook)));
-    }
+    /// @notice ZAMM singleton for liquidity pools.
+    IZAMM public constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
 
+    /*//////////////////////////////////////////////////////////////
+                                 STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice All market ids.
+    uint256[] public allMarkets;
+
+    /// @notice Market by YES-id.
+    mapping(uint256 => Market) public markets;
+
+    /// @notice Description per market.
+    mapping(uint256 => string) public descriptions;
+
+    /// @notice Supply per token id (YES or NO).
+    mapping(uint256 => uint256) public totalSupplyId;
+
+    /// @notice Resolver fee in basis points (max 1000 = 10%).
+    mapping(address => uint16) public resolverFeeBps;
+
+    /*//////////////////////////////////////////////////////////////
+                               METADATA
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Token name for ERC6909 metadata.
     function name(uint256 id) public pure returns (string memory) {
         return string(abi.encodePacked("PAMM-", _toString(id)));
     }
 
+    /// @notice Token symbol for ERC6909 metadata.
     function symbol(uint256) public pure returns (string memory) {
         return "PAMM";
     }
 
-    /*──────── lifecycle ───*/
-    function createMarket(
-        string calldata description,
-        address resolver,
-        uint72 close,
-        bool canClose,
-        uint256 seedYes,
-        uint256 seedNo
-    ) public returns (uint256 marketId, uint256 noId) {
-        require(close > block.timestamp, InvalidClose());
-        require(resolver != address(0), InvalidResolver());
-
-        marketId = getMarketId(description, resolver);
-        noId = getNoId(marketId);
-        require(markets[marketId].resolver == address(0), MarketExists());
-
-        markets[marketId] = Market({
-            resolver: resolver,
-            resolved: false,
-            outcome: false,
-            canClose: canClose,
-            close: close,
-            pot: 0,
-            payoutPerShare: 0
-        });
-
-        allMarkets.push(marketId);
-        descriptions[marketId] = description;
-
-        emit Created(marketId, noId, description, resolver);
-
-        if (seedYes != 0 || seedNo != 0) {
-            require(seedYes != 0 && seedNo != 0, SeedBothSides());
-            _seedYesNoPool(marketId, seedYes, seedNo);
-        }
-    }
-
-    function createMarketWithPMTuning(
-        string calldata description,
-        address resolver,
-        uint72 close,
-        bool canClose,
-        uint256 seedYes,
-        uint256 seedNo,
-        PMTuning calldata t
-    ) public returns (uint256 marketId, uint256 noId) {
-        (marketId, noId) = createMarket(description, resolver, close, canClose, seedYes, seedNo);
-
-        // hard caps to avoid crazy tuning
-        if (t.lateRampMaxBps > 2_000 || t.extremeMaxBps > 2_000) revert TuningBadCaps();
-        require(t.lateRampStart == 0 || t.lateRampStart <= close, TuningBadCaps());
-
-        pmTuning[marketId] = t;
-        pmTuningFinal[marketId] = true; // immutable—no updates allowed / placeholder for future tweaks
-        emit PMTuningSet(marketId, t, true);
-    }
-
-    function _seedYesNoPool(uint256 marketId, uint256 seedYes, uint256 seedNo) internal {
-        uint256 yesId = marketId;
-        uint256 noId = getNoId(marketId);
-        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
-
-        // Mint seeds to PM (non-circulating; will be held by ZAMM as LP position):
-        _mint(address(this), yesId, seedYes);
-        totalSupply[yesId] += seedYes;
-        _mint(address(this), noId, seedNo);
-        totalSupply[noId] += seedNo;
-
-        (uint256 a0, uint256 a1) = (key.id0 == yesId) ? (seedYes, seedNo) : (seedNo, seedYes);
-        ZAMM.deposit(address(this), key.id0, a0);
-        ZAMM.deposit(address(this), key.id1, a1);
-
-        (uint256 used0, uint256 used1, uint256 liq) =
-            ZAMM.addLiquidity(key, a0, a1, 0, 0, address(this), block.timestamp);
-
-        if (used0 < a0) {
-            uint256 ret = ZAMM.recoverTransientBalance(address(this), key.id0, address(this));
-            _burn(address(this), key.id0, ret);
-            totalSupply[key.id0] -= ret;
-        }
-        if (used1 < a1) {
-            uint256 ret = ZAMM.recoverTransientBalance(address(this), key.id1, address(this));
-            _burn(address(this), key.id1, ret);
-            totalSupply[key.id1] -= ret;
-        }
-
-        (uint256 usedYes, uint256 usedNo) = (key.id0 == yesId) ? (used0, used1) : (used1, used0);
-        emit Seeded(marketId, usedYes, usedNo, liq);
-    }
-
-    function closeMarket(uint256 marketId) public nonReentrant {
-        Market storage m = markets[marketId];
-        require(m.resolver != address(0), MarketNotFound());
-        require(msg.sender == m.resolver, OnlyResolver());
-        require(m.canClose, NotClosable());
-        require(!m.resolved, MarketResolved());
-        require(block.timestamp < m.close, MarketClosed());
-
-        m.close = uint72(block.timestamp);
-        emit Closed(marketId, block.timestamp, msg.sender);
-    }
-
-    /*──────── path-fair pricing helpers (fee-aware) ─────*/
-    function _price1e18(uint256 num, uint256 den) internal pure returns (uint256) {
-        return mulDiv(num, Q, den); // floor(num/den * 1e18)
-    }
-
-    // YES buy (NO -> YES)
-    function _fairChargeYesWithFee(uint256 rYes, uint256 rNo, uint256 yesOut, uint256 feeBps)
-        internal
-        pure
-        returns (uint256 charge)
-    {
-        uint256 p0 = _price1e18(rNo, rYes + rNo);
-
-        // midpoint (simulate half the output):
-        uint256 outHalf = yesOut / 2;
-        uint256 inHalf = _getAmountIn(outHalf, rNo, rYes, feeBps);
-        uint256 rYesMid = rYes - outHalf;
-        uint256 rNoMid = rNo + inHalf;
-        uint256 pMid = _price1e18(rNoMid, rYesMid + rNoMid);
-
-        // end (simulate full output):
-        uint256 inAll = _getAmountIn(yesOut, rNo, rYes, feeBps);
-        uint256 rYesEnd = rYes - yesOut;
-        uint256 rNoEnd = rNo + inAll;
-        uint256 p1 = _price1e18(rNoEnd, rYesEnd + rNoEnd);
-
-        // Simpson: Δq * (p0 + 4*pMid + p1) / 6:
-        uint256 sum = p0 + (pMid << 2) + p1;
-        charge = mulDivUp(yesOut, sum, 6 * Q);
-    }
-
-    // NO buy (YES -> NO)
-    function _fairChargeNoWithFee(uint256 rYes, uint256 rNo, uint256 noOut, uint256 feeBps)
-        internal
-        pure
-        returns (uint256 charge)
-    {
-        // p0 (EV of NO share = 1 - pYES = rYes/(rYes+rNo))
-        uint256 p0 = _price1e18(rYes, rYes + rNo);
-
-        // midpoint:
-        uint256 outHalf = noOut / 2;
-        uint256 inHalf = _getAmountIn(outHalf, rYes, rNo, feeBps);
-        uint256 rNoMid = rNo - outHalf;
-        uint256 rYesMid = rYes + inHalf;
-        uint256 pMid = _price1e18(rYesMid, rYesMid + rNoMid);
-
-        // end:
-        uint256 inAll = _getAmountIn(noOut, rYes, rNo, feeBps);
-        uint256 rNoEnd = rNo - noOut;
-        uint256 rYesEnd = rYes + inAll;
-        uint256 p1 = _price1e18(rYesEnd, rYesEnd + rNoEnd);
-
-        uint256 sum = p0 + (pMid << 2) + p1;
-        charge = mulDivUp(noOut, sum, 6 * Q);
-    }
-
-    // YES sell (YES -> NO)
-    function _fairRefundYesWithFee(uint256 rYes, uint256 rNo, uint256 yesIn, uint256 feeBps)
-        internal
-        pure
-        returns (uint256 refund)
-    {
-        // p0 = EV of YES share at start = rNo/(rYes+rNo)
-        uint256 p0 = mulDiv(rNo, 1e18, rYes + rNo);
-
-        // midpoint (simulate half the input along the SELL path):
-        uint256 inHalf = yesIn / 2;
-        uint256 outHalf = _getAmountOut(inHalf, rYes, rNo, feeBps);
-        uint256 rYesMid = rYes + inHalf;
-        uint256 rNoMid = rNo - outHalf;
-        uint256 pMid = mulDiv(rNoMid, 1e18, rYesMid + rNoMid);
-
-        // end:
-        uint256 outAll = _getAmountOut(yesIn, rYes, rNo, feeBps);
-        uint256 rYesEnd = rYes + yesIn;
-        uint256 rNoEnd = rNo - outAll;
-        uint256 p1 = mulDiv(rNoEnd, 1e18, rYesEnd + rNoEnd);
-
-        // Simpson:
-        uint256 sum = p0 + (pMid << 2) + p1;
-        refund = mulDiv(yesIn, sum, 6 * 1e18);
-    }
-
-    // NO sell (NO -> YES)
-    function _fairRefundNoWithFee(uint256 rYes, uint256 rNo, uint256 noIn, uint256 feeBps)
-        internal
-        pure
-        returns (uint256 refund)
-    {
-        // p0(NO) = 1 - pYES = rYes/(rYes+rNo)
-        uint256 p0 = mulDiv(rYes, 1e18, rYes + rNo);
-
-        uint256 inHalf = noIn / 2;
-        uint256 outHalf = _getAmountOut(inHalf, rNo, rYes, feeBps);
-        uint256 rNoMid = rNo + inHalf;
-        uint256 rYesMid = rYes - outHalf;
-        uint256 pMid = mulDiv(rYesMid, 1e18, rYesMid + rNoMid);
-
-        uint256 outAll = _getAmountOut(noIn, rNo, rYes, feeBps);
-        uint256 rNoEnd = rNo + noIn;
-        uint256 rYesEnd = rYes - outAll;
-        uint256 p1 = mulDiv(rYesEnd, 1e18, rYesEnd + rNoEnd);
-
-        uint256 sum = p0 + (pMid << 2) + p1;
-        refund = mulDiv(noIn, sum, 6 * 1e18);
-    }
-
-    function _pmMultBps(uint256 marketId, uint256 rYes, uint256 rNo)
-        internal
-        view
-        returns (uint256 bps)
-    {
-        PMTuning memory t = pmTuning[marketId];
-        if ((t.lateRampStart | t.lateRampMaxBps | t.extremeMaxBps) == 0) return 0;
-
-        // Time ramp (saturating start):
-        if (t.lateRampStart != 0) {
-            Market storage m = markets[marketId];
-            uint256 start = (t.lateRampStart >= m.close) ? 0 : (m.close - t.lateRampStart);
-            if (block.timestamp >= m.close) {
-                bps += t.lateRampMaxBps;
-            } else if (block.timestamp > start) {
-                uint256 elapsed = block.timestamp - start;
-                bps += (uint256(t.lateRampMaxBps) * elapsed) / t.lateRampStart;
-            }
-        }
-
-        if (t.extremeMaxBps != 0) {
-            uint256 den = rYes + rNo;
-            if (den != 0) {
-                uint256 p1e18 = mulDiv(rNo, 1e18, den);
-                uint256 dist = p1e18 > 5e17 ? (p1e18 - 5e17) : (5e17 - p1e18);
-                bps += mulDiv(uint256(t.extremeMaxBps), dist, 5e17);
-            }
-        }
-    }
-
-    /*──────── primary buys (path-fair EV; pot grows) ────*/
-    function buyYesViaPool(
-        uint256 marketId,
-        uint256 yesOut,
-        bool inIsETH,
-        uint256 wstInMax,
-        uint256 oppInMax,
-        address to
-    ) public payable nonReentrant returns (uint256 wstIn, uint256 oppIn) {
-        Market storage m = markets[marketId];
-        require(m.resolver != address(0), MarketNotFound());
-        require(!m.resolved && block.timestamp < m.close, MarketClosed());
-        require(yesOut != 0, AmountZero());
-
-        if (inIsETH) {
-            if (msg.value == 0) revert NoEth();
-        } else {
-            if (msg.value != 0) revert EthNotAllowed();
-        }
-
-        uint256 yesId = marketId;
-        uint256 noId = getNoId(marketId);
-        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
-
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
-        require(rYes > 0 && rNo > 0, PoolNotSeeded());
-        require(yesOut < rYes, InsufficientLiquidity());
-
-        bool zeroForOne = (key.id0 == noId); // NO -> YES if id0 is NO
-
-        // ----- Pool quote (fee-aware, order-invariant): pay NO (rNo) to get YES (rYes)
-        uint256 quotedIn = _getAmountIn(yesOut, /*reserveIn=*/ rNo, /*reserveOut=*/ rYes, FEE_BPS);
-
-        // Caller’s bound applies to the *raw* quote, not our internal padding:
-        require(quotedIn <= oppInMax, SlippageOppIn());
-
-        // Compute a safe internal mint (covers rounding), but never exceed caller’s cap:
-        uint256 paddedNeeded = mulDivUp(quotedIn, 10_000 + (FEE_BPS * 2 + 3), 10_000) + 5;
-        if (paddedNeeded < quotedIn + 3) paddedNeeded = quotedIn + 3;
-        uint256 mintIn = paddedNeeded > oppInMax ? oppInMax : paddedNeeded;
-
-        // ----- Path-fair EV charge into pot (fee-aware Simpson):
-        wstIn = _fairChargeYesWithFee(rYes, rNo, yesOut, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) wstIn = mulDivUp(wstIn, 10_000 + b, 10_000);
-        }
-        require(wstIn != 0, InsufficientWst());
-
-        // Collect wstETH:
-        if (inIsETH) {
-            uint256 z = ZSTETH.exactETHToWSTETH{value: msg.value}(address(this));
-            require(z >= wstIn, InsufficientZap());
-            m.pot += wstIn;
-            if (z > wstIn) IERC20(WSTETH).transfer(msg.sender, z - wstIn);
-        } else {
-            require(wstInMax >= wstIn, InsufficientWst());
-            IERC20(WSTETH).transferFrom(msg.sender, address(this), wstIn);
-            m.pot += wstIn;
-        }
-
-        // Swap via transient balance:
-        _mint(address(this), noId, mintIn);
-        totalSupply[noId] += mintIn;
-        ZAMM.deposit(address(this), noId, mintIn);
-
-        // Let AMM consume up to mintIn; capture the actual input used:
-        uint256 actualIn = ZAMM.swapExactOut(key, yesOut, mintIn, zeroForOne, to, block.timestamp);
-
-        // Sweep any unused NO and burn it immediately (keeps supply exact):
-        uint256 ret = ZAMM.recoverTransientBalance(address(this), noId, address(this));
-        if (ret != 0) {
-            _burn(address(this), noId, ret);
-            totalSupply[noId] -= ret;
-        }
-
-        // Report actual input used (matches quote under identical state):
-        oppIn = actualIn;
-
-        emit Bought(to, yesId, yesOut, wstIn);
-    }
-
-    function buyNoViaPool(
-        uint256 marketId,
-        uint256 noOut,
-        bool inIsETH,
-        uint256 wstInMax,
-        uint256 oppInMax,
-        address to
-    ) public payable nonReentrant returns (uint256 wstIn, uint256 oppIn) {
-        Market storage m = markets[marketId];
-        require(m.resolver != address(0), MarketNotFound());
-        require(!m.resolved && block.timestamp < m.close, MarketClosed());
-        require(noOut != 0, AmountZero());
-
-        if (inIsETH) {
-            if (msg.value == 0) revert NoEth();
-        } else {
-            if (msg.value != 0) revert EthNotAllowed();
-        }
-
-        uint256 yesId = marketId;
-        uint256 noId = getNoId(marketId);
-        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
-
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
-        require(rYes > 0 && rNo > 0, PoolNotSeeded());
-        require(noOut < rNo, InsufficientLiquidity());
-
-        bool zeroForOne = (key.id0 == yesId); // YES -> NO if id0 is YES
-
-        // ----- Pool quote (fee-aware, order-invariant): pay YES (rYes) to get NO (rNo):
-        uint256 quotedIn = _getAmountIn(noOut, /*reserveIn=*/ rYes, /*reserveOut=*/ rNo, FEE_BPS);
-
-        // Caller’s bound applies to the *raw* quote, not our internal padding:
-        require(quotedIn <= oppInMax, SlippageOppIn());
-
-        // Compute a safe internal mint (covers rounding), but never exceed caller’s cap:
-        uint256 paddedNeeded = mulDivUp(quotedIn, 10_000 + (FEE_BPS * 2 + 3), 10_000) + 5;
-        if (paddedNeeded < quotedIn + 3) paddedNeeded = quotedIn + 3;
-        uint256 mintIn = paddedNeeded > oppInMax ? oppInMax : paddedNeeded;
-
-        // ----- Path-fair EV charge into pot (fee-aware Simpson):
-        wstIn = _fairChargeNoWithFee(rYes, rNo, noOut, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) wstIn = mulDivUp(wstIn, 10_000 + b, 10_000);
-        }
-        require(wstIn != 0, InsufficientWst());
-
-        // Collect wstETH:
-        if (inIsETH) {
-            uint256 z = ZSTETH.exactETHToWSTETH{value: msg.value}(address(this));
-            require(z >= wstIn, InsufficientZap());
-            m.pot += wstIn;
-            if (z > wstIn) IERC20(WSTETH).transfer(msg.sender, z - wstIn);
-        } else {
-            require(wstInMax >= wstIn, InsufficientWst());
-            IERC20(WSTETH).transferFrom(msg.sender, address(this), wstIn);
-            m.pot += wstIn;
-        }
-
-        _mint(address(this), yesId, mintIn);
-        totalSupply[yesId] += mintIn;
-        ZAMM.deposit(address(this), yesId, mintIn);
-
-        // Let AMM consume up to mintIn; capture the actual input used:
-        uint256 actualIn = ZAMM.swapExactOut(key, noOut, mintIn, zeroForOne, to, block.timestamp);
-
-        // Sweep any unused YES and burn it immediately (keeps supply exact):
-        uint256 ret = ZAMM.recoverTransientBalance(address(this), yesId, address(this));
-        if (ret != 0) {
-            _burn(address(this), yesId, ret);
-            totalSupply[yesId] -= ret;
-        }
-
-        // Report actual input used (matches quote under identical state):
-        oppIn = actualIn;
-
-        emit Bought(to, noId, noOut, wstIn);
-    }
-
-    function sellYesViaPool(
-        uint256 marketId,
-        uint256 yesIn,
-        uint256 wstOutMin,
-        uint256 oppOutMin,
-        address to
-    ) public nonReentrant returns (uint256 wstOut, uint256 oppOut) {
-        Market storage m = markets[marketId];
-        require(m.resolver != address(0), MarketNotFound());
-        require(!m.resolved && block.timestamp < m.close, MarketClosed());
-        require(yesIn != 0, AmountZero());
-
-        uint256 yesId = marketId;
-        uint256 noId = getNoId(marketId);
-        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
-
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
-        require(rYes > 0 && rNo > 0, PoolNotSeeded());
-
-        bool zeroForOne = (key.id0 == yesId); // YES -> NO if id0 is YES
-
-        // 1) Deterministic pool out (exact-in):
-        oppOut = _getAmountOut(yesIn, rYes, rNo, FEE_BPS);
-        require(oppOut >= oppOutMin, InsufficientLiquidity());
-
-        // 2) Path-fair EV refund, floored to pot:
-        uint256 fair = _fairRefundYesWithFee(rYes, rNo, yesIn, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
-        }
-
-        uint256 potBal = m.pot;
-        wstOut = fair > potBal ? potBal : fair;
-        require(wstOut >= wstOutMin, InsufficientWst());
-
-        // 3) Pay refund:
-        m.pot = potBal - wstOut;
-        IERC20(WSTETH).transfer(to, wstOut);
-
-        // 4) Debit user's YES and fix totalSupply immediately:
-        _burn(msg.sender, yesId, yesIn);
-        totalSupply[yesId] -= yesIn;
-
-        // 5) Transient-mint YES to PM, swap to NO out for PM, then sweep:
-        _mint(address(this), yesId, yesIn);
-        totalSupply[yesId] += yesIn;
-        ZAMM.deposit(address(this), yesId, yesIn);
-        ZAMM.swapExactOut(
-            key,
-            oppOut, // exact NO to PM
-            yesIn, // cap YES spent
-            zeroForOne, // YES -> NO
-            address(this),
-            block.timestamp
-        );
-        // Sweep any leftover YES (rounding/slack):
-        uint256 retYes = ZAMM.recoverTransientBalance(address(this), yesId, address(this));
-        if (retYes != 0) {
-            _burn(address(this), yesId, retYes);
-            totalSupply[yesId] -= retYes;
-        }
-
-        // 6) Burn the NO received from pool (reduce NO supply deterministically):
-        _burn(address(this), noId, oppOut);
-        totalSupply[noId] -= oppOut;
-
-        emit Sold(msg.sender, yesId, yesIn, wstOut);
-        return (wstOut, oppOut);
-    }
-
-    function sellNoViaPool(
-        uint256 marketId,
-        uint256 noIn,
-        uint256 wstOutMin,
-        uint256 oppOutMin,
-        address to
-    ) public nonReentrant returns (uint256 wstOut, uint256 oppOut) {
-        Market storage m = markets[marketId];
-        require(m.resolver != address(0), MarketNotFound());
-        require(!m.resolved && block.timestamp < m.close, MarketClosed());
-        require(noIn != 0, AmountZero());
-
-        uint256 yesId = marketId;
-        uint256 noId = getNoId(marketId);
-        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
-
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
-        require(rYes > 0 && rNo > 0, PoolNotSeeded());
-
-        bool zeroForOne = (key.id0 == noId); // NO -> YES if id0 is NO
-
-        // 1) Deterministic pool out (exact-in):
-        oppOut = _getAmountOut(noIn, rNo, rYes, FEE_BPS);
-        require(oppOut >= oppOutMin, InsufficientLiquidity());
-
-        // 2) Path-fair EV refund, floored to pot:
-        uint256 fair = _fairRefundNoWithFee(rYes, rNo, noIn, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
-        }
-
-        uint256 potBal = m.pot;
-        wstOut = fair > potBal ? potBal : fair;
-        require(wstOut >= wstOutMin, InsufficientWst());
-
-        // 3) Pay refund:
-        m.pot = potBal - wstOut;
-        IERC20(WSTETH).transfer(to, wstOut);
-
-        // 4) Debit user's NO and fix totalSupply immediately:
-        _burn(msg.sender, noId, noIn);
-        totalSupply[noId] -= noIn;
-
-        // 5) Transient-mint NO to PM, swap to YES out for PM, then sweep:
-        _mint(address(this), noId, noIn);
-        totalSupply[noId] += noIn;
-        ZAMM.deposit(address(this), noId, noIn);
-        ZAMM.swapExactOut(
-            key,
-            oppOut, // exact YES to PM
-            noIn, // cap NO spent
-            zeroForOne, // NO -> YES
-            address(this),
-            block.timestamp
-        );
-        uint256 retNo = ZAMM.recoverTransientBalance(address(this), noId, address(this));
-        if (retNo != 0) {
-            _burn(address(this), noId, retNo);
-            totalSupply[noId] -= retNo;
-        }
-
-        // 6) Burn the YES received from pool (reduce YES supply deterministically):
-        _burn(address(this), yesId, oppOut);
-        totalSupply[yesId] -= oppOut;
-
-        emit Sold(msg.sender, noId, noIn, wstOut);
-        return (wstOut, oppOut);
-    }
-
-    /*──────── resolution / claims ───────*/
-    function setResolverFeeBps(uint16 bps) public {
-        require(bps <= 1_000, FeeOverflow());
-        resolverFeeBps[msg.sender] = bps;
-        emit ResolverFeeSet(msg.sender, bps);
-    }
-
-    function resolve(uint256 marketId, bool outcome) public nonReentrant {
-        Market storage m = markets[marketId];
-        require(m.resolver != address(0), MarketNotFound());
-        require(msg.sender == m.resolver, OnlyResolver());
-        require(!m.resolved, AlreadyResolved());
-        require(block.timestamp >= m.close, MarketNotClosed());
-
-        // optional resolver fee:
-        uint16 feeBps = resolverFeeBps[m.resolver];
-        if (feeBps != 0) {
-            uint256 fee = (m.pot * feeBps) / 10_000;
-            if (fee != 0) {
-                m.pot -= fee;
-                IERC20(WSTETH).transfer(m.resolver, fee);
-            }
-        }
-
-        uint256 yesId = marketId;
-        uint256 noId = getNoId(marketId);
-        uint256 yesCirc = _circulating(yesId);
-        uint256 noCirc = _circulating(noId);
-
-        // ── auto-flip semantics ──
-        if (outcome) {
-            // resolver chose YES
-            if (yesCirc == 0 && noCirc > 0) outcome = false; // flip to NO
-        } else {
-            // resolver chose NO
-            if (noCirc == 0 && yesCirc > 0) outcome = true; // flip to YES
-        }
-
-        // If both are zero, we still can't resolve (no winners exist):
-        uint256 winningCirc = outcome ? yesCirc : noCirc;
-        require(winningCirc != 0, NoCirculating());
-
-        m.payoutPerShare = mulDiv(m.pot, Q, winningCirc);
-        m.resolved = true;
-        m.outcome = outcome;
-
-        emit Resolved(marketId, outcome);
-    }
-
-    function claim(uint256 marketId, address to) public nonReentrant {
-        Market storage m = markets[marketId];
-        require(m.resolved, MarketNotResolved());
-
-        uint256 winId = m.outcome ? marketId : getNoId(marketId);
-        uint256 userShares = balanceOf[msg.sender][winId];
-        require(userShares != 0, NoWinningShares());
-
-        uint256 payout = mulDiv(userShares, m.payoutPerShare, Q);
-
-        _burn(msg.sender, winId, userShares);
-        totalSupply[winId] -= userShares;
-
-        m.pot -= payout;
-        IERC20(WSTETH).transfer(to, payout);
-
-        emit Claimed(to, winId, userShares, payout);
-    }
-
-    /*──────── transfer / transferFrom ───────*/
-    function transfer(address receiver, uint256 id, uint256 amount)
-        public
-        override(ERC6909Minimal)
-        returns (bool)
-    {
-        // Disallow arbitrary parking at PM or ZAMM:
-        if (receiver == address(this)) {
-            // Only ZAMM may send back residuals to PM, or PM may move internally:
-            if (msg.sender != address(this) && msg.sender != address(ZAMM)) {
-                revert InvalidReceiver();
-            }
-        } else if (receiver == address(ZAMM)) {
-            // Never allow users to push their own tokens into ZAMM.
-            // PM itself also shouldn't "transfer" into ZAMM via this path (it uses deposit + transient mints).
-            revert InvalidReceiver();
-        }
-
-        return ERC6909Minimal.transfer(receiver, id, amount);
-    }
-
-    function transferFrom(address sender, address receiver, uint256 id, uint256 amount)
-        public
-        returns (bool)
-    {
-        // Block arbitrary parking at PM or ZAMM, even when ZAMM is the caller:
-        if (receiver == address(this)) {
-            // Allow only ZAMM to sweep residuals back to PM or PM-internal ops:
-            if (msg.sender != address(this) && msg.sender != address(ZAMM)) {
-                revert InvalidReceiver();
-            }
-        } else if (receiver == address(ZAMM)) {
-            // Only allow PM-owned tokens to go into ZAMM (transient LP/swaps):
-            if (sender != address(this)) {
-                revert InvalidReceiver();
-            }
-        }
-
-        if (msg.sender != sender) {
-            // Fast path: allow ZAMM to pull PM-owned balances without SLOADs:
-            if (!(sender == address(this) && msg.sender == address(ZAMM))) {
-                if (!isOperator[sender][msg.sender]) {
-                    uint256 allowed = allowance[sender][msg.sender][id];
-                    if (allowed != type(uint256).max) {
-                        allowance[sender][msg.sender][id] = allowed - amount;
-                    }
-                }
-            }
-        }
-
-        balanceOf[sender][id] -= amount;
-        balanceOf[receiver][id] += amount;
-        emit Transfer(msg.sender, sender, receiver, id, amount);
-        return true;
-    }
-
-    /*──────── views & quotes (UX) ───────*/
-    function marketCount() public view returns (uint256) {
-        return allMarkets.length;
-    }
-
-    function tradingOpen(uint256 marketId) public view returns (bool) {
-        Market storage m = markets[marketId];
-        return m.resolver != address(0) && !m.resolved && block.timestamp < m.close;
-    }
-
-    /// Implied YES probability p ≈ rNO / (rYES + rNO)
-    function impliedYesProb(uint256 marketId) public view returns (uint256 num, uint256 den) {
-        IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, marketId);
-        return (rNo, rYes + rNo);
-    }
-
-    /// Quote helpers for frontends (fee-aware, path-fair)
-    // ---------- BUY QUOTES ----------
-    function quoteBuyYes(uint256 marketId, uint256 yesOut)
-        public
-        view
-        returns (
-            uint256 oppIn,
-            uint256 wstInFair,
-            uint256 p0_num,
-            uint256 p0_den,
-            uint256 p1_num,
-            uint256 p1_den
-        )
-    {
-        IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, marketId);
-        require(yesOut < rYes && rYes > 0 && rNo > 0, InsufficientLiquidity());
-
-        // Order-invariant: pay NO (rNo) to get YES (rYes):
-        oppIn = _getAmountIn(yesOut, /*reserveIn=*/ rNo, /*reserveOut=*/ rYes, FEE_BPS);
-
-        // p0 and p1 for display:
-        p0_num = rNo;
-        p0_den = rYes + rNo;
-        uint256 rYesEnd = rYes - yesOut;
-        uint256 rNoEnd = rNo + oppIn;
-        p1_num = rNoEnd;
-        p1_den = rYesEnd + rNoEnd;
-
-        wstInFair = _fairChargeYesWithFee(rYes, rNo, yesOut, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) wstInFair = mulDivUp(wstInFair, 10_000 + b, 10_000);
-        }
-    }
-
-    function quoteBuyNo(uint256 marketId, uint256 noOut)
-        public
-        view
-        returns (
-            uint256 oppIn,
-            uint256 wstInFair,
-            uint256 p0_num,
-            uint256 p0_den,
-            uint256 p1_num,
-            uint256 p1_den
-        )
-    {
-        IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, marketId);
-        require(noOut < rNo && rYes > 0 && rNo > 0, InsufficientLiquidity());
-
-        oppIn = _getAmountIn(noOut, rYes, rNo, FEE_BPS);
-
-        p0_num = rYes;
-        p0_den = rYes + rNo;
-        uint256 rNoEnd = rNo - noOut;
-        uint256 rYesEnd = rYes + oppIn;
-        p1_num = rYesEnd;
-        p1_den = rYesEnd + rNoEnd;
-
-        wstInFair = _fairChargeNoWithFee(rYes, rNo, noOut, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) wstInFair = mulDivUp(wstInFair, 10_000 + b, 10_000);
-        }
-    }
-
-    // ---------- SELL QUOTES ----------
-    function quoteSellYes(uint256 marketId, uint256 yesIn)
-        public
-        view
-        returns (
-            uint256 oppOut,
-            uint256 wstOutFair,
-            uint256 p0_num,
-            uint256 p0_den,
-            uint256 p1_num,
-            uint256 p1_den
-        )
-    {
-        IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, marketId);
-        require(yesIn != 0 && rYes > 0 && rNo > 0, InsufficientLiquidity());
-
-        oppOut = _getAmountOut(yesIn, rYes, rNo, FEE_BPS);
-
-        p0_num = rNo; // pYES = rNo / (rYes + rNo)
-        p0_den = rYes + rNo;
-        uint256 rYesEnd = rYes + yesIn;
-        uint256 rNoEnd = rNo - oppOut;
-        p1_num = rNoEnd;
-        p1_den = rYesEnd + rNoEnd;
-
-        uint256 fair = _fairRefundYesWithFee(rYes, rNo, yesIn, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
-        }
-        uint256 potBal = markets[marketId].pot;
-        wstOutFair = fair > potBal ? potBal : fair;
-    }
-
-    function quoteSellNo(uint256 marketId, uint256 noIn)
-        public
-        view
-        returns (
-            uint256 oppOut,
-            uint256 wstOutFair,
-            uint256 p0_num,
-            uint256 p0_den,
-            uint256 p1_num,
-            uint256 p1_den
-        )
-    {
-        uint256 yesId = marketId;
-        uint256 noId = getNoId(marketId);
-        IZAMM.PoolKey memory key = _poolKey(yesId, noId);
-        (uint256 rYes, uint256 rNo) = _poolReserves(key, yesId);
-        require(noIn != 0 && rYes > 0 && rNo > 0, InsufficientLiquidity());
-
-        oppOut = _getAmountOut(noIn, rNo, rYes, FEE_BPS);
-
-        p0_num = rYes; // pNO = rYes / (rYes + rNo)
-        p0_den = rYes + rNo;
-        uint256 rNoEnd = rNo + noIn;
-        uint256 rYesEnd = rYes - oppOut;
-        p1_num = rYesEnd;
-        p1_den = rYesEnd + rNoEnd;
-
-        uint256 fair = _fairRefundNoWithFee(rYes, rNo, noIn, FEE_BPS);
-        {
-            uint256 b = _pmMultBps(marketId, rYes, rNo);
-            if (b != 0) fair = mulDiv(fair, 10_000, 10_000 + b);
-        }
-        uint256 potBal = markets[marketId].pot;
-        wstOutFair = fair > potBal ? potBal : fair;
-    }
-
-    /*──────── view getters (UI & indexing) ───*/
-    function getMarket(uint256 marketId)
-        public
-        view
-        returns (
-            uint256 yesSupply,
-            uint256 noSupply,
-            address resolver,
-            bool resolved,
-            bool outcome,
-            uint256 pot,
-            uint256 payoutPerShare,
-            string memory desc,
-            uint72 closeTs,
-            bool canClose,
-            // AMM extras:
-            uint256 rYes,
-            uint256 rNo,
-            uint256 pYes_num,
-            uint256 pYes_den
-        )
-    {
-        Market storage m = markets[marketId];
-        resolver = m.resolver;
-        resolved = m.resolved;
-        outcome = m.outcome;
-        pot = m.pot;
-        payoutPerShare = m.payoutPerShare;
-        desc = descriptions[marketId];
-        closeTs = m.close;
-        canClose = m.canClose;
-
-        yesSupply = totalSupply[marketId];
-        noSupply = totalSupply[getNoId(marketId)];
-
-        if (resolver != address(0)) {
-            IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
-            (rYes, rNo) = _poolReserves(key, marketId);
-            pYes_num = rNo;
-            pYes_den = rYes + rNo;
-        }
-    }
-
-    function getMarkets(uint256 start, uint256 count)
-        public
-        view
-        returns (
-            uint256[] memory marketIds,
-            uint256[] memory yesSupplies,
-            uint256[] memory noSupplies,
-            address[] memory resolvers,
-            bool[] memory resolved,
-            bool[] memory outcome,
-            uint256[] memory pot,
-            uint256[] memory payoutPerShare,
-            string[] memory descs,
-            uint72[] memory closes,
-            bool[] memory canCloses,
-            // AMM extras:
-            uint256[] memory rYesArr,
-            uint256[] memory rNoArr,
-            uint256[] memory pYesNumArr,
-            uint256[] memory pYesDenArr,
-            uint256 next
-        )
-    {
-        uint256 len = allMarkets.length;
-        if (start >= len) {
-            return (
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new address[](0),
-                new bool[](0),
-                new bool[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new string[](0),
-                new uint72[](0),
-                new bool[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                0
+    /// @notice NFT-compatible metadata URI for a token id.
+    /// @dev Returns data URI with JSON. Works for YES (marketId) tokens; NO tokens return minimal info.
+    function tokenURI(uint256 id) public view returns (string memory) {
+        Market storage m = markets[id];
+
+        // YES token - has full market info
+        if (m.resolver != address(0)) {
+            string memory status = m.resolved ? (m.outcome ? "YES wins" : "NO wins") : "Pending";
+            return string(
+                abi.encodePacked(
+                    "data:application/json;utf8,{\"name\":\"YES: ",
+                    descriptions[id],
+                    "\",\"description\":\"Prediction market YES share\",\"attributes\":[{\"trait_type\":\"Status\",\"value\":\"",
+                    status,
+                    "\"},{\"trait_type\":\"Close\",\"value\":",
+                    _toString(m.close),
+                    "}]}"
+                )
             );
         }
 
-        uint256 end = start + count;
-        if (end > len) end = len;
-        uint256 n = end - start;
+        // NO token or unknown - check if supply exists
+        if (totalSupplyId[id] == 0) revert MarketNotFound();
 
-        marketIds = new uint256[](n);
-        yesSupplies = new uint256[](n);
-        noSupplies = new uint256[](n);
-        resolvers = new address[](n);
-        resolved = new bool[](n);
-        outcome = new bool[](n);
-        pot = new uint256[](n);
-        payoutPerShare = new uint256[](n);
-        descs = new string[](n);
-        closes = new uint72[](n);
-        canCloses = new bool[](n);
-        rYesArr = new uint256[](n);
-        rNoArr = new uint256[](n);
-        pYesNumArr = new uint256[](n);
-        pYesDenArr = new uint256[](n);
-
-        uint256 id;
-        uint256 noId;
-
-        for (uint256 j; j != n; ++j) {
-            id = allMarkets[start + j];
-            Market storage m = markets[id];
-            marketIds[j] = id;
-            yesSupplies[j] = totalSupply[id];
-            noId = getNoId(id);
-            noSupplies[j] = totalSupply[noId];
-            resolvers[j] = m.resolver;
-            resolved[j] = m.resolved;
-            outcome[j] = m.outcome;
-            pot[j] = m.pot;
-            payoutPerShare[j] = m.payoutPerShare;
-            descs[j] = descriptions[id];
-            closes[j] = m.close;
-            canCloses[j] = m.canClose;
-
-            if (m.resolver != address(0)) {
-                IZAMM.PoolKey memory key = _poolKey(id, noId);
-                (rYesArr[j], rNoArr[j]) = _poolReserves(key, id);
-                pYesNumArr[j] = rNoArr[j];
-                pYesDenArr[j] = rYesArr[j] + rNoArr[j];
-            }
-        }
-
-        next = (end < len) ? end : 0;
+        return "data:application/json;utf8,{\"name\":\"PAMM NO Share\",\"description\":\"Prediction market NO share\"}";
     }
 
-    function getUserMarkets(address user, uint256 start, uint256 count)
-        public
-        view
-        returns (
-            uint256[] memory yesIds,
-            uint256[] memory noIds,
-            uint256[] memory yesBalances,
-            uint256[] memory noBalances,
-            uint256[] memory claimables,
-            bool[] memory isResolved,
-            bool[] memory tradingOpen_,
-            uint256 next
-        )
-    {
-        uint256 len = allMarkets.length;
-        if (start >= len) {
-            return (
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new bool[](0),
-                new bool[](0),
-                0
-            );
-        }
-
-        uint256 end = start + count;
-        if (end > len) end = len;
-        uint256 n = end - start;
-
-        yesIds = new uint256[](n);
-        noIds = new uint256[](n);
-        yesBalances = new uint256[](n);
-        noBalances = new uint256[](n);
-        claimables = new uint256[](n);
-        isResolved = new bool[](n);
-        tradingOpen_ = new bool[](n);
-
-        uint256 yId;
-        uint256 nId;
-        uint256 yBal;
-        uint256 nBal;
-        bool res;
-
-        for (uint256 j; j != n; ++j) {
-            yId = allMarkets[start + j];
-            nId = getNoId(yId);
-            Market storage m = markets[yId];
-
-            yesIds[j] = yId;
-            noIds[j] = nId;
-
-            yBal = balanceOf[user][yId];
-            nBal = balanceOf[user][nId];
-            yesBalances[j] = yBal;
-            noBalances[j] = nBal;
-
-            res = m.resolved;
-            isResolved[j] = res;
-            tradingOpen_[j] = (m.resolver != address(0) && !res && block.timestamp < m.close);
-
-            if (res) {
-                uint256 pps = m.payoutPerShare; // Q-scaled
-                uint256 winBal = m.outcome ? yBal : nBal;
-                claimables[j] = (pps == 0) ? 0 : mulDiv(winBal, pps, Q);
-            }
-        }
-
-        next = (end < len) ? end : 0;
-    }
-
-    function winningId(uint256 marketId) public view returns (uint256 id) {
-        Market storage m = markets[marketId];
-        if (m.resolver == address(0)) return 0;
-        if (!m.resolved) return 0;
-        if (m.payoutPerShare == 0) return 0;
-        return m.outcome ? marketId : getNoId(marketId);
-    }
-
-    function getPool(uint256 marketId)
-        public
-        view
-        returns (
-            uint256 poolId,
-            uint256 rYes,
-            uint256 rNo,
-            uint32 tsLast,
-            uint256 kLast,
-            uint256 lpSupply
-        )
-    {
-        IZAMM.PoolKey memory key = _poolKey(marketId, getNoId(marketId));
-        poolId = _poolId(key);
-        (uint112 r0, uint112 r1, uint32 t,,, uint256 k, uint256 s) = ZAMM.pools(poolId);
-        if (key.id0 == marketId) {
-            rYes = r0;
-            rNo = r1;
-        } else {
-            rYes = r1;
-            rNo = r0;
-        }
-        tsLast = t;
-        kLast = k;
-        lpSupply = s;
-    }
-
-    /*──────── internals ───*/
-    function _circulating(uint256 id) internal view returns (uint256 c) {
-        c = totalSupply[id];
-        unchecked {
-            c -= balanceOf[address(this)][id]; // exclude PM
-            c -= balanceOf[address(ZAMM)][id]; // exclude ZAMM
-        }
-    }
-
-    function _poolReserves(IZAMM.PoolKey memory key, uint256 yesId)
-        internal
-        view
-        returns (uint256 rYes, uint256 rNo)
-    {
-        (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(_poolId(key));
-        if (key.id0 == yesId) {
-            rYes = uint256(r0);
-            rNo = uint256(r1);
-        } else {
-            rYes = uint256(r1);
-            rNo = uint256(r0);
-        }
-    }
-
-    function _getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut, uint256 feeBps)
-        internal
-        pure
-        returns (uint256 amountIn)
-    {
-        if (amountOut == 0) return 0;
-        uint256 numerator = reserveIn * amountOut * 10000;
-        uint256 denominator = (reserveOut - amountOut) * (10000 - feeBps);
-        amountIn = (numerator / denominator) + 1;
-    }
-
-    function _getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut, uint256 feeBps)
-        internal
-        pure
-        returns (uint256 amountOut)
-    {
-        uint256 amountInWithFee = amountIn * (10000 - feeBps);
-        uint256 numerator = amountInWithFee * reserveOut;
-        uint256 denominator = reserveIn * 10000 + amountInWithFee;
-        amountOut = numerator / denominator;
-    }
-
-    /*──────── utils ───────*/
+    /// @dev Converts uint256 to string (from Solady).
     function _toString(uint256 value) internal pure returns (string memory result) {
         assembly ("memory-safe") {
             result := add(mload(0x40), 0x80)
@@ -1351,62 +292,1395 @@ contract PAMM is ERC6909Minimal {
         }
     }
 
-    /*──────── reentrancy ─*/
-    error Reentrancy();
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
-    uint256 constant REENTRANCY_GUARD_SLOT = 0x929eee149b4bd21268;
+    constructor() payable {}
+
+    /// @dev Override to skip allowance check for ZAMM pulling from this contract.
+    function transferFrom(address sender, address receiver, uint256 id, uint256 amount)
+        public
+        returns (bool)
+    {
+        // ZAMM pulls from address(this) - skip SLOAD for isOperator/allowance
+        if (msg.sender != sender && !(msg.sender == address(ZAMM) && sender == address(this))) {
+            if (!isOperator[sender][msg.sender]) {
+                uint256 allowed = allowance[sender][msg.sender][id];
+                if (allowed != type(uint256).max) {
+                    allowance[sender][msg.sender][id] = allowed - amount;
+                }
+            }
+        }
+        balanceOf[sender][id] -= amount;
+        unchecked {
+            balanceOf[receiver][id] += amount; // Safe: totalSupply is tracked
+        }
+        emit Transfer(msg.sender, sender, receiver, id, amount);
+        return true;
+    }
+
+    receive() external payable {}
+
+    /*//////////////////////////////////////////////////////////////
+                               MULTICALL
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Batch multiple calls in a single transaction.
+    function multicall(bytes[] calldata data) public returns (bytes[] memory results) {
+        results = new bytes[](data.length);
+        for (uint256 i; i != data.length; ++i) {
+            (bool ok, bytes memory result) = address(this).delegatecall(data[i]);
+            if (!ok) {
+                assembly ("memory-safe") {
+                    revert(add(result, 0x20), mload(result))
+                }
+            }
+            results[i] = result;
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                PERMIT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice EIP-2612 permit for ERC20 tokens (use in multicall before split).
+    /// @param token The ERC20 token with permit support
+    /// @param owner The token owner who signed the permit
+    /// @param value Amount to approve to this contract
+    /// @param deadline Permit deadline
+    /// @param v Signature v
+    /// @param r Signature r
+    /// @param s Signature s
+    function permit(
+        address token,
+        address owner,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public nonReentrant {
+        assembly ("memory-safe") {
+            // token.permit(owner, address(this), value, deadline, v, r, s)
+            let m := mload(0x40)
+            mstore(m, 0xd505accf00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), owner)
+            mstore(add(m, 0x24), address())
+            mstore(add(m, 0x44), value)
+            mstore(add(m, 0x64), deadline)
+            mstore(add(m, 0x84), v)
+            mstore(add(m, 0xa4), r)
+            mstore(add(m, 0xc4), s)
+            if iszero(call(gas(), token, 0, m, 0xe4, 0x00, 0x00)) {
+                returndatacopy(m, 0, returndatasize())
+                revert(m, returndatasize())
+            }
+        }
+    }
+
+    /// @notice DAI-style permit (use in multicall before split).
+    /// @param token The DAI-like token with permit support
+    /// @param owner The token owner who signed the permit
+    /// @param nonce Owner's current nonce
+    /// @param deadline Permit deadline (0 = no expiry)
+    /// @param allowed True to approve max, false to revoke
+    /// @param v Signature v
+    /// @param r Signature r
+    /// @param s Signature s
+    function permitDAI(
+        address token,
+        address owner,
+        uint256 nonce,
+        uint256 deadline,
+        bool allowed,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public nonReentrant {
+        assembly ("memory-safe") {
+            // token.permit(owner, address(this), nonce, deadline, allowed, v, r, s)
+            let m := mload(0x40)
+            mstore(m, 0x8fcbaf0c00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), owner)
+            mstore(add(m, 0x24), address())
+            mstore(add(m, 0x44), nonce)
+            mstore(add(m, 0x64), deadline)
+            mstore(add(m, 0x84), allowed)
+            mstore(add(m, 0xa4), v)
+            mstore(add(m, 0xc4), r)
+            mstore(add(m, 0xe4), s)
+            if iszero(call(gas(), token, 0, m, 0x104, 0x00, 0x00)) {
+                returndatacopy(m, 0, returndatasize())
+                revert(m, returndatasize())
+            }
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              REENTRANCY
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21268;
 
     modifier nonReentrant() {
         assembly ("memory-safe") {
-            if tload(REENTRANCY_GUARD_SLOT) {
-                mstore(0x00, 0xab143c06)
+            if tload(REENTRANCY_SLOT) {
+                mstore(0x00, 0xab143c06) // Reentrancy()
                 revert(0x1c, 0x04)
             }
-            tstore(REENTRANCY_GUARD_SLOT, address())
+            tstore(REENTRANCY_SLOT, 1)
         }
         _;
         assembly ("memory-safe") {
-            tstore(REENTRANCY_GUARD_SLOT, 0)
+            tstore(REENTRANCY_SLOT, 0)
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             ID DERIVATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice YES-id from (description, resolver, collateral).
+    function getMarketId(string calldata description, address resolver, address collateral)
+        public
+        pure
+        returns (uint256)
+    {
+        return uint256(
+            keccak256(abi.encodePacked("PMARKET:YES", description, resolver, collateral))
+        );
+    }
+
+    /// @notice NO-id from YES-id.
+    function getNoId(uint256 marketId) public pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked("PMARKET:NO", marketId)));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            MARKET LIFECYCLE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Create a new YES/NO market.
+    /// @dev Description is stored as-is and used in tokenURI JSON. Avoid special characters
+    ///      (quotes, backslashes, newlines) as they are not escaped and may break metadata rendering.
+    /// @param description Used in id derivation and tokenURI metadata
+    /// @param resolver Can call resolve()
+    /// @param collateral Collateral token (address(0) for ETH)
+    /// @param close Resolve allowed after this timestamp
+    /// @param canClose If true, resolver can early-close
+    function createMarket(
+        string calldata description,
+        address resolver,
+        address collateral,
+        uint64 close,
+        bool canClose
+    ) public nonReentrant returns (uint256 marketId, uint256 noId) {
+        (marketId, noId) = _createMarket(description, resolver, collateral, close, canClose);
+    }
+
+    /// @notice Create a market and seed it with initial liquidity in one tx.
+    /// @dev For ETH markets, send ETH with the call (collateralIn can be 0 or must equal msg.value).
+    ///      Description is stored as-is; avoid special characters (quotes, backslashes, newlines).
+    /// @param description Used in id derivation and tokenURI metadata
+    /// @param resolver Can call resolve()
+    /// @param collateral Collateral token (address(0) for ETH)
+    /// @param close Resolve allowed after this timestamp
+    /// @param canClose If true, resolver can early-close
+    /// @param collateralIn Amount of collateral to split into shares
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param minLiquidity Minimum LP tokens to receive
+    /// @param to Recipient of LP tokens
+    /// @param deadline Timestamp after which the tx reverts
+    function createMarketAndSeed(
+        string calldata description,
+        address resolver,
+        address collateral,
+        uint64 close,
+        bool canClose,
+        uint256 collateralIn,
+        uint256 feeOrHook,
+        uint256 minLiquidity,
+        address to,
+        uint256 deadline
+    ) public payable nonReentrant returns (uint256 marketId, uint256 noId, uint256 liquidity) {
+        (marketId, noId) = _createMarket(description, resolver, collateral, close, canClose);
+        (, liquidity) = _splitAndAddLiquidity(
+            marketId, collateralIn, feeOrHook, 0, 0, minLiquidity, to, deadline
+        );
+    }
+
+    /// @dev Internal create logic (no reentrancy guard).
+    function _createMarket(
+        string calldata description,
+        address resolver,
+        address collateral,
+        uint64 close,
+        bool canClose
+    ) internal returns (uint256 marketId, uint256 noId) {
+        if (resolver == address(0)) revert InvalidResolver();
+        if (close <= block.timestamp) revert InvalidClose();
+
+        uint8 decimals;
+        if (collateral == ETH) {
+            decimals = 18;
+        } else {
+            try IERC20(collateral).decimals() returns (uint8 d) {
+                decimals = d;
+            } catch {
+                revert InvalidCollateral();
+            }
+        }
+        if (decimals > 77) revert InvalidDecimals();
+
+        marketId = getMarketId(description, resolver, collateral);
+        if (markets[marketId].resolver != address(0)) revert MarketExists();
+
+        noId = getNoId(marketId);
+
+        markets[marketId] = Market({
+            resolver: resolver,
+            collateral: collateral,
+            decimals: decimals,
+            resolved: false,
+            outcome: false,
+            canClose: canClose,
+            close: close,
+            collateralLocked: 0
+        });
+
+        descriptions[marketId] = description;
+        allMarkets.push(marketId);
+
+        emit Created(marketId, noId, description, resolver, collateral, decimals, close, canClose);
+    }
+
+    /// @notice Early-close a market (only resolver, only if canClose).
+    function closeMarket(uint256 marketId) public nonReentrant {
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (msg.sender != m.resolver) revert OnlyResolver();
+        if (!m.canClose) revert NotClosable();
+        if (m.resolved) revert AlreadyResolved();
+        if (block.timestamp >= m.close) revert MarketClosed();
+
+        m.close = uint64(block.timestamp);
+        emit Closed(marketId, block.timestamp, msg.sender);
+    }
+
+    /// @notice Set winning outcome (only resolver, after close).
+    function resolve(uint256 marketId, bool outcome) public nonReentrant {
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (msg.sender != m.resolver) revert OnlyResolver();
+        if (m.resolved) revert AlreadyResolved();
+        if (block.timestamp < m.close) revert MarketNotClosed();
+
+        m.resolved = true;
+        m.outcome = outcome;
+
+        emit Resolved(marketId, outcome);
+    }
+
+    /// @notice Set resolver fee (caller sets their own fee).
+    /// @param bps Fee in basis points (max 1000 = 10%).
+    function setResolverFeeBps(uint16 bps) public {
+        if (bps > 1000) revert FeeOverflow();
+        resolverFeeBps[msg.sender] = bps;
+        emit ResolverFeeSet(msg.sender, bps);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         SPLIT / MERGE / CLAIM
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Lock collateral -> mint YES+NO pair.
+    /// @dev For ETH markets, send ETH with the call. Dust refunded.
+    function split(uint256 marketId, uint256 collateralIn, address to)
+        public
+        payable
+        nonReentrant
+        returns (uint256 shares, uint256 used)
+    {
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        uint256 perShare = 10 ** m.decimals;
+        address collateral = m.collateral;
+        uint256 actualIn;
+
+        if (collateral == ETH) {
+            if (collateralIn != 0 && collateralIn != msg.value) revert InvalidETHAmount();
+            actualIn = msg.value;
+        } else {
+            if (msg.value != 0) revert WrongCollateralType();
+            if (collateralIn == 0) revert AmountZero();
+            actualIn = collateralIn;
+            safeTransferFrom(collateral, msg.sender, address(this), actualIn);
+        }
+
+        shares = actualIn / perShare;
+        if (shares == 0) revert CollateralTooSmall();
+
+        used = shares * perShare;
+        uint256 refund;
+        unchecked {
+            refund = actualIn - used; // Safe: used = shares * perShare, shares = actualIn / perShare
+        }
+
+        if (refund != 0) {
+            if (collateral == ETH) {
+                safeTransferETH(msg.sender, refund);
+            } else {
+                safeTransfer(collateral, msg.sender, refund);
+            }
+        }
+
+        m.collateralLocked += used;
+
+        uint256 noId = getNoId(marketId);
+        _mint(to, marketId, shares);
+        _mint(to, noId, shares);
+        totalSupplyId[marketId] += shares;
+        totalSupplyId[noId] += shares;
+
+        emit Split(to, marketId, shares, used);
+    }
+
+    /// @notice Burn YES+NO pair -> unlock collateral.
+    /// @dev Only while market is open. Merges min(shares, yesBalance, noBalance).
+    function merge(uint256 marketId, uint256 shares, address to)
+        public
+        nonReentrant
+        returns (uint256 merged, uint256 collateralOut)
+    {
+        if (shares == 0) revert AmountZero();
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        uint256 noId = getNoId(marketId);
+        uint256 yesBal = balanceOf[msg.sender][marketId];
+        uint256 noBal = balanceOf[msg.sender][noId];
+
+        merged = shares;
+        if (yesBal < merged) merged = yesBal;
+        if (noBal < merged) merged = noBal;
+        if (merged == 0) revert AmountZero();
+
+        _burn(msg.sender, marketId, merged);
+        _burn(msg.sender, noId, merged);
+        unchecked {
+            totalSupplyId[marketId] -= merged; // Safe: burn succeeded so supply >= merged
+            totalSupplyId[noId] -= merged;
+        }
+
+        collateralOut = merged * (10 ** m.decimals);
+        m.collateralLocked -= collateralOut;
+
+        address collateral = m.collateral;
+        if (collateral == ETH) {
+            safeTransferETH(to, collateralOut);
+        } else {
+            safeTransfer(collateral, to, collateralOut);
+        }
+
+        emit Merged(to, marketId, merged, collateralOut);
+    }
+
+    /// @notice Burn winning shares -> collateral (minus resolver fee).
+    function claim(uint256 marketId, address to)
+        public
+        nonReentrant
+        returns (uint256 shares, uint256 payout)
+    {
+        if (to == address(0)) revert InvalidReceiver();
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (!m.resolved) revert MarketNotClosed();
+        (shares, payout) = _claimCore(m, marketId, to);
+        if (shares == 0) revert AmountZero();
+    }
+
+    /// @notice Batch claim from multiple resolved markets.
+    /// @dev Skips markets where user has no winning balance (no revert).
+    /// @param marketIds Array of market ids to claim from
+    /// @param to Recipient of all payouts
+    function claimMany(uint256[] calldata marketIds, address to)
+        public
+        nonReentrant
+        returns (uint256 totalPayout)
+    {
+        if (to == address(0)) revert InvalidReceiver();
+        for (uint256 i; i < marketIds.length; ++i) {
+            Market storage m = markets[marketIds[i]];
+            if (m.resolver == address(0)) continue; // Skip invalid
+            if (!m.resolved) continue; // Skip unresolved
+            (, uint256 payout) = _claimCore(m, marketIds[i], to);
+            totalPayout += payout;
+        }
+        if (totalPayout == 0) revert AmountZero();
+    }
+
+    /// @dev Core claim logic - returns (0,0) if no balance.
+    function _claimCore(Market storage m, uint256 marketId, address to)
+        internal
+        returns (uint256 shares, uint256 payout)
+    {
+        address resolver = m.resolver;
+        uint256 winId = m.outcome ? marketId : getNoId(marketId);
+        shares = balanceOf[msg.sender][winId];
+        if (shares == 0) return (0, 0);
+
+        uint256 gross = shares * (10 ** m.decimals);
+        uint16 feeBps = resolverFeeBps[resolver];
+        uint256 fee = (feeBps != 0) ? (gross * feeBps) / 10_000 : 0;
+        payout = gross - fee;
+
+        _burn(msg.sender, winId, shares);
+        unchecked {
+            totalSupplyId[winId] -= shares;
+        }
+        m.collateralLocked -= gross;
+
+        address collateral = m.collateral;
+        if (collateral == ETH) {
+            if (fee != 0) safeTransferETH(resolver, fee);
+            safeTransferETH(to, payout);
+        } else {
+            if (fee != 0) safeTransfer(collateral, resolver, fee);
+            safeTransfer(collateral, to, payout);
+        }
+
+        emit Claimed(to, marketId, shares, payout);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          ZAMM POOL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Pull shares from msg.sender into contract with Transfer event.
+    function _pullToThis(uint256 id, uint256 amount) internal {
+        balanceOf[msg.sender][id] -= amount; // Checked: reverts if insufficient
+        unchecked {
+            balanceOf[address(this)][id] += amount; // Safe: bounded by totalSupply
+        }
+        emit Transfer(msg.sender, msg.sender, address(this), id, amount);
+    }
+
+    /// @notice PoolKey for market's YES/NO pair.
+    function poolKey(uint256 marketId, uint256 feeOrHook)
+        public
+        view
+        returns (IZAMM.PoolKey memory key)
+    {
+        key = _poolKey(marketId, getNoId(marketId), feeOrHook);
+    }
+
+    /// @dev Internal poolKey with pre-computed noId to avoid redundant hashing.
+    function _poolKey(uint256 marketId, uint256 noId, uint256 feeOrHook)
+        internal
+        view
+        returns (IZAMM.PoolKey memory key)
+    {
+        (uint256 id0, uint256 id1) = marketId < noId ? (marketId, noId) : (noId, marketId);
+        key = IZAMM.PoolKey({
+            id0: id0, id1: id1, token0: address(this), token1: address(this), feeOrHook: feeOrHook
+        });
+    }
+
+    /// @notice Split collateral -> YES+NO -> LP in one tx.
+    /// @dev Seeds new pool or adds to existing. Unused tokens returned.
+    /// @param marketId The market to add liquidity for
+    /// @param collateralIn Amount of collateral to split
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param amount0Min Minimum amount of token0 to add (slippage protection)
+    /// @param amount1Min Minimum amount of token1 to add (slippage protection)
+    /// @param minLiquidity Minimum LP tokens to receive
+    /// @param to Recipient of LP tokens
+    /// @param deadline Timestamp after which the tx reverts (0 = current block)
+    function splitAndAddLiquidity(
+        uint256 marketId,
+        uint256 collateralIn,
+        uint256 feeOrHook,
+        uint256 amount0Min,
+        uint256 amount1Min,
+        uint256 minLiquidity,
+        address to,
+        uint256 deadline
+    ) public payable nonReentrant returns (uint256 shares, uint256 liquidity) {
+        (shares, liquidity) = _splitAndAddLiquidity(
+            marketId, collateralIn, feeOrHook, amount0Min, amount1Min, minLiquidity, to, deadline
+        );
+    }
+
+    /// @dev Internal splitAndAddLiquidity logic (no reentrancy guard).
+    function _splitAndAddLiquidity(
+        uint256 marketId,
+        uint256 collateralIn,
+        uint256 feeOrHook,
+        uint256 amount0Min,
+        uint256 amount1Min,
+        uint256 minLiquidity,
+        address to,
+        uint256 deadline
+    ) internal returns (uint256 shares, uint256 liquidity) {
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        shares = _splitInternal(m, marketId, collateralIn);
+
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+        ZAMM.deposit(address(this), key.id0, shares);
+        ZAMM.deposit(address(this), key.id1, shares);
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        (,, liquidity) = ZAMM.addLiquidity(key, shares, shares, amount0Min, amount1Min, to, dl);
+        if (liquidity < minLiquidity) revert InsufficientOutput();
+
+        ZAMM.recoverTransientBalance(address(this), key.id0, msg.sender);
+        ZAMM.recoverTransientBalance(address(this), key.id1, msg.sender);
+    }
+
+    /// @dev Internal split logic for buy helpers - mints to address(this).
+    function _splitInternal(Market storage m, uint256 marketId, uint256 collateralIn)
+        internal
+        returns (uint256 shares)
+    {
+        uint256 perShare = 10 ** m.decimals;
+        uint256 actualIn;
+
+        if (m.collateral == ETH) {
+            if (collateralIn != 0 && collateralIn != msg.value) revert InvalidETHAmount();
+            actualIn = msg.value;
+        } else {
+            if (msg.value != 0) revert WrongCollateralType();
+            if (collateralIn == 0) revert AmountZero();
+            actualIn = collateralIn;
+            safeTransferFrom(m.collateral, msg.sender, address(this), actualIn);
+        }
+
+        shares = actualIn / perShare;
+        if (shares == 0) revert CollateralTooSmall();
+
+        uint256 used = shares * perShare;
+        uint256 refund = actualIn - used;
+
+        if (refund != 0) {
+            if (m.collateral == ETH) {
+                safeTransferETH(msg.sender, refund);
+            } else {
+                safeTransfer(m.collateral, msg.sender, refund);
+            }
+        }
+
+        m.collateralLocked += used;
+
+        uint256 noId = getNoId(marketId);
+        _mint(address(this), marketId, shares);
+        _mint(address(this), noId, shares);
+        totalSupplyId[marketId] += shares;
+        totalSupplyId[noId] += shares;
+
+        emit Split(msg.sender, marketId, shares, used);
+    }
+
+    /// @notice Remove LP position and convert to collateral in one tx.
+    /// @dev User must approve PAMM on ZAMM to pull LP tokens (via ZAMM.setOperator or approve).
+    ///      Burns balanced YES/NO pairs, refunds any leftover shares to msg.sender.
+    /// @param marketId The market to remove liquidity from
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param liquidity Amount of LP tokens to burn
+    /// @param amount0Min Minimum amount of token0 from LP removal (slippage protection)
+    /// @param amount1Min Minimum amount of token1 from LP removal (slippage protection)
+    /// @param minCollateralOut Minimum collateral to receive after merging
+    /// @param to Recipient of collateral
+    /// @param deadline Timestamp after which the tx reverts (0 = current block)
+    function removeLiquidityToCollateral(
+        uint256 marketId,
+        uint256 feeOrHook,
+        uint256 liquidity,
+        uint256 amount0Min,
+        uint256 amount1Min,
+        uint256 minCollateralOut,
+        address to,
+        uint256 deadline
+    ) public nonReentrant returns (uint256 collateralOut, uint256 leftoverYes, uint256 leftoverNo) {
+        if (to == address(0)) revert InvalidReceiver();
+        if (liquidity == 0) revert AmountZero();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+
+        // Compute pool id (LP token id) and pull LP tokens from user
+        uint256 poolId =
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
+        ZAMM.transferFrom(msg.sender, address(this), poolId, liquidity);
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        (uint256 a0, uint256 a1) =
+            ZAMM.removeLiquidity(key, liquidity, amount0Min, amount1Min, address(this), dl);
+
+        // Map to YES/NO amounts based on pool ordering
+        (uint256 yesAmt, uint256 noAmt) = key.id0 == marketId ? (a0, a1) : (a1, a0);
+        uint256 merged = yesAmt < noAmt ? yesAmt : noAmt;
+
+        // Burn merged pairs
+        _burn(address(this), marketId, merged);
+        _burn(address(this), noId, merged);
+        unchecked {
+            totalSupplyId[marketId] -= merged;
+            totalSupplyId[noId] -= merged;
+        }
+
+        collateralOut = merged * (10 ** m.decimals);
+        if (collateralOut < minCollateralOut) revert InsufficientOutput();
+        m.collateralLocked -= collateralOut;
+
+        // Transfer collateral
+        if (m.collateral == ETH) {
+            safeTransferETH(to, collateralOut);
+        } else {
+            safeTransfer(m.collateral, to, collateralOut);
+        }
+
+        // Refund leftover shares to msg.sender
+        leftoverYes = yesAmt - merged;
+        leftoverNo = noAmt - merged;
+        if (leftoverYes != 0) {
+            balanceOf[address(this)][marketId] -= leftoverYes;
+            unchecked {
+                balanceOf[msg.sender][marketId] += leftoverYes;
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, marketId, leftoverYes);
+        }
+        if (leftoverNo != 0) {
+            balanceOf[address(this)][noId] -= leftoverNo;
+            unchecked {
+                balanceOf[msg.sender][noId] += leftoverNo;
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, noId, leftoverNo);
+        }
+
+        emit Merged(to, marketId, merged, collateralOut);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          BUY / SELL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Buy YES shares with collateral (split + swap NO→YES).
+    /// @param marketId The market to buy YES for
+    /// @param collateralIn Amount of collateral to spend
+    /// @param minYesOut Minimum total YES shares to receive
+    /// @param minSwapOut Minimum YES from swap leg (sandwich protection)
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param to Recipient of YES shares
+    /// @param deadline Timestamp after which the tx reverts (0 = no deadline)
+    function buyYes(
+        uint256 marketId,
+        uint256 collateralIn,
+        uint256 minYesOut,
+        uint256 minSwapOut,
+        uint256 feeOrHook,
+        address to,
+        uint256 deadline
+    ) public payable nonReentrant returns (uint256 yesOut) {
+        if (deadline != 0 && block.timestamp > deadline) revert DeadlineExpired();
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        // Split collateral into YES+NO
+        uint256 shares = _splitInternal(m, marketId, collateralIn);
+
+        // Swap all NO for YES
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+        bool zeroForOne = key.id0 == noId;
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        ZAMM.deposit(address(this), noId, shares);
+        uint256 yesFromSwap =
+            ZAMM.swapExactIn(key, shares, minSwapOut, zeroForOne, address(this), dl);
+        ZAMM.recoverTransientBalance(address(this), noId, address(this));
+
+        // Total YES = split shares + swap output
+        yesOut = shares + yesFromSwap;
+        if (yesOut < minYesOut) revert InsufficientOutput();
+
+        // Transfer YES to recipient
+        balanceOf[address(this)][marketId] -= yesOut;
+        unchecked {
+            balanceOf[to][marketId] += yesOut; // Safe: bounded by totalSupply
+        }
+        emit Transfer(msg.sender, address(this), to, marketId, yesOut);
+    }
+
+    /// @notice Buy NO shares with collateral (split + swap YES→NO).
+    /// @param marketId The market to buy NO for
+    /// @param collateralIn Amount of collateral to spend
+    /// @param minNoOut Minimum total NO shares to receive
+    /// @param minSwapOut Minimum NO from swap leg (sandwich protection)
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param to Recipient of NO shares
+    /// @param deadline Timestamp after which the tx reverts (0 = no deadline)
+    function buyNo(
+        uint256 marketId,
+        uint256 collateralIn,
+        uint256 minNoOut,
+        uint256 minSwapOut,
+        uint256 feeOrHook,
+        address to,
+        uint256 deadline
+    ) public payable nonReentrant returns (uint256 noOut) {
+        if (deadline != 0 && block.timestamp > deadline) revert DeadlineExpired();
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        // Split collateral into YES+NO
+        uint256 shares = _splitInternal(m, marketId, collateralIn);
+
+        // Swap all YES for NO
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+        bool zeroForOne = key.id0 == marketId;
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        ZAMM.deposit(address(this), marketId, shares);
+        uint256 noFromSwap =
+            ZAMM.swapExactIn(key, shares, minSwapOut, zeroForOne, address(this), dl);
+        ZAMM.recoverTransientBalance(address(this), marketId, address(this));
+
+        // Total NO = split shares + swap output
+        noOut = shares + noFromSwap;
+        if (noOut < minNoOut) revert InsufficientOutput();
+
+        // Transfer NO to recipient
+        balanceOf[address(this)][noId] -= noOut;
+        unchecked {
+            balanceOf[to][noId] += noOut; // Safe: bounded by totalSupply
+        }
+        emit Transfer(msg.sender, address(this), to, noId, noOut);
+    }
+
+    /// @notice Sell YES shares for collateral (swap some YES→NO + merge).
+    /// @param marketId The market to sell YES from
+    /// @param yesAmount Amount of YES shares to sell
+    /// @param swapAmount Amount of YES to swap (0 = default 50%)
+    /// @param minCollateralOut Minimum collateral to receive
+    /// @param minSwapOut Minimum NO from swap leg (sandwich protection)
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param to Recipient of collateral
+    /// @param deadline Timestamp after which the tx reverts (0 = no deadline)
+    function sellYes(
+        uint256 marketId,
+        uint256 yesAmount,
+        uint256 swapAmount,
+        uint256 minCollateralOut,
+        uint256 minSwapOut,
+        uint256 feeOrHook,
+        address to,
+        uint256 deadline
+    ) public nonReentrant returns (uint256 collateralOut) {
+        if (deadline != 0 && block.timestamp > deadline) revert DeadlineExpired();
+        if (yesAmount == 0) revert AmountZero();
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        _pullToThis(marketId, yesAmount);
+
+        // Swap YES for NO (default 50% if swapAmount is 0)
+        uint256 yesToSwap = swapAmount == 0 ? yesAmount / 2 : swapAmount;
+        if (yesToSwap > yesAmount) revert InvalidSwapAmount();
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+        bool zeroForOne = key.id0 == marketId;
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        ZAMM.deposit(address(this), marketId, yesToSwap);
+        uint256 noFromSwap =
+            ZAMM.swapExactIn(key, yesToSwap, minSwapOut, zeroForOne, address(this), dl);
+        ZAMM.recoverTransientBalance(address(this), marketId, address(this));
+
+        // Merge pairs: min(YES remaining, NO from swap)
+        uint256 yesRemaining = yesAmount - yesToSwap;
+        uint256 merged = yesRemaining < noFromSwap ? yesRemaining : noFromSwap;
+
+        // Compute leftovers deterministically from this call
+        uint256 leftoverYes = yesRemaining - merged;
+        uint256 leftoverNo = noFromSwap - merged;
+
+        // Burn merged pairs
+        _burn(address(this), marketId, merged);
+        _burn(address(this), noId, merged);
+        unchecked {
+            totalSupplyId[marketId] -= merged; // Safe: burn succeeded so supply >= merged
+            totalSupplyId[noId] -= merged;
+        }
+
+        collateralOut = merged * (10 ** m.decimals);
+        m.collateralLocked -= collateralOut;
+
+        if (collateralOut < minCollateralOut) revert InsufficientOutput();
+
+        // Transfer collateral
+        if (m.collateral == ETH) {
+            safeTransferETH(to, collateralOut);
+        } else {
+            safeTransfer(m.collateral, to, collateralOut);
+        }
+
+        // Refund only this-call leftovers
+        if (leftoverYes != 0) {
+            balanceOf[address(this)][marketId] -= leftoverYes;
+            unchecked {
+                balanceOf[msg.sender][marketId] += leftoverYes; // Safe: bounded by totalSupply
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, marketId, leftoverYes);
+        }
+        if (leftoverNo != 0) {
+            balanceOf[address(this)][noId] -= leftoverNo;
+            unchecked {
+                balanceOf[msg.sender][noId] += leftoverNo; // Safe: bounded by totalSupply
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, noId, leftoverNo);
+        }
+
+        emit Merged(to, marketId, merged, collateralOut);
+    }
+
+    /// @notice Sell NO shares for collateral (swap some NO→YES + merge).
+    /// @param marketId The market to sell NO from
+    /// @param noAmount Amount of NO shares to sell
+    /// @param swapAmount Amount of NO to swap (0 = default 50%)
+    /// @param minCollateralOut Minimum collateral to receive
+    /// @param minSwapOut Minimum YES from swap leg (sandwich protection)
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param to Recipient of collateral
+    /// @param deadline Timestamp after which the tx reverts (0 = no deadline)
+    function sellNo(
+        uint256 marketId,
+        uint256 noAmount,
+        uint256 swapAmount,
+        uint256 minCollateralOut,
+        uint256 minSwapOut,
+        uint256 feeOrHook,
+        address to,
+        uint256 deadline
+    ) public nonReentrant returns (uint256 collateralOut) {
+        if (deadline != 0 && block.timestamp > deadline) revert DeadlineExpired();
+        if (noAmount == 0) revert AmountZero();
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        uint256 noId = getNoId(marketId);
+        _pullToThis(noId, noAmount);
+
+        // Swap NO for YES (default 50% if swapAmount is 0)
+        uint256 noToSwap = swapAmount == 0 ? noAmount / 2 : swapAmount;
+        if (noToSwap > noAmount) revert InvalidSwapAmount();
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+        bool zeroForOne = key.id0 == noId;
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        ZAMM.deposit(address(this), noId, noToSwap);
+        uint256 yesFromSwap =
+            ZAMM.swapExactIn(key, noToSwap, minSwapOut, zeroForOne, address(this), dl);
+        ZAMM.recoverTransientBalance(address(this), noId, address(this));
+
+        // Merge pairs: min(NO remaining, YES from swap)
+        uint256 noRemaining = noAmount - noToSwap;
+        uint256 merged = noRemaining < yesFromSwap ? noRemaining : yesFromSwap;
+
+        // Compute leftovers deterministically from this call
+        uint256 leftoverNo = noRemaining - merged;
+        uint256 leftoverYes = yesFromSwap - merged;
+
+        // Burn merged pairs
+        _burn(address(this), marketId, merged);
+        _burn(address(this), noId, merged);
+        unchecked {
+            totalSupplyId[marketId] -= merged; // Safe: burn succeeded so supply >= merged
+            totalSupplyId[noId] -= merged;
+        }
+
+        collateralOut = merged * (10 ** m.decimals);
+        m.collateralLocked -= collateralOut;
+
+        if (collateralOut < minCollateralOut) revert InsufficientOutput();
+
+        // Transfer collateral
+        if (m.collateral == ETH) {
+            safeTransferETH(to, collateralOut);
+        } else {
+            safeTransfer(m.collateral, to, collateralOut);
+        }
+
+        // Refund only this-call leftovers
+        if (leftoverYes != 0) {
+            balanceOf[address(this)][marketId] -= leftoverYes;
+            unchecked {
+                balanceOf[msg.sender][marketId] += leftoverYes; // Safe: bounded by totalSupply
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, marketId, leftoverYes);
+        }
+        if (leftoverNo != 0) {
+            balanceOf[address(this)][noId] -= leftoverNo;
+            unchecked {
+                balanceOf[msg.sender][noId] += leftoverNo; // Safe: bounded by totalSupply
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, noId, leftoverNo);
+        }
+
+        emit Merged(to, marketId, merged, collateralOut);
+    }
+
+    /// @notice Sell YES shares for exact collateral amount (swap YES→NO using exactOut + merge).
+    /// @param marketId The market to sell YES from
+    /// @param collateralOut Target collateral (floored to whole shares)
+    /// @param maxYesIn Maximum YES shares willing to spend
+    /// @param maxSwapIn Maximum YES to swap (slippage protection on swap leg)
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param to Recipient of collateral
+    /// @param deadline Timestamp after which the tx reverts (0 = no deadline)
+    function sellYesForExactCollateral(
+        uint256 marketId,
+        uint256 collateralOut,
+        uint256 maxYesIn,
+        uint256 maxSwapIn,
+        uint256 feeOrHook,
+        address to,
+        uint256 deadline
+    ) public nonReentrant returns (uint256 yesSpent) {
+        if (deadline != 0 && block.timestamp > deadline) revert DeadlineExpired();
+        if (collateralOut == 0) revert AmountZero();
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        uint256 perShare = 10 ** m.decimals;
+        uint256 merged = collateralOut / perShare;
+        if (merged == 0) revert CollateralTooSmall();
+        if (maxSwapIn > maxYesIn) revert ExcessiveInput();
+
+        // Actual collateral (may be less than requested due to rounding)
+        uint256 actualCollateral = merged * perShare;
+
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+        bool zeroForOne = key.id0 == marketId;
+
+        // Swap YES for exactly `merged` NO shares
+        _pullToThis(marketId, maxYesIn);
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        ZAMM.deposit(address(this), marketId, maxYesIn);
+        uint256 yesSwapped =
+            ZAMM.swapExactOut(key, merged, maxSwapIn, zeroForOne, address(this), dl);
+        ZAMM.recoverTransientBalance(address(this), marketId, address(this));
+
+        // Total YES spent = swapped + merged (for the merge)
+        yesSpent = yesSwapped + merged;
+        if (yesSpent > maxYesIn) revert ExcessiveInput();
+
+        // Burn merged pairs
+        _burn(address(this), marketId, merged);
+        _burn(address(this), noId, merged);
+        unchecked {
+            totalSupplyId[marketId] -= merged; // Safe: burn succeeded so supply >= merged
+            totalSupplyId[noId] -= merged;
+        }
+
+        m.collateralLocked -= actualCollateral;
+
+        // Transfer collateral
+        if (m.collateral == ETH) {
+            safeTransferETH(to, actualCollateral);
+        } else {
+            safeTransfer(m.collateral, to, actualCollateral);
+        }
+
+        // Refund unused YES
+        uint256 leftoverYes = maxYesIn - yesSpent;
+        if (leftoverYes != 0) {
+            balanceOf[address(this)][marketId] -= leftoverYes;
+            unchecked {
+                balanceOf[msg.sender][marketId] += leftoverYes; // Safe: bounded by totalSupply
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, marketId, leftoverYes);
+        }
+
+        emit Merged(to, marketId, merged, actualCollateral);
+    }
+
+    /// @notice Sell NO shares for exact collateral amount (swap NO→YES using exactOut + merge).
+    /// @param marketId The market to sell NO from
+    /// @param collateralOut Target collateral (floored to whole shares)
+    /// @param maxNoIn Maximum NO shares willing to spend
+    /// @param maxSwapIn Maximum NO to swap (slippage protection on swap leg)
+    /// @param feeOrHook Pool fee tier (bps) or hook address
+    /// @param to Recipient of collateral
+    /// @param deadline Timestamp after which the tx reverts (0 = no deadline)
+    function sellNoForExactCollateral(
+        uint256 marketId,
+        uint256 collateralOut,
+        uint256 maxNoIn,
+        uint256 maxSwapIn,
+        uint256 feeOrHook,
+        address to,
+        uint256 deadline
+    ) public nonReentrant returns (uint256 noSpent) {
+        if (deadline != 0 && block.timestamp > deadline) revert DeadlineExpired();
+        if (collateralOut == 0) revert AmountZero();
+        if (to == address(0)) revert InvalidReceiver();
+
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+
+        uint256 perShare = 10 ** m.decimals;
+        uint256 merged = collateralOut / perShare;
+        if (merged == 0) revert CollateralTooSmall();
+        if (maxSwapIn > maxNoIn) revert ExcessiveInput();
+
+        // Actual collateral (may be less than requested due to rounding)
+        uint256 actualCollateral = merged * perShare;
+
+        uint256 noId = getNoId(marketId);
+        IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
+        bool zeroForOne = key.id0 == noId;
+
+        // Swap NO for exactly `merged` YES shares
+        _pullToThis(noId, maxNoIn);
+
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+        ZAMM.deposit(address(this), noId, maxNoIn);
+        uint256 noSwapped = ZAMM.swapExactOut(key, merged, maxSwapIn, zeroForOne, address(this), dl);
+        ZAMM.recoverTransientBalance(address(this), noId, address(this));
+
+        // Total NO spent = swapped + merged (for the merge)
+        noSpent = noSwapped + merged;
+        if (noSpent > maxNoIn) revert ExcessiveInput();
+
+        // Burn merged pairs
+        _burn(address(this), marketId, merged);
+        _burn(address(this), noId, merged);
+        unchecked {
+            totalSupplyId[marketId] -= merged; // Safe: burn succeeded so supply >= merged
+            totalSupplyId[noId] -= merged;
+        }
+
+        m.collateralLocked -= actualCollateral;
+
+        // Transfer collateral
+        if (m.collateral == ETH) {
+            safeTransferETH(to, actualCollateral);
+        } else {
+            safeTransfer(m.collateral, to, actualCollateral);
+        }
+
+        // Refund unused NO
+        uint256 leftoverNo = maxNoIn - noSpent;
+        if (leftoverNo != 0) {
+            balanceOf[address(this)][noId] -= leftoverNo;
+            unchecked {
+                balanceOf[msg.sender][noId] += leftoverNo; // Safe: bounded by totalSupply
+            }
+            emit Transfer(msg.sender, address(this), msg.sender, noId, leftoverNo);
+        }
+
+        emit Merged(to, marketId, merged, actualCollateral);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                  VIEWS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Number of markets.
+    function marketCount() public view returns (uint256) {
+        return allMarkets.length;
+    }
+
+    /// @notice Collateral per share for a market (10^decimals).
+    function collateralPerShare(uint256 marketId) public view returns (uint256) {
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        return 10 ** m.decimals;
+    }
+
+    /// @notice Check if market is open (split/merge allowed).
+    function tradingOpen(uint256 marketId) public view returns (bool) {
+        Market storage m = markets[marketId];
+        return m.resolver != address(0) && !m.resolved && block.timestamp < m.close;
+    }
+
+    /// @notice Winning token id (0 if unresolved or not found).
+    function winningId(uint256 marketId) public view returns (uint256) {
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0) || !m.resolved) return 0;
+        return m.outcome ? marketId : getNoId(marketId);
+    }
+
+    /// @notice Full market state.
+    function getMarket(uint256 marketId)
+        public
+        view
+        returns (
+            address resolver,
+            address collateral,
+            uint8 decimals,
+            bool resolved,
+            bool outcome,
+            bool canClose,
+            uint64 close,
+            uint256 collateralLocked,
+            uint256 yesSupply,
+            uint256 noSupply,
+            string memory description
+        )
+    {
+        Market storage m = markets[marketId];
+        if (m.resolver == address(0)) revert MarketNotFound();
+        resolver = m.resolver;
+        collateral = m.collateral;
+        decimals = m.decimals;
+        resolved = m.resolved;
+        outcome = m.outcome;
+        canClose = m.canClose;
+        close = m.close;
+        collateralLocked = m.collateralLocked;
+        yesSupply = totalSupplyId[marketId];
+        noSupply = totalSupplyId[getNoId(marketId)];
+        description = descriptions[marketId];
+    }
+
+    /// @notice Pool reserves and implied probability.
+    function getPoolState(uint256 marketId, uint256 feeOrHook)
+        public
+        view
+        returns (uint256 rYes, uint256 rNo, uint256 pYesNum, uint256 pYesDen)
+    {
+        IZAMM.PoolKey memory key = poolKey(marketId, feeOrHook);
+        uint256 pid =
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
+        (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(pid);
+
+        (rYes, rNo) = key.id0 == marketId ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        pYesNum = rNo;
+        pYesDen = rYes + rNo;
+    }
+
+    /// @notice Paginated batch read of all markets.
+    function getMarkets(uint256 start, uint256 count)
+        public
+        view
+        returns (
+            uint256[] memory marketIds,
+            address[] memory resolvers,
+            address[] memory collaterals,
+            uint8[] memory decimalsList,
+            uint8[] memory states,
+            uint64[] memory closes,
+            uint256[] memory collateralAmounts,
+            uint256[] memory yesSupplies,
+            uint256[] memory noSupplies,
+            string[] memory descs,
+            uint256 next
+        )
+    {
+        uint256 len = allMarkets.length;
+        if (start >= len) {
+            return (
+                new uint256[](0),
+                new address[](0),
+                new address[](0),
+                new uint8[](0),
+                new uint8[](0),
+                new uint64[](0),
+                new uint256[](0),
+                new uint256[](0),
+                new uint256[](0),
+                new string[](0),
+                0
+            );
+        }
+
+        uint256 end = start + count;
+        if (end > len) end = len;
+        uint256 n = end - start;
+
+        marketIds = new uint256[](n);
+        resolvers = new address[](n);
+        collaterals = new address[](n);
+        decimalsList = new uint8[](n);
+        states = new uint8[](n);
+        closes = new uint64[](n);
+        collateralAmounts = new uint256[](n);
+        yesSupplies = new uint256[](n);
+        noSupplies = new uint256[](n);
+        descs = new string[](n);
+
+        for (uint256 i; i != n; ++i) {
+            uint256 mId = allMarkets[start + i];
+            Market storage m = markets[mId];
+
+            marketIds[i] = mId;
+            resolvers[i] = m.resolver;
+            collaterals[i] = m.collateral;
+            decimalsList[i] = m.decimals;
+            states[i] = (m.resolved ? 1 : 0) | (m.outcome ? 2 : 0) | (m.canClose ? 4 : 0);
+            closes[i] = m.close;
+            collateralAmounts[i] = m.collateralLocked;
+            yesSupplies[i] = totalSupplyId[mId];
+            noSupplies[i] = totalSupplyId[getNoId(mId)];
+            descs[i] = descriptions[mId];
+        }
+
+        next = (end < len) ? end : 0;
+    }
+
+    /// @notice Paginated batch read of user positions.
+    function getUserPositions(address user, uint256 start, uint256 count)
+        public
+        view
+        returns (
+            uint256[] memory marketIds,
+            uint256[] memory noIds,
+            address[] memory collaterals,
+            uint256[] memory yesBalances,
+            uint256[] memory noBalances,
+            uint256[] memory claimables,
+            bool[] memory isResolved,
+            bool[] memory isOpen,
+            uint256 next
+        )
+    {
+        uint256 len = allMarkets.length;
+        if (start >= len) {
+            return (
+                new uint256[](0),
+                new uint256[](0),
+                new address[](0),
+                new uint256[](0),
+                new uint256[](0),
+                new uint256[](0),
+                new bool[](0),
+                new bool[](0),
+                0
+            );
+        }
+
+        uint256 end = start + count;
+        if (end > len) end = len;
+        uint256 n = end - start;
+
+        marketIds = new uint256[](n);
+        noIds = new uint256[](n);
+        collaterals = new address[](n);
+        yesBalances = new uint256[](n);
+        noBalances = new uint256[](n);
+        claimables = new uint256[](n);
+        isResolved = new bool[](n);
+        isOpen = new bool[](n);
+
+        for (uint256 i; i != n; ++i) {
+            uint256 mId = allMarkets[start + i];
+            uint256 nId = getNoId(mId);
+            Market storage m = markets[mId];
+
+            marketIds[i] = mId;
+            noIds[i] = nId;
+            collaterals[i] = m.collateral;
+
+            uint256 yesBal = balanceOf[user][mId];
+            uint256 noBal = balanceOf[user][nId];
+            yesBalances[i] = yesBal;
+            noBalances[i] = noBal;
+
+            bool resolved = m.resolved;
+            isResolved[i] = resolved;
+            isOpen[i] = m.resolver != address(0) && !resolved && block.timestamp < m.close;
+
+            if (resolved) {
+                uint256 gross = (m.outcome ? yesBal : noBal) * (10 ** m.decimals);
+                uint16 feeBps = resolverFeeBps[m.resolver];
+                claimables[i] = gross - ((feeBps != 0) ? (gross * feeBps) / 10_000 : 0);
+            }
+        }
+
+        next = (end < len) ? end : 0;
+    }
+}
+
+/// @dev Low-level transfer helpers (free functions for simplicity).
+
+function safeTransferETH(address to, uint256 amount) {
+    assembly ("memory-safe") {
+        if iszero(call(gas(), to, amount, codesize(), 0x00, codesize(), 0x00)) {
+            mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
+            revert(0x1c, 0x04)
         }
     }
 }
 
-IERC20 constant WSTETH = IERC20(0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0);
-
-interface IERC20 {
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-}
-
-IZSTETH constant ZSTETH = IZSTETH(0x000000000077B216105413Dc45Dc6F6256577c7B);
-
-interface IZSTETH {
-    function exactETHToWSTETH(address to) external payable returns (uint256 wstOut);
-}
-
-/*────────────────────────────────────────────────────────
-| mulDiv helper (Solady)
-|────────────────────────────────────────────────────────*/
-error MulDivFailed();
-
-function mulDiv(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {
+function safeTransfer(address token, address to, uint256 amount) {
     assembly ("memory-safe") {
-        z := mul(x, y)
-        if iszero(mul(or(iszero(x), eq(div(z, x), y)), d)) {
-            mstore(0x00, 0xad251c27)
-            revert(0x1c, 0x04)
+        mstore(0x14, to)
+        mstore(0x34, amount)
+        mstore(0x00, 0xa9059cbb000000000000000000000000) // transfer(address,uint256)
+        let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
+        if iszero(and(eq(mload(0x00), 1), success)) {
+            if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                mstore(0x00, 0x90b8ec18) // TransferFailed()
+                revert(0x1c, 0x04)
+            }
         }
-        z := div(z, d)
+        mstore(0x34, 0)
     }
 }
 
-function mulDivUp(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {
+function safeTransferFrom(address token, address from, address to, uint256 amount) {
     assembly ("memory-safe") {
-        z := mul(x, y)
-        if iszero(mul(or(iszero(x), eq(div(z, x), y)), d)) {
-            mstore(0x00, 0xad251c27)
-            revert(0x1c, 0x04)
+        let m := mload(0x40)
+        mstore(0x60, amount)
+        mstore(0x40, to)
+        mstore(0x2c, shl(96, from))
+        mstore(0x0c, 0x23b872dd000000000000000000000000) // transferFrom(address,address,uint256)
+        let success := call(gas(), token, 0, 0x1c, 0x64, 0x00, 0x20)
+        if iszero(and(eq(mload(0x00), 1), success)) {
+            if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                mstore(0x00, 0x7939f424) // TransferFromFailed()
+                revert(0x1c, 0x04)
+            }
         }
-        z := add(iszero(iszero(mod(z, d))), div(z, d))
+        mstore(0x60, 0)
+        mstore(0x40, m)
     }
 }
