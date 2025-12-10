@@ -1,4 +1,7 @@
 {
+  "lib/ZAMM": {
+    "rev": "f1a2dc3151c0d746b812e4409f96b06afc7996d8"
+  },
   "lib/abdk-libraries-solidity": {
     "rev": "5e1e7c11b35f8313d3f7ce11c1b86320d7c0b554"
   },

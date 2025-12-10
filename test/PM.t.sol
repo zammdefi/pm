@@ -555,7 +555,7 @@ contract PMTest is Test {
         vm.prank(ALICE);
         uint256 y = pm.buyYes{value: 2 ether}(marketId, 0, ALICE);
         vm.prank(BOB);
-        uint256 n = pm.buyNo{value: 3 ether}(marketId, 0, BOB);
+        pm.buyNo{value: 3 ether}(marketId, 0, BOB);
 
         _warpPastClose();
 
@@ -563,7 +563,6 @@ contract PMTest is Test {
         pm.resolve(marketId, true);
 
         uint256 potAtResolve = pot(marketId);
-        uint256 P = pps(marketId);
 
         vm.prank(ALICE);
         pm.transfer(BOB, marketId, y / 2);
@@ -750,7 +749,7 @@ contract PMTest is Test {
         vm.prank(ALICE);
         uint256 y = pm.buyYes{value: 0.5 ether}(mid, 0, ALICE);
         vm.prank(BOB);
-        uint256 n = pm.buyNo{value: 0.75 ether}(mid, 0, BOB);
+        pm.buyNo{value: 0.75 ether}(mid, 0, BOB);
 
         (,,,,, uint256 potBefore,,) = pm.getMarket(mid);
         uint256 yBefore = pm.totalSupply(mid);
@@ -809,9 +808,7 @@ contract PMTest is Test {
             uint256[] memory ids1,
             uint256[] memory yes1,
             uint256[] memory no1,
-            address[] memory resolvers1,
-            bool[] memory resolved1,
-            bool[] memory outcome1,
+            address[] memory resolvers1,,,
             uint256[] memory pot1,
             uint256[] memory pps1,
             string[] memory descs1,
@@ -825,14 +822,10 @@ contract PMTest is Test {
         (
             uint256[] memory ids2,
             uint256[] memory yes2,
-            uint256[] memory no2,
-            address[] memory resolvers2,
-            bool[] memory resolved2,
-            bool[] memory outcome2,
+            uint256[] memory no2,,,,
             uint256[] memory pot2,
             uint256[] memory pps2,
             string[] memory descs2,
-            uint256 next2
         ) = pm.getMarkets(next1, 2);
 
         assertEq(ids2.length, 2);
@@ -856,7 +849,7 @@ contract PMTest is Test {
         // Seed a couple of markets and positions for ALICE
         (uint256 m1,) = pm.createMarket("U-1", RESOLVER, uint72(block.timestamp + 10 days), false);
         (uint256 m2,) = pm.createMarket("U-2", RESOLVER, uint72(block.timestamp + 20 days), false);
-        (uint256 m3,) = pm.createMarket("U-3", RESOLVER, uint72(block.timestamp + 30 days), false);
+        pm.createMarket("U-3", RESOLVER, uint72(block.timestamp + 30 days), false);
 
         vm.prank(ALICE);
         pm.buyYes{value: 0.5 ether}(m1, 0, ALICE);
@@ -893,7 +886,6 @@ contract PMTest is Test {
             uint256[] memory claim2,
             bool[] memory resolved2,
             bool[] memory open2,
-            uint256 next2
         ) = pm.getUserMarkets(ALICE, next1, 2);
 
         assertEq(yesIds2.length, yesBal2.length);
@@ -901,7 +893,6 @@ contract PMTest is Test {
         assertEq(claim2.length, yesIds2.length);
         assertEq(resolved2.length, yesIds2.length);
         assertEq(open2.length, yesIds2.length);
-        // next2 may be 0 if last page
     }
 
     // EXTRA
@@ -1008,7 +999,7 @@ contract PMTest is Test {
         vm.prank(ALICE);
         uint256 y = pm.buyYes{value: 2 ether}(mid, 0, ALICE);
         vm.prank(BOB);
-        uint256 n = pm.buyNo{value: 1 ether}(mid, 0, BOB);
+        pm.buyNo{value: 1 ether}(mid, 0, BOB);
 
         vm.warp(block.timestamp + 3 days);
 
@@ -1045,7 +1036,7 @@ contract PMTest is Test {
         vm.prank(ALICE);
         uint256 y = pm.buyYes{value: 3 ether}(mid, 0, ALICE);
         vm.prank(BOB);
-        uint256 n = pm.buyNo{value: 1 ether}(mid, 0, BOB);
+        pm.buyNo{value: 1 ether}(mid, 0, BOB);
 
         vm.warp(block.timestamp + 3 days);
 
@@ -1115,7 +1106,7 @@ contract PMTest is Test {
 
         // Seed both sides
         vm.prank(ALICE);
-        uint256 y = pm.buyYes{value: 1 ether}(mid, 0, ALICE);
+        pm.buyYes{value: 1 ether}(mid, 0, ALICE);
         vm.prank(BOB);
         uint256 n = pm.buyNo{value: 2 ether}(mid, 0, BOB);
 

@@ -2145,14 +2145,14 @@ contract PAMM_Test is Test {
                         PAGINATION EDGE CASES
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetMarkets_StartBeyondLength() public {
+    function test_GetMarkets_StartBeyondLength() public view {
         (uint256[] memory marketIds,,,,,,,,,, uint256 next) = pm.getMarkets(1000, 10);
 
         assertEq(marketIds.length, 0);
         assertEq(next, 0);
     }
 
-    function test_GetMarkets_CountExceedsRemaining() public {
+    function test_GetMarkets_CountExceedsRemaining() public view {
         // Only 1 market exists
         (uint256[] memory marketIds,,,,,,,,,, uint256 next) = pm.getMarkets(0, 1000);
 
@@ -2160,14 +2160,14 @@ contract PAMM_Test is Test {
         assertEq(next, 0); // No more pages
     }
 
-    function test_GetUserPositions_StartBeyondLength() public {
+    function test_GetUserPositions_StartBeyondLength() public view {
         (uint256[] memory marketIds,,,,,,,, uint256 next) = pm.getUserPositions(ALICE, 1000, 10);
 
         assertEq(marketIds.length, 0);
         assertEq(next, 0);
     }
 
-    function test_GetUserPositions_NoBalance() public {
+    function test_GetUserPositions_NoBalance() public view {
         // Alice has no positions
         (
             ,,,
@@ -3215,7 +3215,7 @@ contract PAMM_ZAMM_Test is Test {
         uint256 aliceBefore = ALICE.balance;
 
         vm.prank(ALICE);
-        (uint256 mId,, uint256 liquidity) = pm.createMarketAndSeed{value: 10000.5 ether}(
+        (,, uint256 liquidity) = pm.createMarketAndSeed{value: 10000.5 ether}(
             desc, RESOLVER, address(0), closeTime, false, 0, FEE_BPS, 0, ALICE, 0
         );
 
@@ -4115,7 +4115,6 @@ contract PAMM_ZAMM_Test is Test {
         vm.prank(BOB);
         uint256 yesOut = pm.buyYes(marketId, 100 ether, 0, 0, FEE_BPS, BOB, 0);
 
-        uint256 yesBefore = pm.balanceOf(BOB, marketId);
         uint256 noBefore = pm.balanceOf(BOB, noId);
 
         // BOB sells all YES
@@ -4123,11 +4122,9 @@ contract PAMM_ZAMM_Test is Test {
         pm.sellYes(marketId, yesOut, 0, 0, 0, FEE_BPS, BOB, 0);
 
         // BOB should have received leftover shares back (due to AMM slippage)
-        uint256 yesAfter = pm.balanceOf(BOB, marketId);
         uint256 noAfter = pm.balanceOf(BOB, noId);
 
         // Either leftovers returned or fully consumed
-        assertTrue(yesAfter >= 0, "YES balance valid");
         assertTrue(noAfter >= noBefore, "NO balance should not decrease");
     }
 
@@ -4248,7 +4245,7 @@ contract PAMM_ZAMM_Test is Test {
 
     function test_SellNo_ETH() public {
         // Create ETH market
-        (uint256 ethMarketId, uint256 ethNoId) =
+        (uint256 ethMarketId,) =
             pm.createMarket("ETH market", RESOLVER, address(0), closeTime, false);
 
         // Seed pool
@@ -4659,7 +4656,7 @@ contract PAMM_ZAMM_Test is Test {
 
     function test_SellNoForExactCollateral_ETH() public {
         // Create ETH market
-        (uint256 ethMarketId, uint256 ethNoId) =
+        (uint256 ethMarketId,) =
             pm.createMarket("ETH market", RESOLVER, address(0), closeTime, false);
 
         // Seed pool
@@ -4802,10 +4799,6 @@ contract PAMM_ZAMM_Test is Test {
         assertTrue(liquidity > 0, "should have liquidity");
 
         // Get pool id for LP token approval
-        IZAMM.PoolKey memory key = pm.poolKey(marketId, FEE_BPS);
-        uint256 poolId =
-            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
-
         // Alice approves PAMM to pull LP tokens from ZAMM
         vm.prank(ALICE);
         zamm.setOperator(address(pm), true);
