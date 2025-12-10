@@ -8,7 +8,10 @@ pragma solidity ^0.8.30;
 CONDITION TYPES:
   - Scalar: value = staticcall(target, callData), decoded as uint256
   - Ratio:  value = (A * 1e18) / B, where A and B are uint256 reads
-            Threshold must be 1e18-scaled (e.g., 1.5x = 1.5e18)
+            Threshold must be 1e18-scaled:
+              1.5x = 1.5e18, 2x = 2e18, 50% = 0.5e18, 100x = 100e18
+  - ETH Balance: pass empty callData ("") and target = account to check
+                 Returns account.balance in wei
 
 BOOLEAN SUPPORT:
   - Functions returning bool work natively (ABI encodes bool as 32-byte word)
@@ -720,6 +723,10 @@ contract Resolver {
     }
 
     function _readUint(address target, bytes memory callData) internal view returns (uint256 v) {
+        // Empty callData = ETH balance check (target is the address to query)
+        if (callData.length == 0) {
+            return target.balance;
+        }
         (bool ok, bytes memory data) = target.staticcall(callData);
         if (!ok || data.length < 32) revert TargetCallFailed();
         v = abi.decode(data, (uint256));

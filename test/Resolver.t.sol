@@ -3735,4 +3735,356 @@ contract Resolver_Integration_Test is Test {
         // All three markets created successfully
         // (If ensureApproval failed, the transactions would revert)
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        ETH BALANCE MARKET TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CreateETHBalanceMarket_Success() public {
+        // Create a market based on an address's ETH balance
+        address targetAccount = makeAddr("TARGET");
+        vm.deal(targetAccount, 5 ether);
+
+        (uint256 marketId, uint256 noId) = resolver.createNumericMarket(
+            "TARGET ETH balance",
+            address(token),
+            targetAccount,
+            "", // empty callData = ETH balance mode
+            Resolver.Op.GTE,
+            10 ether,
+            closeTime,
+            true
+        );
+
+        // Verify market created
+        (address mResolver,,,,,, uint64 close,,,,) = pm.getMarket(marketId);
+        assertEq(mResolver, address(resolver));
+        assertEq(close, closeTime);
+        assertTrue(noId != 0);
+
+        // Verify condition stored - targetA is the account to check
+        (address targetA,,,, uint256 threshold,,) = resolver.conditions(marketId);
+        assertEq(targetA, targetAccount);
+        assertEq(threshold, 10 ether);
+    }
+
+    function test_ETHBalanceMarket_Preview() public {
+        address targetAccount = makeAddr("TARGET");
+        vm.deal(targetAccount, 5 ether);
+
+        (uint256 marketId,) = resolver.createNumericMarket(
+            "TARGET ETH balance >= 10 ETH",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.GTE,
+            10 ether,
+            closeTime,
+            true
+        );
+
+        // Preview should show current value (5 ETH) and condition false
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, 5 ether);
+        assertFalse(condTrue); // 5 ETH < 10 ETH threshold
+        assertFalse(ready); // not past close time and condition not met
+
+        // Fund the target account
+        vm.deal(targetAccount, 15 ether);
+
+        // Now condition should be true
+        (value, condTrue, ready) = resolver.preview(marketId);
+        assertEq(value, 15 ether);
+        assertTrue(condTrue); // 15 ETH >= 10 ETH threshold
+        assertTrue(ready); // canClose=true and condition met
+    }
+
+    function test_ETHBalanceMarket_ResolveYes_EarlyClose() public {
+        address targetAccount = makeAddr("TARGET");
+        vm.deal(targetAccount, 5 ether);
+
+        // Seed liquidity first
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeed(
+            "TARGET ETH balance >= 10 ETH",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.GTE,
+            10 ether,
+            closeTime,
+            true, // canClose = true
+            seed
+        );
+
+        // Can't resolve yet - condition not met
+        vm.expectRevert(Resolver.Pending.selector);
+        resolver.resolveMarket(marketId);
+
+        // Fund the target to meet threshold
+        vm.deal(targetAccount, 10 ether);
+
+        // Now can resolve early (canClose=true)
+        resolver.resolveMarket(marketId);
+
+        // Verify YES outcome
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins
+    }
+
+    function test_ETHBalanceMarket_ResolveNo_AtClose() public {
+        address targetAccount = makeAddr("TARGET");
+        vm.deal(targetAccount, 5 ether);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeed(
+            "TARGET ETH balance >= 10 ETH",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.GTE,
+            10 ether,
+            closeTime,
+            false, // canClose = false
+            seed
+        );
+
+        // Can't resolve before close time
+        vm.expectRevert(Resolver.Pending.selector);
+        resolver.resolveMarket(marketId);
+
+        // Warp to close time
+        vm.warp(closeTime);
+
+        // Resolve - condition still false (5 ETH < 10 ETH)
+        resolver.resolveMarket(marketId);
+
+        // Verify NO outcome
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertFalse(outcome); // NO wins
+    }
+
+    function test_ETHBalanceMarket_AllOperators() public {
+        address targetAccount = makeAddr("TARGET");
+        vm.deal(targetAccount, 100 ether);
+
+        // Test LT: 100 ETH < 50 ETH = false
+        (uint256 mid1,) = resolver.createNumericMarket(
+            "LT test", address(token), targetAccount, "", Resolver.Op.LT, 50 ether, closeTime, true
+        );
+        (uint256 v1, bool c1,) = resolver.preview(mid1);
+        assertEq(v1, 100 ether);
+        assertFalse(c1);
+
+        // Test GT: 100 ETH > 50 ETH = true
+        (uint256 mid2,) = resolver.createNumericMarket(
+            "GT test",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.GT,
+            50 ether,
+            closeTime + 1,
+            true
+        );
+        (uint256 v2, bool c2,) = resolver.preview(mid2);
+        assertEq(v2, 100 ether);
+        assertTrue(c2);
+
+        // Test LTE: 100 ETH <= 100 ETH = true
+        (uint256 mid3,) = resolver.createNumericMarket(
+            "LTE test",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.LTE,
+            100 ether,
+            closeTime + 2,
+            true
+        );
+        (, bool c3,) = resolver.preview(mid3);
+        assertTrue(c3);
+
+        // Test GTE: 100 ETH >= 100 ETH = true
+        (uint256 mid4,) = resolver.createNumericMarket(
+            "GTE test",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.GTE,
+            100 ether,
+            closeTime + 3,
+            true
+        );
+        (, bool c4,) = resolver.preview(mid4);
+        assertTrue(c4);
+
+        // Test EQ: 100 ETH == 100 ETH = true
+        (uint256 mid5,) = resolver.createNumericMarket(
+            "EQ test",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.EQ,
+            100 ether,
+            closeTime + 4,
+            true
+        );
+        (, bool c5,) = resolver.preview(mid5);
+        assertTrue(c5);
+
+        // Test NEQ: 100 ETH != 100 ETH = false
+        (uint256 mid6,) = resolver.createNumericMarket(
+            "NEQ test",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.NEQ,
+            100 ether,
+            closeTime + 5,
+            true
+        );
+        (, bool c6,) = resolver.preview(mid6);
+        assertFalse(c6);
+    }
+
+    function test_ETHBalanceMarket_ZeroBalance() public {
+        address targetAccount = makeAddr("EMPTY_WALLET");
+        // Don't fund - balance is 0
+
+        (uint256 marketId,) = resolver.createNumericMarket(
+            "Empty wallet check",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.EQ,
+            0,
+            closeTime,
+            true
+        );
+
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, 0);
+        assertTrue(condTrue); // 0 == 0
+        assertTrue(ready);
+    }
+
+    function test_ETHBalanceMarket_ContractBalance() public {
+        // Can also check ETH balance of contracts
+        address targetContract = address(pm);
+        vm.deal(targetContract, 42 ether);
+
+        (uint256 marketId,) = resolver.createNumericMarket(
+            "PAMM ETH balance",
+            address(token),
+            targetContract,
+            "",
+            Resolver.Op.GTE,
+            40 ether,
+            closeTime,
+            true
+        );
+
+        (uint256 value, bool condTrue,) = resolver.preview(marketId);
+        assertEq(value, 42 ether);
+        assertTrue(condTrue);
+    }
+
+    function test_ETHBalanceMarket_WithETHCollateral() public {
+        // Create ETH balance market with ETH as collateral
+        address targetAccount = makeAddr("TARGET");
+        vm.deal(targetAccount, 50 ether);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeed{value: 10000 ether}(
+            "TARGET ETH balance",
+            address(0), // ETH collateral
+            targetAccount,
+            "", // ETH balance check
+            Resolver.Op.GTE,
+            100 ether,
+            closeTime,
+            true,
+            seed
+        );
+
+        // Preview shows target's balance (not affected by collateral deposit)
+        (uint256 value, bool condTrue,) = resolver.preview(marketId);
+        assertEq(value, 50 ether);
+        assertFalse(condTrue); // 50 < 100
+    }
+
+    function test_ETHBalanceMarket_DynamicBalanceChange() public {
+        address targetAccount = makeAddr("TARGET");
+        vm.deal(targetAccount, 5 ether);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeed(
+            "Dynamic balance",
+            address(token),
+            targetAccount,
+            "",
+            Resolver.Op.GTE,
+            10 ether,
+            closeTime,
+            true,
+            seed
+        );
+
+        // Initially false
+        (, bool condTrue1,) = resolver.preview(marketId);
+        assertFalse(condTrue1);
+
+        // Balance increases
+        vm.deal(targetAccount, 15 ether);
+        (, bool condTrue2,) = resolver.preview(marketId);
+        assertTrue(condTrue2);
+
+        // Balance decreases again
+        vm.deal(targetAccount, 3 ether);
+        (, bool condTrue3,) = resolver.preview(marketId);
+        assertFalse(condTrue3);
+    }
 }
