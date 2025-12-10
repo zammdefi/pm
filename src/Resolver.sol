@@ -665,6 +665,8 @@ contract Resolver {
         uint256 value = _currentValue(c);
         bool condTrue = _compare(value, c.op, c.threshold);
 
+        delete conditions[marketId];
+
         if (condTrue) {
             if (block.timestamp < close) {
                 if (!canClose) revert Pending();
@@ -675,7 +677,6 @@ contract Resolver {
             if (block.timestamp < close) revert Pending();
             IPAMM(PAMM).resolve(marketId, false);
         }
-        delete conditions[marketId];
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -716,9 +717,7 @@ contract Resolver {
         } else {
             uint256 a = _readUint(c.targetA, c.callDataA);
             uint256 b = _readUint(c.targetB, c.callDataB);
-            if (b == 0) revert TargetCallFailed();
-            if (a > type(uint256).max / 1e18) revert TargetCallFailed();
-            value = (a * 1e18) / b;
+            value = mulDiv(a, 1e18, b);
         }
     }
 
@@ -890,6 +889,18 @@ contract Resolver {
             result := sub(result, 0x20)
             mstore(result, n)
         }
+    }
+}
+
+/// @dev Returns `floor(x * y / d)`. Reverts if `x * y` overflows, or `d` is zero.
+function mulDiv(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {
+    assembly ("memory-safe") {
+        z := mul(x, y)
+        if iszero(mul(or(iszero(x), eq(div(z, x), y)), d)) {
+            mstore(0x00, 0xad251c27) // MulDivFailed()
+            revert(0x1c, 0x04)
+        }
+        z := div(z, d)
     }
 }
 

@@ -554,7 +554,7 @@ contract ResolverTest is Test {
 
         vm.warp(closeTime);
 
-        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        vm.expectRevert(bytes4(0xad251c27)); // MulDivFailed()
         resolver.resolveMarket(marketId);
     }
 
@@ -1229,8 +1229,8 @@ contract ResolverTest is Test {
 
         vm.warp(closeTime);
 
-        // Should revert with TargetCallFailed due to overflow check
-        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        // Should revert with MulDivFailed due to overflow
+        vm.expectRevert(bytes4(0xad251c27)); // MulDivFailed()
         resolver.resolveMarket(marketId);
     }
 
@@ -1284,7 +1284,7 @@ contract ResolverTest is Test {
 
         vm.warp(closeTime);
 
-        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        vm.expectRevert(bytes4(0xad251c27)); // MulDivFailed()
         resolver.resolveMarket(marketId);
     }
 
@@ -2095,7 +2095,7 @@ contract ResolverTest is Test {
             false
         );
 
-        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        vm.expectRevert(bytes4(0xad251c27)); // MulDivFailed()
         resolver.preview(marketId);
     }
 
