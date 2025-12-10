@@ -159,6 +159,70 @@ contract Resolver {
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                PERMIT
+    //////////////////////////////////////////////////////////////*/
+
+    function permit(
+        address token,
+        address owner,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public {
+        assembly ("memory-safe") {
+            // token.permit(owner, address(this), value, deadline, v, r, s)
+            let m := mload(0x40)
+            mstore(m, 0xd505accf00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), owner)
+            mstore(add(m, 0x24), address())
+            mstore(add(m, 0x44), value)
+            mstore(add(m, 0x64), deadline)
+            mstore(add(m, 0x84), v)
+            mstore(add(m, 0xa4), r)
+            mstore(add(m, 0xc4), s)
+            if iszero(call(gas(), token, 0, m, 0xe4, 0x00, 0x00)) {
+                returndatacopy(m, 0, returndatasize())
+                revert(m, returndatasize())
+            }
+        }
+    }
+
+    function permitDAI(
+        address token,
+        address owner,
+        uint256 nonce,
+        uint256 deadline,
+        bool allowed,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public {
+        assembly ("memory-safe") {
+            // token.permit(owner, address(this), nonce, deadline, allowed, v, r, s)
+            let m := mload(0x40)
+            mstore(m, 0x8fcbaf0c00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), owner)
+            mstore(add(m, 0x24), address())
+            mstore(add(m, 0x44), nonce)
+            mstore(add(m, 0x64), deadline)
+            mstore(add(m, 0x84), allowed)
+            mstore(add(m, 0xa4), v)
+            mstore(add(m, 0xc4), r)
+            mstore(add(m, 0xe4), s)
+            if iszero(call(gas(), token, 0, m, 0x104, 0x00, 0x00)) {
+                returndatacopy(m, 0, returndatasize())
+                revert(m, returndatasize())
+            }
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             TYPES & STORAGE
+    //////////////////////////////////////////////////////////////*/
+
     enum Op {
         LT,
         GT,
@@ -243,7 +307,7 @@ contract Resolver {
         uint256 threshold,
         uint64 close,
         bool canClose
-    ) external returns (uint256 marketId, uint256 noId) {
+    ) public returns (uint256 marketId, uint256 noId) {
         bytes memory cd = abi.encodeWithSelector(selector);
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, cd, op, threshold, close, canClose
@@ -259,7 +323,7 @@ contract Resolver {
         uint256 threshold,
         uint64 close,
         bool canClose
-    ) external returns (uint256 marketId, uint256 noId) {
+    ) public returns (uint256 marketId, uint256 noId) {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
@@ -299,7 +363,7 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
         (marketId, noId) = _createNumericMarket(
             observable,
             collateral,
@@ -327,7 +391,7 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
@@ -353,7 +417,7 @@ contract Resolver {
         uint256 threshold, // 1e18-scaled
         uint64 close,
         bool canClose
-    ) external returns (uint256 marketId, uint256 noId) {
+    ) public returns (uint256 marketId, uint256 noId) {
         bytes memory cdA = abi.encodeWithSelector(selectorA);
         bytes memory cdB = abi.encodeWithSelector(selectorB);
         (marketId, noId) = _createRatioMarket(
@@ -372,7 +436,7 @@ contract Resolver {
         uint256 threshold, // 1e18-scaled
         uint64 close,
         bool canClose
-    ) external returns (uint256 marketId, uint256 noId) {
+    ) public returns (uint256 marketId, uint256 noId) {
         (marketId, noId) = _createRatioMarket(
             observable,
             collateral,
@@ -426,7 +490,7 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
         (marketId, noId) = _createRatioMarket(
             observable,
             collateral,
@@ -458,7 +522,7 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
         (marketId, noId) = _createRatioMarket(
             observable,
             collateral,
@@ -498,7 +562,7 @@ contract Resolver {
         SeedParams calldata seed,
         SwapParams calldata swap
     )
-        external
+        public
         payable
         returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut)
     {
@@ -531,7 +595,7 @@ contract Resolver {
         SeedParams calldata seed,
         SwapParams calldata swap
     )
-        external
+        public
         payable
         returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut)
     {
@@ -565,7 +629,7 @@ contract Resolver {
         bytes calldata callData,
         Op op,
         uint256 threshold
-    ) external {
+    ) public {
         _registerScalarCondition(marketId, target, callData, op, threshold);
     }
 
@@ -575,7 +639,7 @@ contract Resolver {
         bytes4 selector,
         Op op,
         uint256 threshold
-    ) external {
+    ) public {
         bytes memory cd = abi.encodeWithSelector(selector);
         _registerScalarCondition(marketId, target, cd, op, threshold);
     }
@@ -607,7 +671,7 @@ contract Resolver {
         bytes calldata callDataB,
         Op op,
         uint256 threshold
-    ) external {
+    ) public {
         _registerRatioCondition(marketId, targetA, callDataA, targetB, callDataB, op, threshold);
     }
 
@@ -619,7 +683,7 @@ contract Resolver {
         bytes4 selectorB,
         Op op,
         uint256 threshold
-    ) external {
+    ) public {
         bytes memory cdA = abi.encodeWithSelector(selectorA);
         bytes memory cdB = abi.encodeWithSelector(selectorB);
         _registerRatioCondition(marketId, targetA, cdA, targetB, cdB, op, threshold);
@@ -684,7 +748,7 @@ contract Resolver {
     //////////////////////////////////////////////////////////////*/
 
     function preview(uint256 marketId)
-        external
+        public
         view
         returns (uint256 value, bool condTrue, bool ready)
     {
@@ -703,7 +767,7 @@ contract Resolver {
         uint256 threshold,
         uint64 close,
         bool canClose
-    ) external pure returns (string memory) {
+    ) public pure returns (string memory) {
         return _buildDescription(observable, op, threshold, close, canClose);
     }
 

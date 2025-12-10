@@ -2590,9 +2590,9 @@ contract Resolver_Integration_Test is Test {
     }
 
     function test_Integration_CreateRatioMarketAndSeed_Success() public {
-        MockOracle oracleB = new MockOracle();
+        MockOracle localOracleB = new MockOracle();
         oracleA.setValue(200);
-        oracleB.setValue(100);
+        localOracleB.setValue(100);
 
         Resolver.SeedParams memory seed = Resolver.SeedParams({
             collateralIn: 8000 ether,
@@ -2613,7 +2613,7 @@ contract Resolver_Integration_Test is Test {
             address(token),
             address(oracleA),
             abi.encodeWithSelector(MockOracle.getValue.selector),
-            address(oracleB),
+            address(localOracleB),
             abi.encodeWithSelector(MockOracle.getValue.selector),
             Resolver.Op.GT,
             1.5e18,
@@ -2627,7 +2627,7 @@ contract Resolver_Integration_Test is Test {
 
         // Verify ratio condition
         (, address targetB,, bool isRatio,,,) = resolver.conditions(marketId);
-        assertEq(targetB, address(oracleB));
+        assertEq(targetB, address(localOracleB));
         assertTrue(isRatio);
     }
 
@@ -3152,8 +3152,8 @@ contract Resolver_Integration_Test is Test {
 
     function test_Integration_RatioMarket_SeedAndSeedAndBuy() public {
         oracleA.setValue(200);
-        MockOracle oracleB = new MockOracle();
-        oracleB.setValue(100);
+        MockOracle localOracleB = new MockOracle();
+        localOracleB.setValue(100);
 
         Resolver.SeedParams memory seed = Resolver.SeedParams({
             collateralIn: 10000 ether,
@@ -3177,7 +3177,7 @@ contract Resolver_Integration_Test is Test {
             address(token),
             address(oracleA),
             abi.encodeWithSelector(MockOracle.getValue.selector),
-            address(oracleB),
+            address(localOracleB),
             abi.encodeWithSelector(MockOracle.getValue.selector),
             Resolver.Op.GT,
             1.5e18, // ratio > 1.5
@@ -3196,9 +3196,9 @@ contract Resolver_Integration_Test is Test {
     }
 
     function test_Integration_CreateRatioMarketAndSeed_NonSimple() public {
-        MockOracle oracleB = new MockOracle();
+        MockOracle localOracleB = new MockOracle();
         oracleA.setValue(200);
-        oracleB.setValue(100);
+        localOracleB.setValue(100);
 
         Resolver.SeedParams memory seed = Resolver.SeedParams({
             collateralIn: 10000 ether,
@@ -3216,7 +3216,7 @@ contract Resolver_Integration_Test is Test {
             address(token),
             address(oracleA),
             abi.encodeWithSelector(MockOracle.getValue.selector),
-            address(oracleB),
+            address(localOracleB),
             abi.encodeWithSelector(MockOracle.getValue.selector),
             Resolver.Op.GT,
             1.5e18,
@@ -3438,9 +3438,9 @@ contract Resolver_Integration_Test is Test {
     }
 
     function test_Integration_CreateRatioMarketSeedAndSeedAndBuy() public {
-        MockOracle oracleB = new MockOracle();
+        MockOracle localOracleB = new MockOracle();
         oracleA.setValue(300);
-        oracleB.setValue(100); // ratio = 3.0
+        localOracleB.setValue(100); // ratio = 3.0
 
         Resolver.SeedParams memory seed = Resolver.SeedParams({
             collateralIn: 10000 ether,
@@ -3464,7 +3464,7 @@ contract Resolver_Integration_Test is Test {
             address(token),
             address(oracleA),
             abi.encodeWithSelector(MockOracle.getValue.selector),
-            address(oracleB),
+            address(localOracleB),
             abi.encodeWithSelector(MockOracle.getValue.selector),
             Resolver.Op.GT,
             2e18, // ratio > 2.0
@@ -4086,5 +4086,494 @@ contract Resolver_Integration_Test is Test {
         vm.deal(targetAccount, 3 ether);
         (, bool condTrue3,) = resolver.preview(marketId);
         assertFalse(condTrue3);
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+                         PERMIT TESTS
+//////////////////////////////////////////////////////////////*/
+
+/// @notice Mock ERC20 with EIP-2612 permit support for Resolver tests
+contract MockERC20Permit {
+    string public name = "Mock Permit Token";
+    string public symbol = "mPERMIT";
+    uint8 public decimals = 18;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    mapping(address => uint256) public nonces;
+
+    bytes32 public immutable DOMAIN_SEPARATOR;
+    bytes32 public constant PERMIT_TYPEHASH = keccak256(
+        "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+    );
+
+    constructor() {
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256(bytes(name)),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        if (msg.sender != from) {
+            uint256 allowed = allowance[from][msg.sender];
+            if (allowed != type(uint256).max) {
+                allowance[from][msg.sender] = allowed - amount;
+            }
+        }
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        require(deadline >= block.timestamp, "PERMIT_DEADLINE_EXPIRED");
+
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                DOMAIN_SEPARATOR,
+                keccak256(
+                    abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonces[owner]++, deadline)
+                )
+            )
+        );
+
+        address recoveredAddress = ecrecover(digest, v, r, s);
+        require(recoveredAddress != address(0) && recoveredAddress == owner, "INVALID_SIGNER");
+
+        allowance[owner][spender] = value;
+    }
+}
+
+/// @notice Mock DAI-style token with permit support for Resolver tests
+contract MockDAIPermit {
+    string public name = "Mock DAI";
+    string public symbol = "mDAI";
+    uint8 public decimals = 18;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    mapping(address => uint256) public nonces;
+
+    bytes32 public immutable DOMAIN_SEPARATOR;
+    bytes32 public constant PERMIT_TYPEHASH = keccak256(
+        "Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)"
+    );
+
+    constructor() {
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256(bytes(name)),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        if (msg.sender != from) {
+            uint256 allowed = allowance[from][msg.sender];
+            if (allowed != type(uint256).max) {
+                allowance[from][msg.sender] = allowed - amount;
+            }
+        }
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function permit(
+        address holder,
+        address spender,
+        uint256 nonce,
+        uint256 expiry,
+        bool allowed,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        require(expiry == 0 || expiry >= block.timestamp, "PERMIT_DEADLINE_EXPIRED");
+        require(nonce == nonces[holder]++, "INVALID_NONCE");
+
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                DOMAIN_SEPARATOR,
+                keccak256(abi.encode(PERMIT_TYPEHASH, holder, spender, nonce, expiry, allowed))
+            )
+        );
+
+        address recoveredAddress = ecrecover(digest, v, r, s);
+        require(recoveredAddress != address(0) && recoveredAddress == holder, "INVALID_SIGNER");
+
+        allowance[holder][spender] = allowed ? type(uint256).max : 0;
+    }
+}
+
+contract Resolver_Permit_Test is Test {
+    PAMM internal pm;
+    Resolver internal resolver;
+    MockERC20Permit internal permitToken;
+    MockDAIPermit internal daiToken;
+    MockOracle internal oracle;
+
+    uint256 internal alicePk = 0xA11CE;
+    address internal ALICE = vm.addr(alicePk);
+    uint256 internal bobPk = 0xB0B;
+    address internal BOB = vm.addr(bobPk);
+
+    uint64 internal closeTime;
+    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    uint256 constant FEE_BPS = 30;
+
+    function setUp() public {
+        // Deploy PAMM to hardcoded address
+        PAMM pammDeployed = new PAMM();
+        vm.etch(PAMM_ADDRESS, address(pammDeployed).code);
+        pm = PAMM(PAMM_ADDRESS);
+
+        resolver = new Resolver();
+        permitToken = new MockERC20Permit();
+        daiToken = new MockDAIPermit();
+        oracle = new MockOracle();
+
+        closeTime = uint64(block.timestamp + 30 days);
+
+        // Fund users
+        permitToken.mint(ALICE, 1000 ether);
+        permitToken.mint(BOB, 1000 ether);
+        daiToken.mint(ALICE, 1000 ether);
+        daiToken.mint(BOB, 1000 ether);
+
+        oracle.setValue(100);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          EIP-2612 PERMIT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Permit_Success() public {
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = permitToken.nonces(ALICE);
+
+        bytes32 digest = _getEIP2612Digest(
+            address(permitToken), ALICE, address(resolver), amount, nonce, deadline
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+
+        resolver.permit(address(permitToken), ALICE, amount, deadline, v, r, s);
+
+        assertEq(permitToken.allowance(ALICE, address(resolver)), amount);
+        assertEq(permitToken.nonces(ALICE), nonce + 1);
+    }
+
+    function test_Permit_RevertExpiredDeadline() public {
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp - 1;
+        uint256 nonce = permitToken.nonces(ALICE);
+
+        bytes32 digest = _getEIP2612Digest(
+            address(permitToken), ALICE, address(resolver), amount, nonce, deadline
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+
+        vm.expectRevert("PERMIT_DEADLINE_EXPIRED");
+        resolver.permit(address(permitToken), ALICE, amount, deadline, v, r, s);
+    }
+
+    function test_Permit_RevertInvalidSignature() public {
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = permitToken.nonces(ALICE);
+
+        bytes32 digest = _getEIP2612Digest(
+            address(permitToken), ALICE, address(resolver), amount, nonce, deadline
+        );
+        // Sign with wrong key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(bobPk, digest);
+
+        vm.expectRevert("INVALID_SIGNER");
+        resolver.permit(address(permitToken), ALICE, amount, deadline, v, r, s);
+    }
+
+    function test_Permit_MulticallWithMultiplePermits() public {
+        // Test that multiple permits can be batched in multicall
+        uint256 amount1 = 100 ether;
+        uint256 amount2 = 200 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = permitToken.nonces(ALICE);
+
+        // First permit
+        bytes32 digest1 = _getEIP2612Digest(
+            address(permitToken), ALICE, address(resolver), amount1, nonce, deadline
+        );
+        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(alicePk, digest1);
+
+        // Second permit (with incremented nonce, for a different amount)
+        bytes32 digest2 = _getEIP2612Digest(
+            address(permitToken), ALICE, address(resolver), amount2, nonce + 1, deadline
+        );
+        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(alicePk, digest2);
+
+        // Build multicall with two permits
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(
+            Resolver.permit, (address(permitToken), ALICE, amount1, deadline, v1, r1, s1)
+        );
+        calls[1] = abi.encodeCall(
+            Resolver.permit, (address(permitToken), ALICE, amount2, deadline, v2, r2, s2)
+        );
+
+        resolver.multicall(calls);
+
+        // Final allowance should be from second permit
+        assertEq(permitToken.allowance(ALICE, address(resolver)), amount2);
+        assertEq(permitToken.nonces(ALICE), nonce + 2);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          DAI-STYLE PERMIT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_PermitDAI_Success() public {
+        uint256 nonce = daiToken.nonces(ALICE);
+        uint256 expiry = block.timestamp + 1 hours;
+
+        bytes32 digest =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, true);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+
+        resolver.permitDAI(address(daiToken), ALICE, nonce, expiry, true, v, r, s);
+
+        assertEq(daiToken.allowance(ALICE, address(resolver)), type(uint256).max);
+        assertEq(daiToken.nonces(ALICE), nonce + 1);
+    }
+
+    function test_PermitDAI_RevokeAllowance() public {
+        // First grant allowance
+        uint256 nonce = daiToken.nonces(ALICE);
+        uint256 expiry = block.timestamp + 1 hours;
+
+        bytes32 digest =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, true);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+
+        resolver.permitDAI(address(daiToken), ALICE, nonce, expiry, true, v, r, s);
+        assertEq(daiToken.allowance(ALICE, address(resolver)), type(uint256).max);
+
+        // Now revoke
+        nonce = daiToken.nonces(ALICE);
+        digest =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, false);
+        (v, r, s) = vm.sign(alicePk, digest);
+
+        resolver.permitDAI(address(daiToken), ALICE, nonce, expiry, false, v, r, s);
+        assertEq(daiToken.allowance(ALICE, address(resolver)), 0);
+    }
+
+    function test_PermitDAI_RevertExpiredDeadline() public {
+        vm.warp(1000);
+
+        uint256 nonce = daiToken.nonces(ALICE);
+        uint256 expiry = block.timestamp - 1;
+
+        bytes32 digest =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, true);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+
+        vm.expectRevert("PERMIT_DEADLINE_EXPIRED");
+        resolver.permitDAI(address(daiToken), ALICE, nonce, expiry, true, v, r, s);
+    }
+
+    function test_PermitDAI_RevertInvalidNonce() public {
+        uint256 nonce = daiToken.nonces(ALICE) + 1; // Wrong nonce
+        uint256 expiry = block.timestamp + 1 hours;
+
+        bytes32 digest =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, true);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+
+        vm.expectRevert("INVALID_NONCE");
+        resolver.permitDAI(address(daiToken), ALICE, nonce, expiry, true, v, r, s);
+    }
+
+    function test_PermitDAI_RevertInvalidSignature() public {
+        uint256 nonce = daiToken.nonces(ALICE);
+        uint256 expiry = block.timestamp + 1 hours;
+
+        bytes32 digest =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, true);
+        // Sign with wrong key
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(bobPk, digest);
+
+        vm.expectRevert("INVALID_SIGNER");
+        resolver.permitDAI(address(daiToken), ALICE, nonce, expiry, true, v, r, s);
+    }
+
+    function test_PermitDAI_ZeroExpiryMeansNoExpiry() public {
+        uint256 nonce = daiToken.nonces(ALICE);
+        uint256 expiry = 0;
+
+        bytes32 digest =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, true);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+
+        resolver.permitDAI(address(daiToken), ALICE, nonce, expiry, true, v, r, s);
+        assertEq(daiToken.allowance(ALICE, address(resolver)), type(uint256).max);
+    }
+
+    function test_PermitDAI_MulticallGrantAndRevoke() public {
+        // Test that DAI permit grant and revoke can be batched
+        uint256 nonce = daiToken.nonces(ALICE);
+        uint256 expiry = block.timestamp + 1 hours;
+
+        // Grant permit
+        bytes32 digest1 =
+            _getDAIPermitDigest(address(daiToken), ALICE, address(resolver), nonce, expiry, true);
+        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(alicePk, digest1);
+
+        // Revoke permit (next nonce)
+        bytes32 digest2 = _getDAIPermitDigest(
+            address(daiToken), ALICE, address(resolver), nonce + 1, expiry, false
+        );
+        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(alicePk, digest2);
+
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(
+            Resolver.permitDAI, (address(daiToken), ALICE, nonce, expiry, true, v1, r1, s1)
+        );
+        calls[1] = abi.encodeCall(
+            Resolver.permitDAI, (address(daiToken), ALICE, nonce + 1, expiry, false, v2, r2, s2)
+        );
+
+        resolver.multicall(calls);
+
+        // Final allowance should be 0 (revoked)
+        assertEq(daiToken.allowance(ALICE, address(resolver)), 0);
+        assertEq(daiToken.nonces(ALICE), nonce + 2);
+    }
+
+    function test_Permit_MixedPermitTypes_Multicall() public {
+        // Test mixing EIP-2612 and DAI permit in one multicall
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 eip2612Nonce = permitToken.nonces(ALICE);
+        uint256 daiNonce = daiToken.nonces(ALICE);
+
+        bytes32 digest1 = _getEIP2612Digest(
+            address(permitToken), ALICE, address(resolver), amount, eip2612Nonce, deadline
+        );
+        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(alicePk, digest1);
+
+        bytes32 digest2 = _getDAIPermitDigest(
+            address(daiToken), ALICE, address(resolver), daiNonce, deadline, true
+        );
+        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(alicePk, digest2);
+
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(
+            Resolver.permit, (address(permitToken), ALICE, amount, deadline, v1, r1, s1)
+        );
+        calls[1] = abi.encodeCall(
+            Resolver.permitDAI, (address(daiToken), ALICE, daiNonce, deadline, true, v2, r2, s2)
+        );
+
+        resolver.multicall(calls);
+
+        // Both permits should have been processed
+        assertEq(permitToken.allowance(ALICE, address(resolver)), amount);
+        assertEq(daiToken.allowance(ALICE, address(resolver)), type(uint256).max);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           HELPER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function _getEIP2612Digest(
+        address token,
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 nonce,
+        uint256 deadline
+    ) internal view returns (bytes32) {
+        bytes32 permitTypehash = keccak256(
+            "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+        );
+        bytes32 structHash =
+            keccak256(abi.encode(permitTypehash, owner, spender, value, nonce, deadline));
+        return keccak256(
+            abi.encodePacked("\x19\x01", MockERC20Permit(token).DOMAIN_SEPARATOR(), structHash)
+        );
+    }
+
+    function _getDAIPermitDigest(
+        address token,
+        address holder,
+        address spender,
+        uint256 nonce,
+        uint256 expiry,
+        bool allowed
+    ) internal view returns (bytes32) {
+        bytes32 permitTypehash = keccak256(
+            "Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)"
+        );
+        bytes32 structHash =
+            keccak256(abi.encode(permitTypehash, holder, spender, nonce, expiry, allowed));
+        return keccak256(
+            abi.encodePacked("\x19\x01", MockDAIPermit(token).DOMAIN_SEPARATOR(), structHash)
+        );
     }
 }
