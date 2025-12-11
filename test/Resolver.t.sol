@@ -80,6 +80,80 @@ contract MockUSDC {
     }
 }
 
+/// @notice Mock ERC20 with no return value on transfer/transferFrom (USDT-style)
+contract MockUSDT {
+    string public name = "Mock USDT";
+    string public symbol = "mUSDT";
+    uint8 public decimals = 6;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    // USDT-style: no return value
+    function transfer(address to, uint256 amount) external {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+    }
+
+    // USDT-style: no return value
+    function transferFrom(address from, address to, uint256 amount) external {
+        if (msg.sender != from) {
+            uint256 allowed = allowance[from][msg.sender];
+            if (allowed != type(uint256).max) {
+                allowance[from][msg.sender] = allowed - amount;
+            }
+        }
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+    }
+}
+
+/// @notice Mock ERC20 with 8 decimals (like WBTC)
+contract MockWBTC {
+    string public name = "Mock WBTC";
+    string public symbol = "mWBTC";
+    uint8 public decimals = 8;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        if (msg.sender != from) {
+            uint256 allowed = allowance[from][msg.sender];
+            if (allowed != type(uint256).max) {
+                allowance[from][msg.sender] = allowed - amount;
+            }
+        }
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+}
+
 /// @notice Mock oracle that returns a configurable uint256 value
 contract MockOracle {
     uint256 public value;
@@ -2846,6 +2920,77 @@ contract Resolver_Integration_Test is Test {
         assertEq(aliceNo, swapOut);
     }
 
+    function test_SeedAndBuy_RevertSwapCollateralNotMultiple() public {
+        // Test that swap collateral must be a multiple of 10^decimals
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether, // Large enough for pool creation
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Swap amount is NOT a multiple of 10^18
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether + 0.5 ether, minOut: 0, yesForNo: false
+        });
+
+        vm.deal(ALICE, 11000.5 ether);
+        vm.prank(ALICE);
+        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
+        resolver.createNumericMarketSeedAndBuy{value: 11000.5 ether}(
+            "dust trap test",
+            address(0),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+    }
+
+    function test_SeedAndBuy_RevertSwapCollateralNotMultiple_ERC20() public {
+        // Test ERC20 path for swap collateral divisibility check
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether, // Large enough for pool creation
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Swap amount is NOT a multiple of 10^18
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether + 0.5 ether, minOut: 0, yesForNo: false
+        });
+
+        vm.prank(ALICE);
+        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
+        resolver.createNumericMarketSeedAndBuy(
+            "dust trap test erc20",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+    }
+
     /*//////////////////////////////////////////////////////////////
                     FULL LIFECYCLE TEST
     //////////////////////////////////////////////////////////////*/
@@ -3736,6 +3881,180 @@ contract Resolver_Integration_Test is Test {
         // (If ensureApproval failed, the transactions would revert)
     }
 
+    function test_EnsureApproval_SetsMaxApproval() public {
+        // Verify that ensureApproval sets max approval on first call
+        oracleA.setValue(100);
+
+        uint256 amount = 10000 ether;
+        token.mint(ALICE, amount);
+
+        // Initially resolver has no approval to PAMM
+        assertEq(token.allowance(address(resolver), PAMM_ADDRESS), 0);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: amount,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        vm.startPrank(ALICE);
+        token.approve(address(resolver), type(uint256).max);
+
+        resolver.createNumericMarketAndSeed(
+            "Approval test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+        vm.stopPrank();
+
+        // After first seed, resolver should have max approval to PAMM
+        // (it will be type(uint256).max minus the amount transferred)
+        uint256 allowanceAfter = token.allowance(address(resolver), PAMM_ADDRESS);
+        assertTrue(
+            allowanceAfter > type(uint128).max, "Should have high approval after ensureApproval"
+        );
+    }
+
+    function test_EnsureApproval_USDT_NoReturnValue() public {
+        // Test ensureApproval works with USDT-style tokens (no return value)
+        MockUSDT usdt = new MockUSDT();
+        usdt.mint(ALICE, 100000e6);
+
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        vm.startPrank(ALICE);
+        usdt.approve(address(resolver), type(uint256).max);
+
+        // Should work with USDT-style token (ensureApproval handles no-return-value)
+        resolver.createNumericMarketAndSeed(
+            "USDT approval test",
+            address(usdt),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        // Second call should reuse existing approval
+        token.mint(ALICE, 10000e6);
+        resolver.createNumericMarketAndSeed(
+            "USDT approval test 2",
+            address(usdt),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime + 1,
+            false,
+            seed
+        );
+        vm.stopPrank();
+    }
+
+    function test_EnsureApproval_MultipleTokens() public {
+        // Test that ensureApproval works with multiple different tokens
+        MockERC20 tokenA = new MockERC20();
+        MockERC20 tokenB = new MockERC20();
+        MockUSDC tokenC = new MockUSDC();
+
+        tokenA.mint(ALICE, 100000 ether);
+        tokenB.mint(ALICE, 100000 ether);
+        tokenC.mint(ALICE, 100000e6);
+
+        oracleA.setValue(100);
+
+        vm.startPrank(ALICE);
+        tokenA.approve(address(resolver), type(uint256).max);
+        tokenB.approve(address(resolver), type(uint256).max);
+        tokenC.approve(address(resolver), type(uint256).max);
+
+        Resolver.SeedParams memory seedA = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SeedParams memory seedC = Resolver.SeedParams({
+            collateralIn: 10000e6,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Seed with tokenA
+        resolver.createNumericMarketAndSeed(
+            "TokenA market",
+            address(tokenA),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seedA
+        );
+
+        // Seed with tokenB (different token, needs separate approval)
+        resolver.createNumericMarketAndSeed(
+            "TokenB market",
+            address(tokenB),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime + 1,
+            false,
+            seedA
+        );
+
+        // Seed with tokenC (6 decimals)
+        resolver.createNumericMarketAndSeed(
+            "TokenC market",
+            address(tokenC),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime + 2,
+            false,
+            seedC
+        );
+
+        vm.stopPrank();
+
+        // All markets created successfully with different tokens
+    }
+
     /*//////////////////////////////////////////////////////////////
                         ETH BALANCE MARKET TESTS
     //////////////////////////////////////////////////////////////*/
@@ -4086,6 +4405,1233 @@ contract Resolver_Integration_Test is Test {
         vm.deal(targetAccount, 3 ether);
         (, bool condTrue3,) = resolver.preview(marketId);
         assertFalse(condTrue3);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    USDC (6 DECIMALS) SEEDANDBUY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_SeedAndBuy_USDC_Success() public {
+        // Test USDC 6-decimal market with SeedAndBuy
+        MockUSDC usdc = new MockUSDC();
+        usdc.mint(ALICE, 100000e6);
+        vm.prank(ALICE);
+        usdc.approve(address(resolver), type(uint256).max);
+
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6, // 10000 USDC (must be multiple of 1e6)
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000e6, // 1000 USDC (must be multiple of 1e6)
+            minOut: 0,
+            yesForNo: false
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares, uint256 liquidity, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
+            "USDC SeedAndBuy",
+            address(usdc),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        // Shares should be collateralIn / 1e6 = 10000
+        assertEq(shares, 10000);
+        assertTrue(liquidity > 0);
+        assertTrue(swapOut > 1000, "should get more YES than input (6 decimal shares)");
+
+        // Alice should have YES tokens
+        uint256 aliceYes = pm.balanceOf(ALICE, marketId);
+        assertEq(aliceYes, swapOut);
+    }
+
+    function test_Integration_SeedAndBuy_USDC_RevertNotMultiple() public {
+        MockUSDC usdc = new MockUSDC();
+        usdc.mint(ALICE, 100000e6);
+        vm.prank(ALICE);
+        usdc.approve(address(resolver), type(uint256).max);
+
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Swap collateral NOT multiple of 1e6
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000e6 + 500000, // 1000.5 USDC - not a multiple of 1e6
+            minOut: 0,
+            yesForNo: false
+        });
+
+        vm.prank(ALICE);
+        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
+        resolver.createNumericMarketSeedAndBuy(
+            "USDC bad swap",
+            address(usdc),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    ETH BALANCE IN RATIO MARKET TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_ETHBalanceRatioMarket() public {
+        // Test using ETH balance as one value in a ratio market
+        address targetA = makeAddr("ACCOUNT_A");
+        address targetB = makeAddr("ACCOUNT_B");
+        vm.deal(targetA, 10 ether);
+        vm.deal(targetB, 5 ether);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Ratio = targetA.balance / targetB.balance = 10/5 = 2e18
+        // Threshold 1.5e18 means ratio > 1.5x
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createRatioMarketAndSeed(
+            "ETH balance ratio",
+            address(token),
+            targetA,
+            "", // empty callData = ETH balance
+            targetB,
+            "", // empty callData = ETH balance
+            Resolver.Op.GT,
+            1.5e18, // ratio > 1.5
+            closeTime,
+            true, // canClose
+            seed
+        );
+
+        // Preview should show ratio = 2e18, condition true
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, 2e18); // 10 / 5 = 2
+        assertTrue(condTrue);
+        assertTrue(ready); // canClose and condition true
+
+        // Resolve early (canClose = true)
+        resolver.resolveMarket(marketId);
+
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins
+    }
+
+    function test_Integration_ETHBalanceRatioMarket_MixedSources() public {
+        // Test ratio with ETH balance on one side and oracle call on other
+        address targetAccount = makeAddr("ETH_HOLDER");
+        vm.deal(targetAccount, 100 ether);
+        oracleA.setValue(50 ether); // Oracle returns 50e18
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Ratio = ETH balance / oracle value = 100e18 / 50e18 = 2e18
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createRatioMarketAndSeed(
+            "Mixed ratio source",
+            address(token),
+            targetAccount,
+            "", // ETH balance
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GTE,
+            2e18,
+            closeTime,
+            false,
+            seed
+        );
+
+        (uint256 value, bool condTrue,) = resolver.preview(marketId);
+        assertEq(value, 2e18);
+        assertTrue(condTrue);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    RATIO SEEDANDBUY WITH SIMPLE VARIANT
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_CreateRatioMarketSeedAndBuy_BuyNo() public {
+        oracleA.setValue(300);
+        oracleB.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 500 ether,
+            minOut: 0,
+            yesForNo: true // buy NO
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut) = resolver.createRatioMarketSeedAndBuy(
+            "ratio buy NO",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            address(oracleB),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            2e18,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        assertEq(shares, 10000);
+        assertTrue(liquidity > 0);
+        assertTrue(swapOut > 500, "should get more NO than input");
+
+        // Check NO balance
+        uint256 aliceNo = pm.balanceOf(ALICE, noId);
+        assertEq(aliceNo, swapOut);
+    }
+
+    function test_Integration_SeedAndBuy_ToDifferentRecipient() public {
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: BOB, // LP goes to BOB
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap =
+            Resolver.SwapParams({collateralForSwap: 500 ether, minOut: 0, yesForNo: false});
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
+            "different recipients",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        // Swap output goes to msg.sender (ALICE), not lpRecipient
+        uint256 aliceYes = pm.balanceOf(ALICE, marketId);
+        assertEq(aliceYes, swapOut);
+
+        // Leftover shares from seeding also go to msg.sender (ALICE)
+        // BOB only gets LP position
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    BOUNDARY VALUE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_SeedAndBuy_MaxSwapCollateral() public {
+        // Test swapping with large collateral relative to seed
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Swap larger than seed
+        Resolver.SwapParams memory swap =
+            Resolver.SwapParams({collateralForSwap: 20000 ether, minOut: 0, yesForNo: false});
+
+        vm.prank(ALICE);
+        (,,,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
+            "large swap",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        // Should succeed with high slippage
+        assertTrue(swapOut > 0);
+    }
+
+    function test_Integration_SeedAndBuy_MinimumViableAmounts() public {
+        oracleA.setValue(100);
+
+        // Minimum viable amounts that satisfy ZAMM's MINIMUM_LIQUIDITY requirement
+        // Need at least 1000+ shares to exceed MINIMUM_LIQUIDITY
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 2000 ether, // Need enough to exceed MINIMUM_LIQUIDITY
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap =
+            Resolver.SwapParams({collateralForSwap: 100 ether, minOut: 0, yesForNo: false});
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
+            "minimum amounts",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        assertEq(shares, 2000); // 2000 shares from 2000 ether
+        assertTrue(swapOut > 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_SeedAndBuy_CollateralDivisibility(uint256 seedShares, uint256 swapShares)
+        public
+    {
+        // Need minimum seed to exceed MINIMUM_LIQUIDITY (1000)
+        // Swap must be reasonable relative to seed to avoid InsufficientOutputAmount
+        // Minimum swap of 100 shares to ensure swap produces output (very small swaps yield 0)
+        seedShares = bound(seedShares, 10000, 50000);
+        swapShares = bound(swapShares, 100, seedShares / 10); // Swap at most 10% of seed
+
+        oracleA.setValue(100);
+
+        // Ensure amounts are exact multiples of 1 ether (perShare for 18 decimals)
+        uint256 seedCollateral = seedShares * 1 ether;
+        uint256 swapCollateral = swapShares * 1 ether;
+
+        // Ensure ALICE has enough tokens
+        token.mint(ALICE, seedCollateral + swapCollateral);
+        vm.prank(ALICE);
+        token.approve(address(resolver), type(uint256).max);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: seedCollateral,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap =
+            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+
+        vm.prank(ALICE);
+        (,, uint256 shares,,) = resolver.createNumericMarketSeedAndBuy(
+            "fuzz test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        assertEq(shares, seedShares);
+    }
+
+    function testFuzz_ETHBalance_Ratio(uint256 balanceA, uint256 balanceB) public {
+        // Bound to reasonable values to avoid overflow and ensure sufficient liquidity
+        // Seed is fixed at 10000 ether, so balances don't affect liquidity requirements
+        balanceA = bound(balanceA, 1 ether, 10000 ether);
+        balanceB = bound(balanceB, 1 ether, 10000 ether);
+
+        address targetA = makeAddr("TARGET_A");
+        address targetB = makeAddr("TARGET_B");
+        vm.deal(targetA, balanceA);
+        vm.deal(targetB, balanceB);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createRatioMarketAndSeed(
+            "fuzz ratio",
+            address(token),
+            targetA,
+            "",
+            targetB,
+            "",
+            Resolver.Op.GT,
+            1e18, // ratio > 1
+            closeTime,
+            false,
+            seed
+        );
+
+        (uint256 value, bool condTrue,) = resolver.preview(marketId);
+
+        // Expected ratio = balanceA * 1e18 / balanceB
+        uint256 expectedRatio = (balanceA * 1e18) / balanceB;
+        assertEq(value, expectedRatio);
+        assertEq(condTrue, expectedRatio > 1e18);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    USDT-STYLE TOKEN TESTS (NO RETURN)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_USDT_SplitBuySell_NoReturnToken() public {
+        // Deploy USDT-style token (no return value on transfer/transferFrom)
+        MockUSDT usdt = new MockUSDT();
+        usdt.mint(ALICE, 100000e6);
+
+        vm.prank(ALICE);
+        usdt.approve(address(resolver), type(uint256).max);
+
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create and seed market with USDT-style token
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeed(
+            "USDT test",
+            address(usdt),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        assertTrue(shares > 0, "Should have minted shares");
+        assertTrue(liquidity > 0, "Should have minted liquidity");
+
+        // Buy YES with USDT-style token
+        usdt.mint(BOB, 1000e6);
+        vm.prank(BOB);
+        usdt.approve(address(pm), type(uint256).max);
+
+        vm.prank(BOB);
+        uint256 yesOut = pm.buyYes(marketId, 1000e6, 0, 0, FEE_BPS, BOB, 0);
+        assertTrue(yesOut > 0, "Should have received YES tokens");
+
+        // Sell YES back
+        vm.prank(BOB);
+        uint256 collateralOut = pm.sellYes(marketId, yesOut / 2, 0, 0, 0, FEE_BPS, BOB, 0);
+        assertTrue(collateralOut > 0, "Should have received collateral back");
+    }
+
+    function test_USDC_SplitBuySell_6Decimals() public {
+        // Deploy USDC-style token (6 decimals, returns bool)
+        MockUSDC usdc = new MockUSDC();
+        usdc.mint(ALICE, 100000e6);
+
+        vm.prank(ALICE);
+        usdc.approve(address(resolver), type(uint256).max);
+
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create and seed market with USDC
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares,) = resolver.createNumericMarketAndSeed(
+            "USDC test",
+            address(usdc),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        // Verify shares are in 6-decimal units (10000e6 / 1e6 = 10000 shares)
+        assertEq(shares, 10000, "Should have 10000 shares for 6-decimal token");
+
+        // Buy and sell with USDC
+        usdc.mint(BOB, 1000e6);
+        vm.prank(BOB);
+        usdc.approve(address(pm), type(uint256).max);
+
+        vm.prank(BOB);
+        uint256 yesOut = pm.buyYes(marketId, 1000e6, 0, 0, FEE_BPS, BOB, 0);
+        assertTrue(yesOut > 0);
+
+        vm.prank(BOB);
+        uint256 collateralOut = pm.sellYes(marketId, yesOut / 2, 0, 0, 0, FEE_BPS, BOB, 0);
+        assertTrue(collateralOut > 0);
+    }
+
+    function test_USDC_FullLifecycle_SeedBuyResolve() public {
+        // Full lifecycle test with 6-decimal token: create, seed, buy, resolve, claim
+        MockUSDC usdc = new MockUSDC();
+        usdc.mint(ALICE, 100000e6);
+        usdc.mint(BOB, 100000e6);
+
+        vm.prank(ALICE);
+        usdc.approve(address(resolver), type(uint256).max);
+        vm.prank(BOB);
+        usdc.approve(address(pm), type(uint256).max);
+
+        oracleA.setValue(100); // Above threshold (50)
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6, // 10000 USDC
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create and seed market
+        vm.prank(ALICE);
+        (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeed(
+            "USDC lifecycle",
+            address(usdc),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            true, // canClose for early resolution
+            seed
+        );
+
+        // Verify 6-decimal handling
+        assertEq(shares, 10000, "Should have 10000 shares for 10000 USDC");
+        assertTrue(liquidity > 0);
+
+        // BOB buys YES
+        vm.prank(BOB);
+        uint256 yesOut = pm.buyYes(marketId, 5000e6, 0, 0, FEE_BPS, BOB, 0);
+        assertTrue(yesOut > 0, "BOB should receive YES tokens");
+
+        uint256 bobYesBefore = pm.balanceOf(BOB, marketId);
+        assertTrue(bobYesBefore > 0);
+
+        // Resolve market early (canClose = true, condition is true)
+        resolver.resolveMarket(marketId);
+
+        // Verify resolved with YES
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins
+
+        // BOB claims winnings
+        uint256 bobUsdcBefore = usdc.balanceOf(BOB);
+        vm.prank(BOB);
+        (uint256 claimedShares, uint256 payout) = pm.claim(marketId, BOB);
+
+        assertEq(claimedShares, bobYesBefore, "Should claim all YES shares");
+        // Payout should be shares * perShare (1e6 for USDC)
+        assertEq(payout, bobYesBefore * 1e6, "Payout should be shares * 1e6");
+        assertEq(usdc.balanceOf(BOB) - bobUsdcBefore, payout, "BOB should receive USDC payout");
+    }
+
+    function test_WBTC_FullLifecycle_8Decimals() public {
+        // Full lifecycle test with 8-decimal token (WBTC-style)
+        // Note: ZAMM requires MINIMUM_LIQUIDITY (1000), so we need at least 2000 shares
+        // With 8 decimals, each share = 1e8, so we need 2000e8 = 2000 WBTC
+        MockWBTC wbtc = new MockWBTC();
+        wbtc.mint(ALICE, 10000e8); // 10000 WBTC
+        wbtc.mint(BOB, 10000e8);
+
+        vm.prank(ALICE);
+        wbtc.approve(address(resolver), type(uint256).max);
+        vm.prank(BOB);
+        wbtc.approve(address(pm), type(uint256).max);
+
+        oracleA.setValue(30); // Below threshold (50)
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 5000e8, // 5000 WBTC = 5000 shares (above MINIMUM_LIQUIDITY)
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create and seed market
+        vm.prank(ALICE);
+        (uint256 marketId, uint256 noId, uint256 shares,) = resolver.createNumericMarketAndSeed(
+            "WBTC lifecycle",
+            address(wbtc),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        // Verify 8-decimal handling: 5000e8 / 1e8 = 5000 shares
+        assertEq(shares, 5000, "Should have 5000 shares for 5000 WBTC");
+
+        // BOB buys NO (betting condition will be false)
+        vm.prank(BOB);
+        uint256 noOut = pm.buyNo(marketId, 500e8, 0, 0, FEE_BPS, BOB, 0); // 500 WBTC
+        assertTrue(noOut > 0, "BOB should receive NO tokens");
+
+        uint256 bobNoBefore = pm.balanceOf(BOB, noId);
+        assertTrue(bobNoBefore > 0);
+
+        // Wait for close time and resolve
+        vm.warp(closeTime);
+        resolver.resolveMarket(marketId);
+
+        // Verify resolved with NO (condition was false)
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertFalse(outcome); // NO wins
+
+        // BOB claims winnings
+        uint256 bobWbtcBefore = wbtc.balanceOf(BOB);
+        vm.prank(BOB);
+        (uint256 claimedShares, uint256 payout) = pm.claim(marketId, BOB);
+
+        assertEq(claimedShares, bobNoBefore, "Should claim all NO shares");
+        // Payout should be shares * perShare (1e8 for WBTC)
+        assertEq(payout, bobNoBefore * 1e8, "Payout should be shares * 1e8");
+        assertEq(wbtc.balanceOf(BOB) - bobWbtcBefore, payout, "BOB should receive WBTC payout");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    ETH SEED+BUY EXACT MSG.VALUE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ETH_SeedAndBuy_ExactMsgValue() public {
+        oracleA.setValue(100);
+
+        uint256 seedCollateral = 10000 ether;
+        uint256 swapCollateral = 1000 ether;
+        uint256 totalRequired = seedCollateral + swapCollateral;
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: seedCollateral,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap =
+            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+
+        uint256 resolverBalanceBefore = address(resolver).balance;
+        uint256 aliceBalanceBefore = ALICE.balance;
+
+        // Create market with exact msg.value
+        vm.prank(ALICE);
+        (uint256 marketId,,,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy{
+            value: totalRequired
+        }(
+            "ETH exact test",
+            address(0), // ETH collateral
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        assertTrue(marketId > 0);
+        assertTrue(swapOut > 0);
+
+        // Verify no residual ETH left in Resolver
+        assertEq(
+            address(resolver).balance, resolverBalanceBefore, "Resolver should have no residual ETH"
+        );
+
+        // Verify ALICE spent exactly totalRequired
+        assertEq(
+            aliceBalanceBefore - ALICE.balance, totalRequired, "ALICE should spend exact amount"
+        );
+    }
+
+    function test_ETH_SeedAndBuy_WrongMsgValue_Reverts() public {
+        oracleA.setValue(100);
+
+        uint256 seedCollateral = 10000 ether;
+        uint256 swapCollateral = 1000 ether;
+        uint256 totalRequired = seedCollateral + swapCollateral;
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: seedCollateral,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap =
+            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+
+        // Too little ETH should revert
+        vm.prank(ALICE);
+        vm.expectRevert(Resolver.InvalidETHAmount.selector);
+        resolver.createNumericMarketSeedAndBuy{value: totalRequired - 1}(
+            "ETH test",
+            address(0),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        // Too much ETH should also revert
+        vm.prank(ALICE);
+        vm.expectRevert(Resolver.InvalidETHAmount.selector);
+        resolver.createNumericMarketSeedAndBuy{value: totalRequired + 1}(
+            "ETH test",
+            address(0),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    RATIO MARKET B=0 TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RatioMarket_BZero_RevertsOnPreview() public {
+        address targetA = makeAddr("TARGET_A");
+        address targetB = makeAddr("TARGET_B");
+
+        // Set targetA balance, leave targetB at 0
+        vm.deal(targetA, 100 ether);
+        vm.deal(targetB, 0);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create ratio market with ETH balance check
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createRatioMarketAndSeed(
+            "ratio B=0 test",
+            address(token),
+            targetA,
+            "", // empty calldata = ETH balance check
+            targetB,
+            "", // empty calldata = ETH balance check
+            Resolver.Op.GT,
+            1e18,
+            closeTime,
+            false,
+            seed
+        );
+
+        // Preview should revert when B=0 (division by zero in mulDiv)
+        vm.expectRevert(); // MulDivFailed
+        resolver.preview(marketId);
+    }
+
+    function test_RatioMarket_BZero_RecoverAndResolve() public {
+        address targetA = makeAddr("TARGET_A");
+        address targetB = makeAddr("TARGET_B");
+
+        // Set targetA balance, leave targetB at 0
+        vm.deal(targetA, 100 ether);
+        vm.deal(targetB, 0);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create ratio market
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createRatioMarketAndSeed(
+            "ratio recovery test",
+            address(token),
+            targetA,
+            "",
+            targetB,
+            "",
+            Resolver.Op.GT,
+            1e18,
+            closeTime,
+            false,
+            seed
+        );
+
+        // Resolution should fail when B=0
+        vm.expectRevert(); // MulDivFailed
+        resolver.resolveMarket(marketId);
+
+        // Now give targetB some balance
+        vm.deal(targetB, 50 ether);
+
+        // Preview should now work
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, (100 ether * 1e18) / 50 ether); // 2e18
+        assertTrue(condTrue); // 2e18 > 1e18
+        assertFalse(ready); // Not at close time yet
+
+        // Wait until close time
+        vm.warp(closeTime);
+
+        // Now resolution should succeed
+        resolver.resolveMarket(marketId);
+
+        // Verify resolved with YES
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins because ratio > threshold
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    EARLY-CLOSE PATH TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_EarlyClose_CondTrueAndCanClose_ResolvesImmediately() public {
+        oracleA.setValue(100); // Above threshold
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create market with canClose = true
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeed(
+            "early close test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50, // threshold
+            closeTime,
+            true, // canClose = true
+            seed
+        );
+
+        // Verify market is not yet at close time
+        assertTrue(block.timestamp < closeTime, "Should be before close time");
+
+        // Preview should show ready = true (condition true + canClose)
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, 100);
+        assertTrue(condTrue);
+        assertTrue(ready); // Ready because condTrue && canClose
+
+        // Resolve immediately (before close time)
+        resolver.resolveMarket(marketId);
+
+        // Verify resolved with YES
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins
+    }
+
+    function test_EarlyClose_CondFalseAndCanClose_MustWait() public {
+        oracleA.setValue(30); // Below threshold
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create market with canClose = true
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeed(
+            "early close test false",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            true, // canClose = true
+            seed
+        );
+
+        // Preview should show ready = false (condition false, not at close)
+        (, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertFalse(condTrue);
+        assertFalse(ready);
+
+        // Try to resolve early - should fail
+        vm.expectRevert(Resolver.Pending.selector);
+        resolver.resolveMarket(marketId);
+
+        // Wait until close time
+        vm.warp(closeTime);
+
+        // Now ready should be true
+        (, condTrue, ready) = resolver.preview(marketId);
+        assertFalse(condTrue);
+        assertTrue(ready);
+
+        // Now resolution should work
+        resolver.resolveMarket(marketId);
+
+        // Verify resolved with NO (condition was false)
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertFalse(outcome); // NO wins
+    }
+
+    function test_EarlyClose_CondTrueButCanCloseFalse_MustWait() public {
+        oracleA.setValue(100); // Above threshold
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Create market with canClose = false
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeed(
+            "no early close test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false, // canClose = false
+            seed
+        );
+
+        // Preview: condition true but not ready (canClose = false)
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, 100);
+        assertTrue(condTrue);
+        assertFalse(ready); // Not ready because canClose = false
+
+        // Try to resolve early - should fail
+        vm.expectRevert(Resolver.Pending.selector);
+        resolver.resolveMarket(marketId);
+
+        // Wait until close time
+        vm.warp(closeTime);
+
+        // Now resolution should work
+        resolver.resolveMarket(marketId);
+
+        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SEED+BUY COLLATERAL DIVISIBILITY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SeedAndBuy_NonMultipleSwap_Reverts() public {
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether, // Valid multiple of 1e18
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Swap amount is NOT a multiple of perShare (1e18 for 18-decimal token)
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether + 1, // Not divisible by 1e18
+            minOut: 0,
+            yesForNo: false
+        });
+
+        vm.prank(ALICE);
+        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
+        resolver.createNumericMarketSeedAndBuy(
+            "non-multiple test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+    }
+
+    function test_SeedAndBuy_MultipleSwap_SucceedsNoRefund() public {
+        oracleA.setValue(100);
+
+        uint256 seedCollateral = 10000 ether;
+        uint256 swapCollateral = 1000 ether; // Exact multiple of 1e18
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: seedCollateral,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap =
+            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+
+        uint256 aliceTokenBefore = token.balanceOf(ALICE);
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
+            "multiple test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        assertTrue(marketId > 0);
+        assertTrue(shares > 0);
+        assertTrue(swapOut > 0);
+
+        // Verify exact amount was spent (no dust/refund)
+        uint256 aliceTokenAfter = token.balanceOf(ALICE);
+        assertEq(
+            aliceTokenBefore - aliceTokenAfter,
+            seedCollateral + swapCollateral,
+            "Should spend exact amount"
+        );
+
+        // Verify no tokens left in resolver
+        assertEq(token.balanceOf(address(resolver)), 0, "Resolver should have no leftover tokens");
+    }
+
+    function test_SeedAndBuy_USDC_NonMultiple_Reverts() public {
+        MockUSDC usdc = new MockUSDC();
+        usdc.mint(ALICE, 100000e6);
+        vm.prank(ALICE);
+        usdc.approve(address(resolver), type(uint256).max);
+
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6, // Valid multiple of 1e6
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        // Swap amount is NOT a multiple of perShare (1e6 for 6-decimal token)
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000e6 + 1, // Not divisible by 1e6
+            minOut: 0,
+            yesForNo: false
+        });
+
+        vm.prank(ALICE);
+        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
+        resolver.createNumericMarketSeedAndBuy(
+            "USDC non-multiple",
+            address(usdc),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+    }
+
+    function test_SeedAndBuy_USDC_Multiple_Succeeds() public {
+        MockUSDC usdc = new MockUSDC();
+        usdc.mint(ALICE, 100000e6);
+        vm.prank(ALICE);
+        usdc.approve(address(resolver), type(uint256).max);
+
+        oracleA.setValue(100);
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000e6,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000e6, // Exact multiple of 1e6
+            minOut: 0,
+            yesForNo: false
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
+            "USDC multiple",
+            address(usdc),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed,
+            swap
+        );
+
+        assertTrue(marketId > 0);
+        assertEq(shares, 10000); // 10000e6 / 1e6 = 10000 shares
+        assertTrue(swapOut > 0);
     }
 }
 

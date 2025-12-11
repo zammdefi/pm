@@ -1,0 +1,10 @@
+# mulDiv
+[Git Source](https://github.com/zammdefi/pm/blob/957f9e7e15f0bf2d2d674d07f7173d49bf9249ba/src/Resolver.sol)
+
+Returns `floor(x * y / d)`. Reverts if `x * y` overflows, or `d` is zero.
+
+
+```solidity
+function mulDiv(uint256 x, uint256 y, uint256 d) pure returns (uint256 z);
+```
+

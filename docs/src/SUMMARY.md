@@ -17,5 +17,6 @@
   - [PM constants](src/PM.sol/constants.PM.md)
   - [IPAMM](src/Resolver.sol/interface.IPAMM.md)
   - [Resolver](src/Resolver.sol/contract.Resolver.md)
-  - [ensureApproval](src/Resolver.sol/function.ensureApproval.md)
   - [safeTransferFrom](src/Resolver.sol/function.safeTransferFrom.md)
+  - [ensureApproval](src/Resolver.sol/function.ensureApproval.md)
+  - [mulDiv](src/Resolver.sol/function.mulDiv.md)

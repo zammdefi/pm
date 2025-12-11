@@ -12,10 +12,10 @@ Minimal onchain mechanisms for binary prediction markets:
 
 | Contract | Address |
 |----------|---------|
-| PAMM | `0x0000000000f8ba51d6e987660d3e455ac2c4be9d` |
-| PM | `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e` |
-| Resolver | `0x0000000000d804b3d5e9e176c35b62b6235a11ad` |
-| ZAMM | `0x000000000000040470635EB91b7CE4D132D616eD` |
+| [PAMM](https://contractscan.xyz/contract/0x0000000000f8ba51d6e987660d3e455ac2c4be9d) | `0x0000000000f8ba51d6e987660d3e455ac2c4be9d` |
+| [PM](https://contractscan.xyz/contract/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e) | `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e` |
+| [Resolver](https://contractscan.xyz/contract/0x0000000000b0ba1b2bb3af96fbb893d835970ec4) | `0x0000000000b0ba1b2bb3af96fbb893d835970ec4` |
+| [ZAMM](https://contractscan.xyz/contract/0x000000000000040470635EB91b7CE4D132D616eD) | `0x000000000000040470635EB91b7CE4D132D616eD` |
 | wstETH | `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0` |
 | ZSTETH | `0x000000000077B216105413Dc45Dc6F6256577c7B` |
 
@@ -371,8 +371,8 @@ An on-chain oracle resolver for PAMM markets based on arbitrary `staticcall` rea
   │  CREATE MARKET:                      RESOLVE MARKET:                    │
   │  1. Build description                1. Read oracle value               │
   │  2. Call PAMM.createMarket()         2. Compare to threshold            │
-  │  3. Store condition                  3. Call PAMM.resolve(outcome)      │
-  │  4. Optionally seed LP               4. Delete condition                │
+  │  3. Store condition                  3. Delete condition                │
+  │  4. Optionally seed LP               4. Call PAMM.resolve(outcome)      │
   └───────────────────────────────┬─────────────────────────────────────────┘
                                   │
                                   │ createMarket / resolve / closeMarket
@@ -424,6 +424,7 @@ An on-chain oracle resolver for PAMM markets based on arbitrary `staticcall` rea
 |------|---------|-----------|
 | **Scalar** | `value = staticcall(target, callData)` | Raw uint256 |
 | **Ratio** | `value = (A * 1e18) / B` | 1e18-scaled (e.g., 1.5x = 1.5e18) |
+| **ETH Balance** | `value = target.balance` | Wei (pass empty `callData`) |
 
 > **Boolean Support:** Functions returning `bool` work natively—the EVM encodes `false` as `0` and `true` as `1`. Use `Op.EQ` with `threshold=1` for "is true" or `threshold=0` for "is false".
 
@@ -462,7 +463,9 @@ createRatioMarketSeedAndBuy(...)  // + initial position
 
 // Register conditions for existing PAMM markets
 registerConditionForExistingMarket(marketId, target, callData, op, threshold)
+registerConditionForExistingMarketSimple(marketId, target, selector, op, threshold)
 registerRatioConditionForExistingMarket(marketId, targetA, callDataA, targetB, callDataB, op, threshold)
+registerRatioConditionForExistingMarketSimple(marketId, targetA, selectorA, targetB, selectorB, op, threshold)
 
 // Resolution
 resolveMarket(marketId)   // Anyone can call when ready
@@ -470,6 +473,8 @@ preview(marketId) → (value, condTrue, ready)  // Check resolution status
 
 // Utility
 multicall(bytes[] data)   // Batch operations
+permit(token, owner, value, deadline, v, r, s)  // EIP-2612 permit
+permitDAI(token, owner, nonce, deadline, allowed, v, r, s)  // DAI-style permit
 buildDescription(...)     // Preview auto-generated description
 ```
 
@@ -502,177 +507,240 @@ struct SwapParams {
 
 For `SeedAndBuy` with ETH: `msg.value = seed.collateralIn + swap.collateralForSwap`
 
-### Example Markets
+### Complete Examples
 
-#### 1. Price Prediction (Chainlink)
+#### SeedParams Setup (used in all seeded examples)
+
+```solidity
+Resolver.SeedParams memory seed = Resolver.SeedParams({
+    collateralIn: 10 ether,       // Must be divisible by 10^decimals
+    feeOrHook: 30,                // ZAMM fee tier (30 = 0.3%)
+    amount0Min: 0,                // Slippage protection
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,      // Who receives LP tokens
+    deadline: block.timestamp + 1 hours
+});
+```
+
+#### 1. Price Prediction with ETH Collateral (Chainlink)
 
 ```solidity
 // "ETH > $5000 by Dec 31, 2025"
-// YES wins if ETH price exceeds $5000 at any point (canClose=true)
-// NO wins if price is still <= $5000 at deadline
+// YES wins if price exceeds $5000 at any point (canClose=true)
 
-resolver.createNumericMarketAndSeed(
+Resolver.SeedParams memory seed = Resolver.SeedParams({
+    collateralIn: 10 ether,
+    feeOrHook: 30,
+    amount0Min: 0,
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,
+    deadline: block.timestamp + 1 hours
+});
+
+resolver.createNumericMarketAndSeed{value: 10 ether}(
     "ETH/USD price",
-    address(0),                    // ETH collateral
-    0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419,  // Chainlink ETH/USD
-    abi.encodeWithSelector(bytes4(keccak256("latestAnswer()"))),
+    address(0),                                    // ETH collateral
+    0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419,    // Chainlink ETH/USD
+    abi.encodeWithSignature("latestAnswer()"),     // returns int256 (works as uint256 for prices)
     Resolver.Op.GT,
-    5000e8,                        // $5000 (8 decimals)
-    1735689600,                    // Dec 31, 2025
-    true,                          // early close allowed
-    seedParams
+    5000e8,                                        // $5000 (Chainlink uses 8 decimals)
+    1735689600,                                    // Dec 31, 2025 Unix timestamp
+    true,                                          // early close allowed
+    seed
 );
 ```
 
-#### 2. Token Supply Milestone
+#### 2. Token Supply with ERC20 Collateral (USDC)
 
 ```solidity
-// "USDC supply > 50B by Q2 2025"
-// Tracks totalSupply() of USDC contract
+// "USDC supply > 50B by June 2025"
 
-resolver.createNumericMarketSimple(
+address USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+IERC20(USDC).approve(address(resolver), 10000e6);
+
+Resolver.SeedParams memory seed = Resolver.SeedParams({
+    collateralIn: 10000e6,        // 10,000 USDC (6 decimals)
+    feeOrHook: 30,
+    amount0Min: 0,
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,
+    deadline: block.timestamp + 1 hours
+});
+
+resolver.createNumericMarketAndSeed(              // No {value} for ERC20
     "USDC total supply",
-    USDC,                          // USDC as collateral
-    USDC,                          // target = USDC contract
-    bytes4(keccak256("totalSupply()")),
+    USDC,                                          // USDC as collateral
+    USDC,                                          // target = USDC contract
+    abi.encodeWithSignature("totalSupply()"),
     Resolver.Op.GT,
-    50_000_000_000e6,              // 50B (6 decimals)
-    1719792000,                    // June 30, 2025
+    50_000_000_000e6,                              // 50B (6 decimals)
+    1719792000,                                    // June 30, 2025
+    true,
+    seed
+);
+```
+
+#### 3. Create + Seed + Take Position (SeedAndBuy)
+
+```solidity
+// Create market, seed LP, and immediately buy YES in one transaction
+
+Resolver.SeedParams memory seed = Resolver.SeedParams({
+    collateralIn: 10 ether,
+    feeOrHook: 30,
+    amount0Min: 0,
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,
+    deadline: block.timestamp + 1 hours
+});
+
+Resolver.SwapParams memory swap = Resolver.SwapParams({
+    collateralForSwap: 2 ether,   // Buy tokens with 2 ETH
+    minOut: 0,                    // Minimum tokens out (slippage)
+    yesForNo: false               // false = buyYes, true = buyNo
+});
+
+// msg.value = seed.collateralIn + swap.collateralForSwap
+resolver.createNumericMarketSeedAndBuy{value: 12 ether}(
+    "ETH/USD price",
+    address(0),
+    0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419,
+    abi.encodeWithSignature("latestAnswer()"),
+    Resolver.Op.GT,
+    4000e8,
+    1735689600,
+    true,
+    seed,
+    swap
+);
+```
+
+#### 4. ETH Balance Prediction (Empty callData)
+
+```solidity
+// "Vitalik holds > 100k ETH"
+// Pass empty callData ("") to check target's ETH balance
+
+Resolver.SeedParams memory seed = Resolver.SeedParams({
+    collateralIn: 5 ether,
+    feeOrHook: 30,
+    amount0Min: 0,
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,
+    deadline: block.timestamp + 1 hours
+});
+
+resolver.createNumericMarketAndSeed{value: 5 ether}(
+    "vitalik.eth ETH balance",
+    address(0),
+    0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045,    // vitalik.eth
+    "",                                            // empty = ETH balance check
+    Resolver.Op.GT,
+    100_000 ether,                                 // 100k ETH in wei
+    1735689600,
+    true,
+    seed
+);
+```
+
+#### 5. Ratio Market (Governance Vote)
+
+```solidity
+// "Proposal passes (forVotes > againstVotes)"
+// Ratio = forVotes / againstVotes, threshold 1e18 = 1.0
+
+Resolver.SeedParams memory seed = Resolver.SeedParams({
+    collateralIn: 10 ether,
+    feeOrHook: 30,
+    amount0Min: 0,
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,
+    deadline: block.timestamp + 1 hours
+});
+
+resolver.createRatioMarketAndSeed{value: 10 ether}(
+    "Proposal 42 vote ratio",
+    address(0),
+    GOVERNOR,                                      // targetA: forVotes
+    abi.encodeWithSignature("proposalVotes(uint256)", 42),
+    GOVERNOR,                                      // targetB: againstVotes
+    abi.encodeWithSignature("proposalAgainst(uint256)", 42),
+    Resolver.Op.GT,
+    1e18,                                          // ratio > 1.0 means forVotes > againstVotes
+    1704067200,                                    // voting end timestamp
+    false,                                         // must wait for vote to end
+    seed
+);
+```
+
+#### 6. Boolean Condition (Protocol Paused)
+
+```solidity
+// "Protocol gets paused"
+// bool paused() returns true (1) or false (0)
+
+Resolver.SeedParams memory seed = Resolver.SeedParams({
+    collateralIn: 5 ether,
+    feeOrHook: 30,
+    amount0Min: 0,
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,
+    deadline: block.timestamp + 1 hours
+});
+
+resolver.createNumericMarketAndSeed{value: 5 ether}(
+    "Protocol paused status",
+    address(0),
+    PROTOCOL_ADDRESS,
+    abi.encodeWithSignature("paused()"),           // returns bool
+    Resolver.Op.EQ,
+    1,                                             // true == 1
+    1735689600,
+    true,                                          // YES wins immediately when paused
+    seed
+);
+```
+
+#### 7. Market Without LP (No Seed)
+
+```solidity
+// Create market only, no liquidity seeding
+// Anyone can add liquidity later via PAMM.splitAndAddLiquidity()
+
+(uint256 marketId, uint256 noId) = resolver.createNumericMarket(
+    "ETH/USD price",
+    address(0),                                    // ETH collateral
+    0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419,
+    abi.encodeWithSignature("latestAnswer()"),
+    Resolver.Op.GT,
+    5000e8,
+    1735689600,
     true
 );
 ```
 
-#### 3. DeFi TVL Target
+#### 8. Simple Selector Version (bytes4)
 
 ```solidity
-// "Aave V3 TVL > $20B"
-// Reads total collateral from Aave pool
+// Use bytes4 selector instead of full calldata (for no-argument functions)
 
-resolver.createNumericMarket(
-    "Aave V3 TVL",
-    address(0),                    // ETH collateral
-    AAVE_POOL,
-    abi.encodeWithSelector(bytes4(keccak256("getTotalCollateral()"))),
-    Resolver.Op.GTE,
-    20_000_000_000e18,             // $20B
+resolver.createNumericMarketAndSeedSimple{value: 10 ether}(
+    "ETH/USD price",
+    address(0),
+    0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419,
+    bytes4(keccak256("latestAnswer()")),           // just 4-byte selector
+    Resolver.Op.GT,
+    5000e8,
     1735689600,
     true,
-    seedParams
-);
-```
-
-#### 4. Governance Outcome
-
-```solidity
-// "Proposal #42 passes (forVotes > againstVotes)"
-// Uses ratio condition to compare two values
-
-resolver.createRatioMarketSimple(
-    "Proposal 42 passes",
-    address(0),
-    GOVERNOR,                      // forVotes source
-    bytes4(keccak256("proposalVotes(uint256)")),  // returns forVotes
-    GOVERNOR,                      // againstVotes source
-    bytes4(keccak256("proposalAgainstVotes(uint256)")),
-    Resolver.Op.GT,
-    1e18,                          // ratio > 1.0 means forVotes > againstVotes
-    1704067200,                    // voting end
-    false                          // must wait for voting to end
-);
-```
-
-#### 5. Collateralization Ratio
-
-```solidity
-// "DAI collateralization ratio stays above 150%"
-// Compares collateral value to debt
-
-resolver.createRatioMarket(
-    "DAI CR > 150%",
-    DAI,
-    MAKER_VAT,
-    abi.encodeCall(Vat.ink, (ilk)),   // collateral amount
-    MAKER_VAT,
-    abi.encodeCall(Vat.art, (ilk)),   // debt amount
-    Resolver.Op.GTE,
-    1.5e18,                        // 150% = 1.5
-    1735689600,
-    false                          // NO wins if CR drops below 150% at deadline
-);
-```
-
-#### 6. Staking APY Prediction
-
-```solidity
-// "Lido stETH APY > 5%"
-// Reads from Lido oracle
-
-resolver.createNumericMarketAndSeed(
-    "stETH APY",
-    WSTETH,                        // wstETH collateral
-    LIDO_ORACLE,
-    abi.encodeWithSelector(bytes4(keccak256("getAPY()"))),
-    Resolver.Op.GT,
-    500,                           // 5% = 500 basis points
-    1735689600,
-    true,
-    seedParams
-);
-```
-
-#### 7. Block Number Race
-
-```solidity
-// "Ethereum block 20M before July 2025"
-// Uses block.number from any contract
-
-resolver.createNumericMarketSimple(
-    "Block 20M milestone",
-    address(0),
-    TARGET_CONTRACT,               // any contract works
-    bytes4(keccak256("getBlockNumber()")),  // or custom view
-    Resolver.Op.GTE,
-    20_000_000,
-    1719792000,                    // July 1, 2025
-    true                           // YES wins as soon as block 20M hit
-);
-```
-
-#### 8. DEX Price Comparison (Ratio)
-
-```solidity
-// "ETH/USDC on Uniswap > ETH/USDC on Sushiswap"
-// Compares prices across DEXes
-
-resolver.createRatioMarket(
-    "Uniswap ETH premium over Sushi",
-    address(0),
-    UNISWAP_POOL,
-    abi.encodeCall(IPool.slot0, ()),   // returns sqrtPriceX96
-    SUSHI_POOL,
-    abi.encodeCall(IPool.slot0, ()),
-    Resolver.Op.GT,
-    1e18,                          // Uni price > Sushi price
-    1735689600,
-    false
-);
-```
-
-#### 9. Boolean Condition (Protocol Status)
-
-```solidity
-// "Protocol is paused"
-// Functions returning bool work natively (false=0, true=1)
-
-resolver.createNumericMarketSimple(
-    "Protocol paused",
-    address(0),
-    PROTOCOL_CONTRACT,
-    bytes4(keccak256("paused()")),  // returns bool
-    Resolver.Op.EQ,
-    1,                             // true = 1
-    1735689600,
-    true                           // YES wins as soon as paused
+    seed
 );
 ```
 
@@ -686,6 +754,7 @@ resolver.createNumericMarketSimple(
 | **Protocol** | TVL milestone incentive | Scalar, GTE, canClose=true |
 | **Analyst** | Compare protocol metrics | Ratio, any operator |
 | **Insurance** | Payout if protocol pauses | Boolean (EQ 1), canClose=true |
+| **Whale watcher** | Bet on wallet accumulation | ETH Balance, GTE, canClose=true |
 
 ### Configuration Guide
 
@@ -705,9 +774,75 @@ resolver.createNumericMarketSimple(
 
 ---
 
+## Collateral Support
+
+Both PAMM and Resolver support multiple collateral types:
+
+| Decimals | Token Examples | Notes |
+|----------|----------------|-------|
+| 18 | ETH, wstETH, DAI | 1 share = 1e18 collateral units |
+| 6 | USDC, USDT | 1 share = 1e6 collateral units |
+| 8 | WBTC | 1 share = 1e8 collateral units |
+
+**Important:** ZAMM requires `MINIMUM_LIQUIDITY` (1000 shares) to be locked when creating a pool. For tokens with fewer decimals, this means higher collateral requirements:
+- 18 decimals: ~0.002 ETH minimum to seed
+- 6 decimals: ~0.002 USDC minimum to seed
+- 8 decimals: ~0.00002 BTC minimum to seed
+
+The system also supports non-standard ERC20s:
+- **USDT-style** (no return value on transfer)
+- **Fee-on-transfer tokens** (not recommended, may cause accounting issues)
+
+---
+
+## Error Reference
+
+### PAMM Errors
+
+| Error | Description |
+|-------|-------------|
+| `AmountZero` | Zero amount provided |
+| `FeeOverflow` | Resolver fee > 10000 bps (100%) |
+| `NotClosable` | closeMarket called but canClose=false |
+| `InvalidClose` | Close time in the past |
+| `MarketClosed` | Trading attempted after close time or resolution |
+| `MarketExists` | Market with same parameters already exists |
+| `OnlyResolver` | Caller is not the market's resolver |
+| `ExcessiveInput` | Input exceeds allowed maximum |
+| `MarketNotFound` | Invalid marketId |
+| `DeadlineExpired` | Transaction deadline passed |
+| `InvalidReceiver` | Receiver is address(0) |
+| `InvalidResolver` | Resolver address is zero |
+| `AlreadyResolved` | Market already resolved |
+| `InvalidDecimals` | Token has 0 or invalid decimals |
+| `MarketNotClosed` | Claim attempted before close/resolution |
+| `InvalidETHAmount` | msg.value doesn't match required amount |
+| `InvalidCollateral` | Invalid collateral address |
+| `InvalidSwapAmount` | Swap amount exceeds available |
+| `InsufficientOutput` | Slippage protection triggered |
+| `CollateralTooSmall` | Collateral doesn't convert to at least 1 share |
+| `WrongCollateralType` | ETH sent for ERC20 market or vice versa |
+
+### Resolver Errors
+
+| Error | Description |
+|-------|-------------|
+| `Unknown` | Condition not found for marketId |
+| `Pending` | Resolution attempted before ready |
+| `InvalidTarget` | Target address is zero |
+| `MarketResolved` | Market already resolved |
+| `ConditionExists` | Condition already registered for market |
+| `InvalidDeadline` | Close time in the past |
+| `InvalidETHAmount` | msg.value doesn't match required amount |
+| `TargetCallFailed` | staticcall to oracle failed |
+| `NotResolverMarket` | Market's resolver is not this contract |
+| `CollateralNotMultiple` | Collateral not divisible by perShare |
+
+---
+
 ## Resolver Role (General)
 
-Any resolver address can:
+Any address can be a resolver for PAMM/PM markets. Resolvers can:
 - Call `resolve(marketId, outcome)` after `close` timestamp
 - Call `closeMarket(marketId)` early (if `canClose` was set at creation)
 - Set a fee via `setResolverFeeBps(bps)` (max 10%, applies to all their markets)
@@ -716,7 +851,11 @@ Any resolver address can:
 - PAMM: fee deducted per-claim (each winner pays fee on their collateral)
 - PM: fee deducted once at resolution (from the pot before splitting)
 
-For decentralized resolution, use a multisig, oracle contract, or the Resolver contract above.
+**Options for resolver addresses:**
+- EOA (trusted individual)
+- Multisig (e.g., Gnosis Safe)
+- The `Resolver` contract (trustless on-chain oracle)
+- Custom oracle contract
 
 ---
 
@@ -725,9 +864,34 @@ For decentralized resolution, use a multisig, oracle contract, or the Resolver c
 ```bash
 forge build
 forge test
+forge test -vvv  # verbose output
+```
+
+### Testing Different Collaterals
+
+The test suite includes coverage for:
+- 18-decimal tokens (ETH, wstETH-style)
+- 6-decimal tokens (USDC-style)
+- 8-decimal tokens (WBTC-style)
+- USDT-style tokens (no return value)
+
+### Gas Snapshots
+
+```bash
+forge snapshot
 ```
 
 Solidity `^0.8.30`. Mainnet addresses are hardcoded; fork mainnet for testing.
+
+---
+
+## Security Considerations
+
+- **Resolver trust:** Markets trust their resolver to resolve honestly. For trustless resolution, use the Resolver contract with on-chain oracle checks.
+- **Oracle manipulation:** Markets using AMM prices (Uniswap TWAP, etc.) may be vulnerable to manipulation. Use time-weighted averages or multiple oracle sources.
+- **Decimal handling:** Always verify collateral decimals. Mismatched decimals can cause loss of funds.
+- **Reentrancy:** All state-changing functions use `nonReentrant` guards.
+- **Permit support:** Both EIP-2612 and DAI-style permits are supported for gasless approvals.
 
 ---
 
@@ -737,4 +901,4 @@ MIT
 
 ---
 
-*This code is experimental. No warranties. DYOR.*
+*This code is experimental. No warranties. Use at your own risk.*

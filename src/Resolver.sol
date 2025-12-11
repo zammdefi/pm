@@ -33,7 +33,7 @@ COLLATERAL:
   - ERC20:
       - user must approve resolver (or use permit externally)
       - msg.value must be 0
-  - collateralIn must be divisible by 10^decimals (no dust / refunds)
+  - collateralIn and collateralForSwap must be divisible by 10^decimals (no dust)
 
 SEED + BUY:
   - *SeedAndBuy functions do NOT set target odds
@@ -141,6 +141,8 @@ contract Resolver {
     address public constant PAMM = 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d;
 
     receive() external payable {}
+
+    constructor() payable {}
 
     /*//////////////////////////////////////////////////////////////
                                MULTICALL
@@ -374,7 +376,7 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
@@ -395,7 +397,7 @@ contract Resolver {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
-        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
@@ -503,7 +505,7 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
@@ -535,7 +537,7 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
@@ -569,8 +571,11 @@ contract Resolver {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
-        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
-        swapOut = _buyToSkewOdds(collateral, marketId, seed.feeOrHook, seed.deadline, swap);
+        uint256 perShare;
+        (shares, liquidity, perShare) =
+            _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
+        swapOut =
+            _buyToSkewOdds(collateral, marketId, perShare, seed.feeOrHook, seed.deadline, swap);
         _flushLeftoverShares(marketId);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
@@ -611,8 +616,11 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
-        swapOut = _buyToSkewOdds(collateral, marketId, seed.feeOrHook, seed.deadline, swap);
+        uint256 perShare;
+        (shares, liquidity, perShare) =
+            _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
+        swapOut =
+            _buyToSkewOdds(collateral, marketId, perShare, seed.feeOrHook, seed.deadline, swap);
         _flushLeftoverShares(marketId);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
@@ -852,9 +860,9 @@ contract Resolver {
         uint256 marketId,
         SeedParams calldata p,
         uint256 extraETH
-    ) internal returns (uint256 shares, uint256 liquidity) {
+    ) internal returns (uint256 shares, uint256 liquidity, uint256 perShare) {
         (,, uint8 decimals,,,,,,,,) = IPAMM(PAMM).getMarket(marketId);
-        uint256 perShare = 10 ** decimals;
+        perShare = 10 ** decimals;
         if (p.collateralIn == 0 || p.collateralIn % perShare != 0) revert CollateralNotMultiple();
 
         if (collateral == address(0)) {
@@ -904,11 +912,15 @@ contract Resolver {
     function _buyToSkewOdds(
         address collateral,
         uint256 marketId,
+        uint256 perShare,
         uint256 feeOrHook,
         uint256 deadline,
         SwapParams calldata s
     ) internal returns (uint256 amountOut) {
         if (s.collateralForSwap == 0) return 0;
+
+        // Enforce whole-share multiple to avoid dust trapped in Resolver
+        if (s.collateralForSwap % perShare != 0) revert CollateralNotMultiple();
 
         if (collateral != address(0)) {
             safeTransferFrom(collateral, msg.sender, address(this), s.collateralForSwap);

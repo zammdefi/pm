@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
-import {PAMM, ERC6909Minimal, IZAMM} from "../src/PAMM.sol";
+import {PAMM, IZAMM} from "../src/PAMM.sol";
 
 /// @notice Mock ERC20 for testing (18 decimals like wstETH)
 contract MockERC20 {
@@ -4975,6 +4975,121 @@ contract PAMM_ZAMM_Test is Test {
         vm.prank(ALICE);
         vm.expectRevert(); // Will revert with InsufficientPermission from ZAMM
         pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    GETNOAID AND ID CONSISTENCY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetNoId_Consistency() public view {
+        // Verify getNoId returns consistent values
+        uint256 noId1 = pm.getNoId(marketId);
+        uint256 noId2 = pm.getNoId(marketId);
+        assertEq(noId1, noId2);
+
+        // NO ID should be keccak256(abi.encodePacked("PMARKET:NO", marketId))
+        uint256 expectedNoId = uint256(keccak256(abi.encodePacked("PMARKET:NO", marketId)));
+        assertEq(noId1, expectedNoId);
+    }
+
+    function test_GetNoId_DifferentMarkets() public {
+        // Create another market with different description
+        vm.prank(RESOLVER);
+        (uint256 marketId2,) =
+            pm.createMarket("Different market", RESOLVER, address(wsteth), closeTime, false);
+
+        uint256 noId1 = pm.getNoId(marketId);
+        uint256 noId2 = pm.getNoId(marketId2);
+
+        // NO IDs should be different
+        assertNotEq(noId1, noId2);
+
+        // Verify they match the expected hash formula
+        assertEq(noId1, uint256(keccak256(abi.encodePacked("PMARKET:NO", marketId))));
+        assertEq(noId2, uint256(keccak256(abi.encodePacked("PMARKET:NO", marketId2))));
+    }
+
+    function testFuzz_GetNoId_IsDeterministic(uint256 _marketId) public view {
+        // getNoId is pure and deterministic - calling twice should return same result
+        uint256 noId1 = pm.getNoId(_marketId);
+        uint256 noId2 = pm.getNoId(_marketId);
+        assertEq(noId1, noId2, "getNoId should be deterministic");
+
+        // Verify it matches keccak256 formula
+        uint256 expected = uint256(keccak256(abi.encodePacked("PMARKET:NO", _marketId)));
+        assertEq(noId1, expected, "getNoId should match keccak256 formula");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    ADDITIONAL EDGE CASE TESTS (ZAMM)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_BalanceOf_ZeroForNonExistent() public view {
+        // Balance should be 0 for non-existent market
+        uint256 fakeMarketId = uint256(keccak256("fake"));
+        assertEq(pm.balanceOf(ALICE, fakeMarketId), 0);
+    }
+
+    function test_Allowance_DefaultZero() public view {
+        // Allowance should be 0 by default
+        assertEq(pm.allowance(ALICE, BOB, marketId), 0);
+    }
+
+    function test_Approve_Success() public {
+        vm.prank(ALICE);
+        pm.approve(BOB, marketId, 100 ether);
+
+        assertEq(pm.allowance(ALICE, BOB, marketId), 100 ether);
+    }
+
+    function test_Split_ThenBuyYes_ThenSell_RoundTrip() public {
+        // Full round trip test - need LP first
+        vm.startPrank(ALICE);
+        pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        // 1. Split to get initial shares
+        pm.split(marketId, 1000 ether, ALICE);
+        uint256 yesAfterSplit = pm.balanceOf(ALICE, marketId);
+
+        // 2. Buy more YES
+        uint256 yesOut = pm.buyYes(marketId, 500 ether, 0, 0, FEE_BPS, ALICE, 0);
+        uint256 yesAfterBuy = pm.balanceOf(ALICE, marketId);
+        assertEq(yesAfterBuy, yesAfterSplit + yesOut);
+
+        // 3. Sell some YES back - sellYes takes share amounts, not collateral amounts
+        // yesAfterBuy is the share count, sell half of what we have
+        uint256 sharesToSell = yesAfterBuy / 2;
+        uint256 collateralOut = pm.sellYes(marketId, sharesToSell, 0, 0, 0, FEE_BPS, ALICE, 0);
+        assertTrue(collateralOut > 0);
+
+        vm.stopPrank();
+    }
+
+    function test_MarketState_CorrectAfterOperations() public {
+        vm.startPrank(ALICE);
+
+        // Add liquidity first
+        pm.splitAndAddLiquidity(marketId, 5000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        // Split
+        pm.split(marketId, 1000 ether, ALICE);
+
+        // Buy/sell
+        pm.buyYes(marketId, 1000 ether, 0, 0, FEE_BPS, ALICE, 0);
+        // sellNo(marketId, noAmount, swapAmount, minCollateralOut, minSwapOut, feeOrHook, to, deadline)
+        pm.sellNo(marketId, 500, 0, 0, 0, FEE_BPS, ALICE, 0);
+
+        vm.stopPrank();
+
+        // Verify market state is consistent
+        (,, uint8 decimals,,,,, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply,) =
+            pm.getMarket(marketId);
+
+        assertEq(decimals, 18);
+        assertTrue(collateralLocked > 0);
+        // YES and NO supply may differ due to trading, but total should reflect splits
+        assertTrue(yesSupply > 0);
+        assertTrue(noSupply > 0);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -1,5 +1,5 @@
 # PM
-[Git Source](https://github.com/zammdefi/pm/blob/2a0ee96ce6c6e7628c5020381d1ff0a3fa8b1d73/src/PM.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/957f9e7e15f0bf2d2d674d07f7173d49bf9249ba/src/PM.sol)
 
 **Inherits:**
 [ERC6909](/src/PM.sol/abstract.ERC6909.md)

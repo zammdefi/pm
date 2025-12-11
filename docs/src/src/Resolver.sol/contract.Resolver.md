@@ -1,5 +1,5 @@
 # Resolver
-[Git Source](https://github.com/zammdefi/pm/blob/2a0ee96ce6c6e7628c5020381d1ff0a3fa8b1d73/src/Resolver.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/957f9e7e15f0bf2d2d674d07f7173d49bf9249ba/src/Resolver.sol)
 
 **Title:**
 Resolver
@@ -34,11 +34,49 @@ mapping(uint256 marketId => Condition) public conditions
 receive() external payable;
 ```
 
+### constructor
+
+
+```solidity
+constructor() payable;
+```
+
 ### multicall
 
 
 ```solidity
 function multicall(bytes[] calldata data) public payable returns (bytes[] memory results);
+```
+
+### permit
+
+
+```solidity
+function permit(
+    address token,
+    address owner,
+    uint256 value,
+    uint256 deadline,
+    uint8 v,
+    bytes32 r,
+    bytes32 s
+) public;
+```
+
+### permitDAI
+
+
+```solidity
+function permitDAI(
+    address token,
+    address owner,
+    uint256 nonce,
+    uint256 deadline,
+    bool allowed,
+    uint8 v,
+    bytes32 r,
+    bytes32 s
+) public;
 ```
 
 ### createNumericMarketSimple
@@ -54,7 +92,7 @@ function createNumericMarketSimple(
     uint256 threshold,
     uint64 close,
     bool canClose
-) external returns (uint256 marketId, uint256 noId);
+) public returns (uint256 marketId, uint256 noId);
 ```
 
 ### createNumericMarket
@@ -70,7 +108,7 @@ function createNumericMarket(
     uint256 threshold,
     uint64 close,
     bool canClose
-) external returns (uint256 marketId, uint256 noId);
+) public returns (uint256 marketId, uint256 noId);
 ```
 
 ### _createNumericMarket
@@ -103,7 +141,7 @@ function createNumericMarketAndSeedSimple(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createNumericMarketAndSeed
@@ -120,7 +158,7 @@ function createNumericMarketAndSeed(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createRatioMarketSimple
@@ -138,7 +176,7 @@ function createRatioMarketSimple(
     uint256 threshold, // 1e18-scaled
     uint64 close,
     bool canClose
-) external returns (uint256 marketId, uint256 noId);
+) public returns (uint256 marketId, uint256 noId);
 ```
 
 ### createRatioMarket
@@ -156,7 +194,7 @@ function createRatioMarket(
     uint256 threshold, // 1e18-scaled
     uint64 close,
     bool canClose
-) external returns (uint256 marketId, uint256 noId);
+) public returns (uint256 marketId, uint256 noId);
 ```
 
 ### _createRatioMarket
@@ -193,7 +231,7 @@ function createRatioMarketAndSeedSimple(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createRatioMarketAndSeed
@@ -212,7 +250,7 @@ function createRatioMarketAndSeed(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) external payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createNumericMarketSeedAndBuy
@@ -237,7 +275,7 @@ function createNumericMarketSeedAndBuy(
     SeedParams calldata seed,
     SwapParams calldata swap
 )
-    external
+    public
     payable
     returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut);
 ```
@@ -266,7 +304,7 @@ function createRatioMarketSeedAndBuy(
     SeedParams calldata seed,
     SwapParams calldata swap
 )
-    external
+    public
     payable
     returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut);
 ```
@@ -281,7 +319,7 @@ function registerConditionForExistingMarket(
     bytes calldata callData,
     Op op,
     uint256 threshold
-) external;
+) public;
 ```
 
 ### registerConditionForExistingMarketSimple
@@ -294,7 +332,7 @@ function registerConditionForExistingMarketSimple(
     bytes4 selector,
     Op op,
     uint256 threshold
-) external;
+) public;
 ```
 
 ### _registerScalarCondition
@@ -322,7 +360,7 @@ function registerRatioConditionForExistingMarket(
     bytes calldata callDataB,
     Op op,
     uint256 threshold
-) external;
+) public;
 ```
 
 ### registerRatioConditionForExistingMarketSimple
@@ -337,7 +375,7 @@ function registerRatioConditionForExistingMarketSimple(
     bytes4 selectorB,
     Op op,
     uint256 threshold
-) external;
+) public;
 ```
 
 ### _registerRatioCondition
@@ -367,7 +405,7 @@ function resolveMarket(uint256 marketId) public;
 
 ```solidity
 function preview(uint256 marketId)
-    external
+    public
     view
     returns (uint256 value, bool condTrue, bool ready);
 ```
@@ -382,7 +420,7 @@ function buildDescription(
     uint256 threshold,
     uint64 close,
     bool canClose
-) external pure returns (string memory);
+) public pure returns (string memory);
 ```
 
 ### _currentValue
@@ -435,7 +473,7 @@ function _seedLiquidity(
     uint256 marketId,
     SeedParams calldata p,
     uint256 extraETH
-) internal returns (uint256 shares, uint256 liquidity);
+) internal returns (uint256 shares, uint256 liquidity, uint256 perShare);
 ```
 
 ### _flushLeftoverShares
@@ -454,6 +492,7 @@ Executes buyYes or buyNo to skew pool odds. Does NOT set a target probability.
 function _buyToSkewOdds(
     address collateral,
     uint256 marketId,
+    uint256 perShare,
     uint256 feeOrHook,
     uint256 deadline,
     SwapParams calldata s
