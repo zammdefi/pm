@@ -5,6 +5,7 @@ Minimal onchain mechanisms for binary prediction markets:
 - **PAMM** — Collateral vault minting fully-collateralized YES/NO conditional tokens (ERC6909). Prices via ZAMM.
 - **PM** — Pure parimutuel: buy/sell at par (1 wstETH = 1 share), winners split the pot.
 - **Resolver** — On-chain oracle resolver for PAMM markets using arbitrary `staticcall` reads.
+- **GasPM** — Gas price TWAP oracle with prediction market factory for "will gas exceed X gwei?" markets.
 
 ---
 
@@ -16,6 +17,7 @@ Minimal onchain mechanisms for binary prediction markets:
 | [PM](https://contractscan.xyz/contract/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e) | `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e` |
 | [Resolver](https://contractscan.xyz/contract/0x0000000000b0ba1b2bb3af96fbb893d835970ec4) | `0x0000000000b0ba1b2bb3af96fbb893d835970ec4` |
 | [ZAMM](https://contractscan.xyz/contract/0x000000000000040470635EB91b7CE4D132D616eD) | `0x000000000000040470635EB91b7CE4D132D616eD` |
+| [GasPM](https://contractscan.xyz/contract/0x0000000000faee9fee5d4d7255361c27ff2b3d1a) | `0x0000000000faee9fee5d4d7255361c27ff2b3d1a` |
 | wstETH | `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0` |
 | ZSTETH | `0x000000000077B216105413Dc45Dc6F6256577c7B` |
 
@@ -774,6 +776,644 @@ resolver.createNumericMarketAndSeedSimple{value: 10 ether}(
 
 ---
 
+## GasPM — Gas Price Oracle & Market Factory
+
+A TWAP (Time-Weighted Average Price) oracle for Ethereum's `block.basefee` with integrated prediction market creation. Supports both bullish ("gas will spike") and bearish ("gas will stay low") markets.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              GasPM SYSTEM                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────┐                                        ┌──────────────────┐
+  │   KEEPERS    │                                        │      USERS       │
+  │              │                                        │                  │
+  │ • Call       │                                        │ • Create markets │
+  │   update()   │                                        │ • Trade YES/NO   │
+  │ • Earn       │                                        │ • Claim winnings │
+  │   rewards    │                                        │                  │
+  └──────┬───────┘                                        └────────┬─────────┘
+         │ update()                                                │
+         │ (record basefee)                                        │
+         ▼                                                         ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                              GasPM                                    │
+  │  ┌─────────────────────────────────────────────────────────────────┐    │
+  │  │                    TWAP ORACLE                                  │    │
+  │  │  • cumulativeBaseFee  (running sum of fee*time)                 │    │
+  │  │  • baseFeeAverage()   (cumulative / totalTime)                  │    │
+  │  │  • trackingDuration() (seconds since deploy)                    │    │
+  │  └─────────────────────────────────────────────────────────────────┘    │
+  │                                                                         │
+  │  ┌─────────────────────────────────────────────────────────────────┐    │
+  │  │                   MARKET FACTORY                                │    │
+  │  │  • createMarket() → Resolver → PAMM                             │    │
+  │  │  • Tracks all markets in _markets[]                             │    │
+  │  │  • getMarketInfos() for dapp display                            │    │
+  │  └─────────────────────────────────────────────────────────────────┘    │
+  └───────────────────────────────────────┬─────────────────────────────────┘
+                                          │
+                                          │ createNumericMarketAndSeedSimple
+                                          ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                              RESOLVER                                   │
+  │  • Stores condition: baseFeeAverage() >= threshold                      │
+  │  • Anyone can resolve when ready                                        │
+  └───────────────────────────────────────┬─────────────────────────────────┘
+                                          │
+                                          ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                                PAMM                                     │
+  │  • YES/NO tokens • Liquidity pools via ZAMM • Claims                    │
+  └─────────────────────────────────────────────────────────────────────────┘
+```
+
+### How TWAP Works
+
+```
+Time ─────────────────────────────────────────────►
+     │         │              │              │
+     T0        T1             T2             T3
+     │         │              │              │
+     └─ Deploy └─ update()    └─ update()    └─ Query
+        50gwei    (100gwei)      (75gwei)       baseFeeAverage()
+
+cumulativeBaseFee = 50*(T1-T0) + 100*(T2-T1) + 75*(T3-T2)
+baseFeeAverage    = cumulativeBaseFee / (T3 - T0)
+```
+
+The TWAP includes **pending time** even without updates—it uses `lastBaseFee` for unrecorded periods.
+
+### Reward System
+
+Incentivizes regular oracle updates:
+
+```solidity
+// Owner configures rewards
+oracle.setReward(0.001 ether, 1 hours);  // Pay 0.001 ETH per update, min 1hr cooldown
+oracle.receive{value: 10 ether}();       // Fund the contract
+
+// Keepers call update() and receive rewards
+// - Reward paid only if elapsed >= cooldown
+// - Cooldown prevents rapid draining
+```
+
+### Market Creation
+
+Create prediction markets with two directions:
+- **GTE (>=)**: "Will average gas exceed X gwei?" — Bullish on congestion
+- **LTE (<=)**: "Will average gas stay below X gwei?" — Bearish on gas / bullish on scaling
+
+#### Bullish Market: "Gas will spike above 50 gwei"
+
+```solidity
+// op=3 (GTE): YES wins if baseFeeAverage >= 50 gwei
+oracle.createMarket{value: 10 ether}(
+    50 gwei,                      // threshold in wei (50 gwei target)
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp (Dec 31, 2025)
+    true,                         // canClose (early resolution if condition met)
+    3,                            // op: 3=GTE (>=), 2=LTE (<=)
+    10 ether,                     // collateralIn (liquidity to seed)
+    30,                           // feeOrHook (30 bps = 0.3% ZAMM fee)
+    0,                            // minLiquidity (slippage protection)
+    msg.sender                    // lpRecipient
+);
+// Observable: "Avg Ethereum base fee >= 50 gwei"
+```
+
+#### Bearish Market: "Gas will stay below 30 gwei"
+
+```solidity
+// op=2 (LTE): YES wins if baseFeeAverage <= 30 gwei
+oracle.createMarket{value: 10 ether}(
+    30 gwei,                      // threshold in wei
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    false,                        // canClose=false (check at deadline only)
+    2,                            // op: 2=LTE (<=)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Avg Ethereum base fee <= 30 gwei"
+```
+
+#### With Skewed Odds (SeedAndBuy)
+
+```solidity
+// Create market + take position to set initial odds away from 50/50
+GasPM.SeedParams memory seed = GasPM.SeedParams({
+    collateralIn: 10 ether,
+    feeOrHook: 30,
+    amount0Min: 0,
+    amount1Min: 0,
+    minLiquidity: 0,
+    lpRecipient: msg.sender,
+    deadline: block.timestamp + 1 hours
+});
+
+GasPM.SwapParams memory swap = GasPM.SwapParams({
+    collateralForSwap: 2 ether,   // Additional collateral to buy position
+    minOut: 0,
+    yesForNo: false               // false = buyYes, true = buyNo
+});
+
+// msg.value = seed.collateralIn + swap.collateralForSwap = 12 ether
+oracle.createMarketAndBuy{value: 12 ether}(
+    50 gwei,                      // threshold in wei
+    address(0),                   // ETH collateral
+    uint64(1735689600),
+    true,                         // canClose
+    3,                            // op: GTE
+    seed,
+    swap
+);
+```
+
+#### Range Market: "Gas will stay between 30-70 gwei"
+
+```solidity
+// Range market: YES wins if 30 <= baseFeeAverage <= 70 gwei
+oracle.createRangeMarket{value: 10 ether}(
+    30 gwei,                      // lower bound in wei (inclusive)
+    70 gwei,                      // upper bound in wei (inclusive)
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    false,                        // canClose=false (check at deadline)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Avg Ethereum base fee between 30-70 gwei"
+```
+
+#### Breakout Market: "Gas will leave the 30-70 gwei range"
+
+```solidity
+// Breakout market: YES wins if baseFeeAverage < 30 OR > 70 gwei
+// Use canClose=true to get early payout when breakout occurs
+oracle.createBreakoutMarket{value: 10 ether}(
+    30 gwei,                      // lower bound in wei
+    70 gwei,                      // upper bound in wei
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    true,                         // canClose=true (early close on breakout!)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Avg Ethereum base fee outside 30-70 gwei"
+```
+
+#### Peak Market: "Gas will spike to 100 gwei (since oracle deployment)"
+
+```solidity
+// Peak market: YES wins if baseFeeMax >= 100 gwei at any point since deployment
+// Uses historical max, not TWAP — captures extreme spikes
+oracle.createPeakMarket{value: 10 ether}(
+    100 gwei,                     // threshold in wei
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    true,                         // canClose=true (instant payout when peak hit!)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Ethereum base fee spikes to 100 gwei"
+```
+
+#### Trough Market: "Gas will dip to 10 gwei (since oracle deployment)"
+
+```solidity
+// Trough market: YES wins if baseFeeMin <= 10 gwei at any point since deployment
+// Uses historical min — captures extreme dips
+oracle.createTroughMarket{value: 10 ether}(
+    10 gwei,                      // threshold in wei
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    true,                         // canClose=true (instant payout when dip occurs!)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Ethereum base fee dips to 10 gwei"
+```
+
+#### Volatility Market: "Gas will swing by 50 gwei"
+
+```solidity
+// Volatility market: YES wins if baseFeeSpread (max - min) >= 50 gwei
+// Bets on high volatility - gas swings between extremes
+oracle.createVolatilityMarket{value: 10 ether}(
+    50 gwei,                      // threshold in wei
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    true,                         // canClose=true (instant payout when volatility hits!)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Ethereum base fee swings 50 gwei"
+```
+
+#### Stability Market: "Gas will stay calm (less than 20 gwei swing)"
+
+```solidity
+// Stability market: YES wins if baseFeeSpread (max - min) <= 20 gwei
+// Opposite of volatility - bets on calm, stable gas prices
+oracle.createStabilityMarket{value: 10 ether}(
+    20 gwei,                      // threshold in wei
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    false,                        // canClose=false (check at deadline only)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Ethereum base fee stays within 20 gwei spread"
+```
+
+#### Spot Market: "Will gas be high at resolution?"
+
+```solidity
+// Spot market: YES wins if baseFeeCurrent >= 100 gwei at resolution
+// Uses live block.basefee, not TWAP - best for high thresholds
+oracle.createSpotMarket{value: 10 ether}(
+    100 gwei,                     // threshold in wei
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    true,                         // canClose=true (instant payout when threshold hit!)
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Ethereum base fee spot price reaches 100 gwei"
+```
+
+#### Comparison Market: "Will gas be higher at close than now?"
+
+```solidity
+// Comparison market: YES wins if TWAP at close > TWAP at creation
+// Snapshots current TWAP, compares at resolution
+oracle.createComparisonMarket{value: 10 ether}(
+    address(0),                   // collateral (ETH)
+    uint64(1735689600),          // close timestamp
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Ethereum base fee TWAP higher than 50 gwei start"
+```
+
+#### ERC20 Collateral
+
+```solidity
+// With USDC as collateral
+IERC20(USDC).approve(address(oracle), 10000e6);
+oracle.createMarket(
+    50 gwei,                      // threshold in wei
+    USDC,                         // collateral (ERC20)
+    uint64(1735689600),
+    true,
+    3,                            // op: GTE
+    10000e6,                      // 10,000 USDC
+    30,
+    0,
+    msg.sender
+);
+```
+
+#### Window Markets: "What happens DURING this market?"
+
+Window markets track TWAP from market creation, not from oracle deployment. This makes them useful for betting on gas behavior during a specific time period.
+
+```solidity
+// Window Market: "Gas average will exceed 50 gwei DURING THIS MARKET"
+// TWAP calculated from market creation, not oracle deploy
+oracle.createWindowMarket{value: 10 ether}(
+    50 gwei,                      // threshold
+    address(0),
+    uint64(block.timestamp + 7 days),  // 1 week market
+    true,                         // canClose on condition
+    3,                            // op: GTE
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Avg gas during market >= 50 gwei"
+
+// Window Peak: "Will gas hit 100 gwei DURING THIS MARKET?"
+// Reverts if maxBaseFee >= 100 gwei (threshold already hit)
+oracle.createWindowPeakMarket{value: 10 ether}(
+    100 gwei,
+    address(0),
+    uint64(block.timestamp + 7 days),
+    true,                         // instant payout on spike
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Gas spikes to 100 gwei during market"
+
+// Window Trough: "Will gas dip to 10 gwei DURING THIS MARKET?"
+// Reverts if minBaseFee <= 10 gwei (threshold already hit)
+oracle.createWindowTroughMarket{value: 10 ether}(
+    10 gwei,
+    address(0),
+    uint64(block.timestamp + 7 days),
+    true,                         // instant payout on dip
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Gas dips to 10 gwei during market"
+
+// Window Volatility: "Will gas spread exceed 30 gwei DURING THIS MARKET?"
+// Tracks absolute spread (max - min) during the market window
+// Call pokeWindowVolatility(marketId) periodically to capture extremes
+oracle.createWindowVolatilityMarket{value: 10 ether}(
+    30 gwei,
+    address(0),
+    uint64(block.timestamp + 7 days),
+    true,                         // instant payout when spread hits threshold
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Gas spread exceeds 30 gwei during market"
+
+// Window Stability: "Will gas spread stay below 10 gwei DURING THIS MARKET?"
+// Tracks absolute spread (max - min) during the market window
+oracle.createWindowStabilityMarket{value: 10 ether}(
+    10 gwei,                      // max 10 gwei spread allowed
+    address(0),
+    uint64(block.timestamp + 7 days),
+    false,                        // check at deadline only
+    10 ether,
+    30,
+    0,
+    msg.sender
+);
+// Observable: "Gas spread stays below 10 gwei during market"
+```
+
+#### Permit + Multicall (Gasless Approvals)
+
+```solidity
+// Use permit to approve + create market in one tx
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(oracle.permit, (token, msg.sender, amount, deadline, v, r, s));
+calls[1] = abi.encodeCall(oracle.createMarket, (...));
+oracle.multicall(calls);
+```
+
+### Functions
+
+```solidity
+// TWAP Oracle (Lifetime)
+update()                          // Record current basefee, earn reward if eligible
+baseFeeAverage() → uint256        // TWAP in wei (since deploy)
+baseFeeAverageGwei() → uint256    // TWAP in gwei
+baseFeeInRange(lower, upper) → uint256     // Returns 1 if TWAP in range (bounds in wei)
+baseFeeOutOfRange(lower, upper) → uint256  // Returns 1 if TWAP outside range (bounds in wei)
+baseFeeCurrent() → uint256        // Spot basefee in wei
+baseFeeCurrentGwei() → uint256    // Spot basefee in gwei
+baseFeeMax() → uint256            // Highest basefee ever recorded (wei)
+baseFeeMin() → uint256            // Lowest basefee ever recorded (wei)
+baseFeeSpread() → uint256         // Volatility: max - min (wei)
+trackingDuration() → uint256      // Seconds since oracle deployed
+
+// TWAP Oracle (Window / Market-Specific)
+baseFeeAverageSince(marketId) → uint256    // TWAP since market creation (wei)
+baseFeeInRangeSince(marketId, lower, upper) → uint256     // Returns 1 if window TWAP in range
+baseFeeOutOfRangeSince(marketId, lower, upper) → uint256  // Returns 1 if window TWAP outside range
+baseFeeSpreadSince(marketId) → uint256     // Absolute spread (max - min) during market window
+baseFeeHigherThanStart(marketId) → uint256 // Returns 1 if TWAP > start (comparison markets)
+pokeWindowVolatility(marketId)             // Update window market's max/min to current basefee
+pokeWindowVolatilityBatch(marketIds[])     // Batch update multiple window markets
+
+// Lifetime Market Creation (all thresholds/bounds in wei)
+createMarket(threshold, collateral, close, canClose, op,
+             collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createMarketAndBuy(threshold, collateral, close, canClose, op,
+                   SeedParams, SwapParams) → (marketId, swapOut)
+createRangeMarket(lower, upper, collateral, close, canClose,
+                  collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createRangeMarketAndBuy(lower, upper, collateral, close, canClose,
+                        SeedParams, SwapParams) → (marketId, swapOut)
+createBreakoutMarket(lower, upper, collateral, close, canClose,
+                     collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createPeakMarket(threshold, collateral, close, canClose,
+                 collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createTroughMarket(threshold, collateral, close, canClose,
+                   collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createVolatilityMarket(threshold, collateral, close, canClose,
+                       collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createStabilityMarket(threshold, collateral, close, canClose,
+                      collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createSpotMarket(threshold, collateral, close, canClose,
+                 collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createComparisonMarket(collateral, close,
+                       collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+
+// Window Market Creation (TWAP calculated from market creation)
+createWindowMarket(threshold, collateral, close, canClose, op,
+                   collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createWindowMarketAndBuy(threshold, collateral, close, canClose, op,
+                         SeedParams, SwapParams) → (marketId, swapOut)
+createWindowRangeMarket(lower, upper, collateral, close, canClose,
+                        collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createWindowRangeMarketAndBuy(lower, upper, collateral, close, canClose,
+                              SeedParams, SwapParams) → (marketId, swapOut)
+createWindowBreakoutMarket(lower, upper, collateral, close, canClose,
+                           collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createWindowPeakMarket(threshold, collateral, close, canClose,
+                       collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createWindowTroughMarket(threshold, collateral, close, canClose,
+                         collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createWindowVolatilityMarket(threshold, collateral, close, canClose,
+                             collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createWindowStabilityMarket(threshold, collateral, close, canClose,
+                            collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+
+// Market Views (for dapp)
+marketCount() → uint256
+getMarkets(start, count) → uint256[]
+getMarketInfos(start, count) → MarketInfo[]
+isOurMarket(marketId) → bool
+marketSnapshots(marketId) → (cumulative, timestamp)  // Window market snapshot
+
+// Owner Functions
+setReward(rewardAmount, cooldown)
+setPublicCreation(enabled)        // Allow anyone to create markets
+withdraw(to, amount)
+transferOwnership(newOwner)
+
+// Utility
+multicall(bytes[] data)           // Batch multiple calls
+permit(token, owner, value, deadline, v, r, s)       // EIP-2612 permit
+permitDAI(token, owner, nonce, deadline, allowed, v, r, s)  // DAI-style permit
+```
+
+### Resolver Operators
+
+The Resolver uses 3 comparison operators:
+
+| Op Value | Symbol | Meaning |
+|----------|--------|---------|
+| `2` | `<=` (LTE) | Less than or equal |
+| `3` | `>=` (GTE) | Greater than or equal |
+| `4` | `==` (EQ) | Equal (for boolean returns) |
+
+### Market Type Identifiers (Event `op` field)
+
+The `MarketCreated` event emits a market type identifier for UI indexing:
+
+| Type | Value | Description |
+|------|-------|-------------|
+| Directional LTE | `2` | TWAP <= threshold |
+| Directional GTE | `3` | TWAP >= threshold |
+| Range | `4` | TWAP in [lower, upper] |
+| Breakout | `5` | TWAP outside (lower, upper) |
+| Peak | `6` | Max basefee >= threshold |
+| Trough | `7` | Min basefee <= threshold |
+| Volatility | `8` | Spread (max-min) >= threshold |
+| Stability | `9` | Spread (max-min) <= threshold |
+| Spot | `10` | Current basefee >= threshold |
+| Comparison | `11` | TWAP higher than start |
+
+### Structs
+
+```solidity
+struct SeedParams {
+    uint256 collateralIn;   // Liquidity to seed
+    uint256 feeOrHook;      // ZAMM fee tier (30 = 0.3%)
+    uint256 amount0Min;     // Slippage protection
+    uint256 amount1Min;
+    uint256 minLiquidity;
+    address lpRecipient;
+    uint256 deadline;
+}
+
+struct SwapParams {
+    uint256 collateralForSwap;  // Additional collateral for position
+    uint256 minOut;             // Minimum tokens out
+    bool yesForNo;              // true = buyNo (swap yes for no), false = buyYes (swap no for yes)
+}
+```
+
+### MarketInfo Struct
+
+```solidity
+struct MarketInfo {
+    uint256 marketId;
+    uint64 close;           // Market close timestamp
+    bool resolved;          // Has market been resolved
+    bool outcome;           // YES (true) or NO (false)
+    uint256 currentValue;   // Current baseFeeAverage()
+    bool conditionMet;      // Is threshold currently exceeded
+    bool ready;             // Can be resolved now
+}
+```
+
+### User Stories
+
+| Role | Goal | Action |
+|------|------|--------|
+| **Gas Bull** | Bet lifetime TWAP will spike | `createMarket(50, ..., op=3)` — GTE market |
+| **Gas Bear** | Bet lifetime TWAP stays low | `createMarket(20, ..., op=2)` — LTE market |
+| **Range Trader** | Bet TWAP stays in normal range | `createRangeMarket(30, 70, ...)` — stability bet |
+| **Breakout Hedger** | Insure against TWAP volatility | `createBreakoutMarket(30, 70, ..., canClose=true)` |
+| **Peak Speculator** | Bet gas will ever spike to 100 gwei | `createPeakMarket(100, ..., canClose=true)` — touch market |
+| **Trough Hunter** | Bet gas will ever dip to 10 gwei | `createTroughMarket(10, ..., canClose=true)` — dip market |
+| **Volatility Trader** | Bet gas will swing by 50 gwei | `createVolatilityMarket(50, ..., canClose=true)` — spread bet |
+| **Stability Trader** | Bet gas stays calm (< 20 gwei swing) | `createStabilityMarket(20, ..., canClose=false)` — calm bet |
+| **Window Trader** | Bet gas avg DURING market exceeds 50 | `createWindowMarket(50, ..., op=3)` — fresh TWAP |
+| **Window Peak** | Bet gas spikes to 100 DURING market | `createWindowPeakMarket(100, ...)` — local spike bet |
+| **Window Trough** | Bet gas dips to 10 DURING market | `createWindowTroughMarket(10, ...)` — local dip bet |
+| **Window Vol** | Bet gas spread exceeds 30 gwei DURING market | `createWindowVolatilityMarket(30, ...)` — window volatility bet |
+| **Window Calm** | Bet gas spread stays < 10 gwei DURING market | `createWindowStabilityMarket(10, ...)` — window stability bet |
+| **Spot Trader** | Bet gas >= 100 gwei at resolution | `createSpotMarket(100, ..., canClose=true)` — instant spot |
+| **Trend Trader** | Bet TWAP will be higher at close | `createComparisonMarket(...)` — relative bet |
+| **Odds Skewer** | Create market with non-50/50 odds | `createMarketAndBuy(...)` — buy position at creation |
+| **Keeper** | Earn rewards for oracle upkeep | Call `update()` regularly |
+| **LP Provider** | Earn fees from gas market trading | Seed liquidity via `createMarket` |
+| **Dapp** | Display gas prediction markets | Query `getMarketInfos()` |
+
+### Resolution Flow
+
+```
+1. Anyone calls Resolver.resolveMarket(marketId)
+2. Resolver calls GasPM oracle function based on stored callData:
+   - Directional: baseFeeAverage()
+   - Range: baseFeeInRange(lower, upper)
+   - Breakout: baseFeeOutOfRange(lower, upper)
+   - Peak: baseFeeMax()
+   - Trough: baseFeeMin()
+   - Volatility/Stability (lifetime): baseFeeSpread()
+   - Volatility/Stability (window): baseFeeSpreadSince(marketId)
+   - Spot: baseFeeCurrent()
+   - Comparison: baseFeeHigherThanStart(marketId)
+   - Window directional: baseFeeAverageSince(marketId)
+   - Window range: baseFeeInRangeSince(marketId, lower, upper)
+   - Window breakout: baseFeeOutOfRangeSince(marketId, lower, upper)
+3. Compare result against threshold using stored operator:
+   - GTE (op=3): value >= threshold
+   - LTE (op=2): value <= threshold
+   - EQ (op=4): value == threshold (used for boolean functions returning 1/0)
+4. If condition TRUE: YES shareholders win
+   If condition FALSE: NO shareholders win
+5. Winners claim collateral via PAMM
+```
+
+### Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `publicCreation` | `false` | Only owner can create markets |
+| `rewardAmount` | `0` | ETH paid per `update()` call |
+| `cooldown` | `0` | Minimum seconds between rewards |
+
+### Notes
+
+- **Wei precision**: All thresholds accept wei values, supporting up to 3 decimal places of gwei (e.g., `0.127 gwei = 127000000 wei`). Observable strings display user-friendly gwei format.
+- **Lifetime vs Window markets**: Lifetime markets use TWAP since oracle deploy; Window markets use TWAP since market creation (fresh slate for each market)
+- **Window Peak/Trough**: These revert if threshold already met, ensuring market is about future events
+- TWAP starts from contract deployment timestamp (not resettable — manipulation-resistant)
+- Peak/Trough track historical max/min since deployment (also manipulation-resistant)
+- Collateral can be ETH or any ERC20 (USDC, USDT, WBTC, etc.)
+- Markets support directional, range, breakout, peak, trough, volatility, stability, spot, and comparison types
+- **Volatility/Stability (lifetime)**: Use `baseFeeSpread()` (max - min) to bet on price swings vs calm markets
+- **Volatility/Stability (window)**: Use `baseFeeSpreadSince()` which tracks absolute spread (max - min) during the market window. Call `pokeWindowVolatility(marketId)` periodically to capture extremes between blocks.
+- **Spot markets**: Use `baseFeeCurrent()` for live price at resolution - best for high thresholds
+- **Comparison markets**: Snapshot TWAP at creation, bet on whether it increases by close
+- `canClose=true` allows early resolution when condition is met
+- `canClose=false` waits until close timestamp to check condition
+- Peak/Trough markets with `canClose=true` provide instant payout when threshold is touched
+- **AndBuy variants**: Use `createMarketAndBuy`, `createRangeMarketAndBuy`, etc. to seed liquidity and take an initial position to skew odds
+- **Permit support**: Use `permit()` or `permitDAI()` for gasless ERC20 approvals
+- **Multicall**: Batch multiple calls (e.g., permit + createMarket) in one transaction
+- ETH multicall with multiple markets is NOT supported (strict msg.value)
+- Event `MarketCreated` includes `op` for easy indexing by market type
+
+---
+
 ## Collateral Support
 
 Both PAMM and Resolver support multiple collateral types:
@@ -837,6 +1477,20 @@ The system also supports non-standard ERC20s:
 | `TargetCallFailed` | staticcall to oracle failed |
 | `NotResolverMarket` | Market's resolver is not this contract |
 | `CollateralNotMultiple` | Collateral not divisible by perShare |
+
+### GasPM Errors
+
+| Error | Description |
+|-------|-------------|
+| `InvalidOp` | Operator not 2 (LTE) or 3 (GTE) |
+| `AlreadyBelowThreshold` | Window trough market: threshold already reached |
+| `InvalidClose` | Close timestamp in the past |
+| `Unauthorized` | Caller is not owner (or not allowed for public creation) |
+| `AlreadyExceeded` | Window peak market: threshold already reached |
+| `InvalidCooldown` | Reward set with zero cooldown |
+| `InvalidThreshold` | Threshold is zero (or lower >= upper for range) |
+| `InvalidETHAmount` | msg.value doesn't match collateral amount |
+| `ResolverCallFailed` | Call to Resolver contract failed or returned empty |
 
 ---
 
