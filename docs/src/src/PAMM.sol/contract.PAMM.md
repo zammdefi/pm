@@ -1,5 +1,5 @@
 # PAMM
-[Git Source](https://github.com/zammdefi/pm/blob/ce684918478040f32fcb3c1d78c854dba9e39411/src/PAMM.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/006ba95d7cfd5dfbd631c3f6ce5b2bedefc25ed2/src/PAMM.sol)
 
 **Inherits:**
 [ERC6909Minimal](/src/PAMM.sol/abstract.ERC6909Minimal.md)

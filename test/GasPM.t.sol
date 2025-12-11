@@ -10,7 +10,9 @@ contract GasPMTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
         deployTime = block.timestamp;
     }
 
@@ -2662,7 +2664,9 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
         deployTime = block.timestamp;
     }
 
@@ -2791,7 +2795,9 @@ contract GasPMWindowMarketAndBuyTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
         deployTime = block.timestamp;
     }
 
@@ -2869,7 +2875,9 @@ contract GasPMEdgeCaseTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
         deployTime = block.timestamp;
     }
 
@@ -2983,7 +2991,9 @@ contract GasPMVolatilitySnapshotTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
         deployTime = block.timestamp;
     }
 
@@ -3122,7 +3132,9 @@ contract GasPMComparisonMarketTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
         deployTime = block.timestamp;
     }
 
@@ -3206,7 +3218,9 @@ contract GasPMFuzzTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
         deployTime = block.timestamp;
     }
 
@@ -3350,7 +3364,9 @@ contract GasPMObservableTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
     }
 
     /// @notice Test that market creation builds correct observable strings
@@ -3462,7 +3478,9 @@ contract GasPMMarketTypesTest is Test {
 
     function setUp() public {
         vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
         oracle = new GasPM();
+        vm.stopPrank();
     }
 
     /// @notice Verify market type constants are unique

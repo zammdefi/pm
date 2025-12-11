@@ -146,8 +146,11 @@ contract GasPM {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Initialize the oracle with current base fee.
+    /// @dev Owner is set to tx.origin (not msg.sender) to support factory deployment
+    ///      patterns where the original deployer should retain ownership.
     constructor() payable {
-        owner = msg.sender;
+        owner = tx.origin;
         startTime = uint64(block.timestamp);
         lastUpdateTime = uint64(block.timestamp);
         lastBaseFee = block.basefee;

@@ -17,7 +17,7 @@ Minimal onchain mechanisms for binary prediction markets:
 | [PM](https://contractscan.xyz/contract/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e) | `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e` |
 | [Resolver](https://contractscan.xyz/contract/0x0000000000b0ba1b2bb3af96fbb893d835970ec4) | `0x0000000000b0ba1b2bb3af96fbb893d835970ec4` |
 | [ZAMM](https://contractscan.xyz/contract/0x000000000000040470635EB91b7CE4D132D616eD) | `0x000000000000040470635EB91b7CE4D132D616eD` |
-| [GasPM](https://contractscan.xyz/contract/0x0000000000faee9fee5d4d7255361c27ff2b3d1a) | `0x0000000000faee9fee5d4d7255361c27ff2b3d1a` |
+| [GasPM](https://contractscan.xyz/contract/0x0000000000667ecd419766a90fad86fae21547f1) | `0x0000000000667ecd419766a90fad86fae21547f1` |
 | wstETH | `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0` |
 | ZSTETH | `0x000000000077B216105413Dc45Dc6F6256577c7B` |
 

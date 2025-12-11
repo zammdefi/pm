@@ -1,5 +1,5 @@
 # GasPM
-[Git Source](https://github.com/zammdefi/pm/blob/ce684918478040f32fcb3c1d78c854dba9e39411/src/GasPM.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/006ba95d7cfd5dfbd631c3f6ce5b2bedefc25ed2/src/GasPM.sol)
 
 **Title:**
 GasPM
@@ -226,6 +226,11 @@ modifier canCreate() ;
 ```
 
 ### constructor
+
+Initialize the oracle with current base fee.
+
+Owner is set to tx.origin (not msg.sender) to support factory deployment
+patterns where the original deployer should retain ownership.
 
 
 ```solidity
