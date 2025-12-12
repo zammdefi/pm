@@ -1169,61 +1169,10 @@ contract ResolverTest is Test {
     // and should be run as fork tests. Here we only test error paths
     // that revert before calling PAMM.splitAndAddLiquidity.
 
-    function test_SeedLiquidity_RevertCollateralNotMultiple() public {
-        oracleA.setValue(100);
+    // Note: CollateralNotMultiple check has been removed. Fractional amounts
+    // are now supported with automatic dust refunds.
 
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10.5 ether, // Not a clean multiple
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketAndSeed(
-            "bad amount",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed
-        );
-    }
-
-    function test_SeedLiquidity_RevertCollateralZero() public {
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 0, // Zero collateral
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketAndSeed(
-            "zero amount",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed
-        );
-    }
+    // Note: Zero collateral test removed - PAMM handles this case
 
     function test_SeedLiquidity_RevertInvalidETHAmount_ERC20WithETH() public {
         oracleA.setValue(100);
@@ -2029,78 +1978,8 @@ contract ResolverTest is Test {
         assertFalse(outcome2); // 75 > 100 is false
     }
 
-    /*//////////////////////////////////////////////////////////////
-                    USDC (6 DECIMALS) SEED ERROR TEST
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SeedLiquidity_USDC_RevertCollateralNotMultiple() public {
-        MockUSDC usdc = new MockUSDC();
-        usdc.mint(ALICE, 1000e6);
-
-        vm.prank(ALICE);
-        usdc.approve(address(resolver), type(uint256).max);
-
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10.5e6, // Not a clean multiple of 10^6
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketAndSeed(
-            "usdc bad",
-            address(usdc),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed
-        );
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    RATIO SIMPLE SEED ERROR TEST
-    //////////////////////////////////////////////////////////////*/
-
-    function test_CreateRatioMarketAndSeedSimple_RevertCollateralZero() public {
-        oracleA.setValue(100);
-        oracleB.setValue(50);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 0, // Zero collateral
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createRatioMarketAndSeedSimple(
-            "ratio seed zero",
-            address(token),
-            address(oracleA),
-            MockOracle.getValue.selector,
-            address(oracleB),
-            MockOracle.getValue.selector,
-            Resolver.Op.GT,
-            1e18,
-            closeTime,
-            false,
-            seed
-        );
-    }
+    // Note: USDC CollateralNotMultiple test removed - fractional amounts now supported
+    // Note: Ratio seed zero test removed - PAMM handles this case
 
     /*//////////////////////////////////////////////////////////////
                     ADDITIONAL EDGE CASES
@@ -2617,8 +2496,8 @@ contract Resolver_Integration_Test is Test {
         (address mResolver,,,,,,,,,,) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
 
-        // Verify shares minted
-        assertEq(shares, 10000); // 10000 ether / 1e18 per share
+        // Verify shares minted (1:1 with collateral)
+        assertEq(shares, 10000 ether);
 
         // Verify liquidity received
         assertTrue(liquidity > 0);
@@ -2655,7 +2534,7 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 5000);
+        assertEq(shares, 5000 ether);
         assertTrue(liquidity > 0);
 
         // Verify condition registered
@@ -2696,7 +2575,7 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 8000);
+        assertEq(shares, 8000 ether);
         assertTrue(liquidity > 0);
 
         // Verify ratio condition
@@ -2734,7 +2613,7 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 10000); // 10000 ETH = 10000 shares
+        assertEq(shares, 10000 ether); // 10000 ETH = 10000 ether shares (1:1)
         assertTrue(liquidity > 0);
 
         // Verify market uses ETH
@@ -2781,13 +2660,13 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
 
         // swapOut is the TOTAL NO from buyNo (split shares + swap output)
-        // Should be > 1000 (got bonus from swap) but < 2000 (fees/slippage)
-        assertTrue(swapOut > 1000, "should get more NO than input shares");
-        assertTrue(swapOut < 2000, "should be less than 2x due to fees");
+        // Should be > 1000 ether (got bonus from swap) but < 2000 ether (fees/slippage)
+        assertTrue(swapOut > 1000 ether, "should get more NO than input shares");
+        assertTrue(swapOut < 2000 ether, "should be less than 2x due to fees");
 
         // ALICE's NO balance should equal swapOut
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
@@ -2829,12 +2708,12 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
 
         // swapOut is the TOTAL YES from buyYes (split shares + swap output)
-        // Should be > 500 (got bonus from swap) but < 1000 (fees/slippage)
-        assertTrue(swapOut > 500, "should get more YES than input shares");
-        assertTrue(swapOut < 1000, "should be less than 2x due to fees");
+        // Should be > 500 ether (got bonus from swap) but < 1000 ether (fees/slippage)
+        assertTrue(swapOut > 500 ether, "should get more YES than input shares");
+        assertTrue(swapOut < 1000 ether, "should be less than 2x due to fees");
 
         // ALICE's YES balance should equal swapOut
         uint256 aliceYes = pm.balanceOf(ALICE, marketId);
@@ -2873,7 +2752,7 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertEq(swapOut, 0); // No swap executed
     }
 
@@ -2912,84 +2791,15 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 1000, "should get more NO than input shares");
+        assertTrue(swapOut > 1000 ether, "should get more NO than input shares");
 
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
         assertEq(aliceNo, swapOut);
     }
 
-    function test_SeedAndBuy_RevertSwapCollateralNotMultiple() public {
-        // Test that swap collateral must be a multiple of 10^decimals
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000 ether, // Large enough for pool creation
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of 10^18
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000 ether + 0.5 ether, minOut: 0, yesForNo: false
-        });
-
-        vm.deal(ALICE, 11000.5 ether);
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy{value: 11000.5 ether}(
-            "dust trap test",
-            address(0),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
-
-    function test_SeedAndBuy_RevertSwapCollateralNotMultiple_ERC20() public {
-        // Test ERC20 path for swap collateral divisibility check
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000 ether, // Large enough for pool creation
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of 10^18
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000 ether + 0.5 ether, minOut: 0, yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "dust trap test erc20",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: SeedAndBuy collateral not multiple tests removed - fractional amounts now supported with dust refunds
 
     /*//////////////////////////////////////////////////////////////
                     FULL LIFECYCLE TEST
@@ -3253,9 +3063,9 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
-        assertTrue(swapOut >= 1800, "should meet minOut");
-        assertTrue(swapOut > 1000, "buyNo should yield bonus NO shares");
+        assertEq(shares, 10000 ether);
+        assertTrue(swapOut >= 1800 ether, "should meet minOut");
+        assertTrue(swapOut > 1000 ether, "buyNo should yield bonus NO shares");
     }
 
     function test_Integration_DeadlineZero_NoCheck() public {
@@ -3292,7 +3102,7 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
     }
 
     function test_Integration_RatioMarket_SeedAndSeedAndBuy() public {
@@ -3332,8 +3142,8 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
-        assertTrue(swapOut > 500, "should get bonus YES from swap");
+        assertEq(shares, 10000 ether);
+        assertTrue(swapOut > 500 ether, "should get bonus YES from swap");
 
         // Verify ALICE has YES tokens
         uint256 aliceYes = pm.balanceOf(ALICE, marketId);
@@ -3370,7 +3180,7 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
         assertEq(noId, pm.getNoId(marketId));
     }
@@ -3619,9 +3429,9 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 500, "should get bonus NO from swap");
+        assertTrue(swapOut > 500 ether, "should get bonus NO from swap");
 
         // Verify ALICE has NO tokens
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
@@ -4450,56 +4260,17 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        // Shares should be collateralIn / 1e6 = 10000
-        assertEq(shares, 10000);
+        // With 1:1 shares: shares = collateralIn = 10000e6
+        assertEq(shares, 10000e6);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 1000, "should get more YES than input (6 decimal shares)");
+        assertTrue(swapOut > 1000e6, "should get more YES than input (6 decimal shares)");
 
         // Alice should have YES tokens
         uint256 aliceYes = pm.balanceOf(ALICE, marketId);
         assertEq(aliceYes, swapOut);
     }
 
-    function test_Integration_SeedAndBuy_USDC_RevertNotMultiple() public {
-        MockUSDC usdc = new MockUSDC();
-        usdc.mint(ALICE, 100000e6);
-        vm.prank(ALICE);
-        usdc.approve(address(resolver), type(uint256).max);
-
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000e6,
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap collateral NOT multiple of 1e6
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000e6 + 500000, // 1000.5 USDC - not a multiple of 1e6
-            minOut: 0,
-            yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "USDC bad swap",
-            address(usdc),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: SeedAndBuy USDC not multiple test removed - fractional amounts now supported
 
     /*//////////////////////////////////////////////////////////////
                     ETH BALANCE IN RATIO MARKET TESTS
@@ -4630,9 +4401,9 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 500, "should get more NO than input");
+        assertTrue(swapOut > 500 ether, "should get more NO than input");
 
         // Check NO balance
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
@@ -4749,7 +4520,7 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 2000); // 2000 shares from 2000 ether
+        assertEq(shares, 2000 ether); // 2000 ether shares from 2000 ether (1:1)
         assertTrue(swapOut > 0);
     }
 
@@ -4804,7 +4575,8 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, seedShares);
+        // With 1:1 shares: shares = seedCollateral = seedShares * 1 ether
+        assertEq(shares, seedCollateral);
     }
 
     function testFuzz_ETHBalance_Ratio(uint256 balanceA, uint256 balanceB) public {
@@ -4941,8 +4713,8 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Verify shares are in 6-decimal units (10000e6 / 1e6 = 10000 shares)
-        assertEq(shares, 10000, "Should have 10000 shares for 6-decimal token");
+        // With 1:1 shares: 10000e6 collateral = 10000e6 shares
+        assertEq(shares, 10000e6, "Should have 10000 shares for 6-decimal token");
 
         // Buy and sell with USDC
         usdc.mint(BOB, 1000e6);
@@ -4995,8 +4767,8 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Verify 6-decimal handling
-        assertEq(shares, 10000, "Should have 10000 shares for 10000 USDC");
+        // With 1:1 shares: 10000e6 collateral = 10000e6 shares
+        assertEq(shares, 10000e6, "Should have 10000 shares for 10000 USDC");
         assertTrue(liquidity > 0);
 
         // BOB buys YES
@@ -5021,8 +4793,8 @@ contract Resolver_Integration_Test is Test {
         (uint256 claimedShares, uint256 payout) = pm.claim(marketId, BOB);
 
         assertEq(claimedShares, bobYesBefore, "Should claim all YES shares");
-        // Payout should be shares * perShare (1e6 for USDC)
-        assertEq(payout, bobYesBefore * 1e6, "Payout should be shares * 1e6");
+        // With 1:1 shares: payout = shares (shares are already in collateral units)
+        assertEq(payout, bobYesBefore, "Payout should equal shares (1:1)");
         assertEq(usdc.balanceOf(BOB) - bobUsdcBefore, payout, "BOB should receive USDC payout");
     }
 
@@ -5065,8 +4837,8 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Verify 8-decimal handling: 5000e8 / 1e8 = 5000 shares
-        assertEq(shares, 5000, "Should have 5000 shares for 5000 WBTC");
+        // With 1:1 shares: 5000e8 collateral = 5000e8 shares
+        assertEq(shares, 5000e8, "Should have 5000 shares for 5000 WBTC");
 
         // BOB buys NO (betting condition will be false)
         vm.prank(BOB);
@@ -5091,8 +4863,8 @@ contract Resolver_Integration_Test is Test {
         (uint256 claimedShares, uint256 payout) = pm.claim(marketId, BOB);
 
         assertEq(claimedShares, bobNoBefore, "Should claim all NO shares");
-        // Payout should be shares * perShare (1e8 for WBTC)
-        assertEq(payout, bobNoBefore * 1e8, "Payout should be shares * 1e8");
+        // With 1:1 shares: payout = shares (shares are already in collateral units)
+        assertEq(payout, bobNoBefore, "Payout should equal shares (1:1)");
         assertEq(wbtc.balanceOf(BOB) - bobWbtcBefore, payout, "BOB should receive WBTC payout");
     }
 
@@ -5463,41 +5235,7 @@ contract Resolver_Integration_Test is Test {
                     SEED+BUY COLLATERAL DIVISIBILITY TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_SeedAndBuy_NonMultipleSwap_Reverts() public {
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000 ether, // Valid multiple of 1e18
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of perShare (1e18 for 18-decimal token)
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000 ether + 1, // Not divisible by 1e18
-            minOut: 0,
-            yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "non-multiple test",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: Non-multiple swap test removed - fractional amounts now supported with dust refunds
 
     function test_SeedAndBuy_MultipleSwap_SucceedsNoRefund() public {
         oracleA.setValue(100);
@@ -5550,46 +5288,7 @@ contract Resolver_Integration_Test is Test {
         assertEq(token.balanceOf(address(resolver)), 0, "Resolver should have no leftover tokens");
     }
 
-    function test_SeedAndBuy_USDC_NonMultiple_Reverts() public {
-        MockUSDC usdc = new MockUSDC();
-        usdc.mint(ALICE, 100000e6);
-        vm.prank(ALICE);
-        usdc.approve(address(resolver), type(uint256).max);
-
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000e6, // Valid multiple of 1e6
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of perShare (1e6 for 6-decimal token)
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000e6 + 1, // Not divisible by 1e6
-            minOut: 0,
-            yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "USDC non-multiple",
-            address(usdc),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: USDC non-multiple test removed - fractional amounts now supported with dust refunds
 
     function test_SeedAndBuy_USDC_Multiple_Succeeds() public {
         MockUSDC usdc = new MockUSDC();
@@ -5630,8 +5329,106 @@ contract Resolver_Integration_Test is Test {
         );
 
         assertTrue(marketId > 0);
-        assertEq(shares, 10000); // 10000e6 / 1e6 = 10000 shares
+        assertEq(shares, 10000e6); // 1:1 shares: 10000e6 collateral = 10000e6 shares
         assertTrue(swapOut > 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            DUST REFUND TESTS (CollateralNotMultiple check removed)
+    //////////////////////////////////////////////////////////////*/
+
+    // NOTE: Fractional amount tests (like 10.5 ETH) require fork testing due to
+    // mock ZAMM limitations. The CollateralNotMultiple check has been removed
+    // from Resolver.sol, and dust refund logic has been added. These tests
+    // verify the refund logic works for any leftover collateral.
+
+    /// @notice Verify resolver has no leftover ETH after successful market creation
+    /// @dev Tests that dust refund logic doesn't break normal operations
+    function test_CreateMarket_NoLeftoverETH() public {
+        oracleA.setValue(100);
+
+        uint256 collateralIn = 10000 ether;
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: collateralIn,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        uint256 aliceBefore = ALICE.balance;
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeed{
+            value: collateralIn
+        }(
+            "no leftover ETH test",
+            address(0),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        assertTrue(marketId > 0, "Market should be created");
+        assertTrue(shares > 0, "Should receive shares");
+        assertTrue(liquidity > 0, "Should receive liquidity");
+
+        // Verify no ETH left in resolver (dust refund should clean it up)
+        assertEq(address(resolver).balance, 0, "Resolver should have no leftover ETH");
+
+        uint256 aliceAfter = ALICE.balance;
+        assertTrue(aliceBefore - aliceAfter <= collateralIn, "Should not spend more than input");
+    }
+
+    /// @notice Verify resolver has no leftover ERC20 tokens after successful market creation
+    function test_CreateMarket_NoLeftoverERC20() public {
+        oracleA.setValue(100);
+
+        uint256 collateralIn = 10000 ether;
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: collateralIn,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        uint256 aliceTokenBefore = token.balanceOf(ALICE);
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeed(
+            "no leftover ERC20 test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        assertTrue(marketId > 0, "Market should be created");
+        assertTrue(shares > 0, "Should receive shares");
+        assertTrue(liquidity > 0, "Should receive liquidity");
+
+        // Verify no tokens left in resolver (dust refund should clean it up)
+        assertEq(token.balanceOf(address(resolver)), 0, "Resolver should have no leftover tokens");
+
+        uint256 aliceTokenAfter = token.balanceOf(ALICE);
+        assertTrue(
+            aliceTokenBefore - aliceTokenAfter <= collateralIn, "Should not spend more than input"
+        );
     }
 }
 

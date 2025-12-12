@@ -1,0 +1,3250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GasPM - Ethereum Gas Prediction Markets</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23000' width='100' height='100'/><text x='50' y='65' font-family='Helvetica,sans-serif' font-size='40' font-weight='bold' fill='%2300ff88' text-anchor='middle'>G</text></svg>" type="image/svg+xml">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.15.0/ethers.umd.min.js" integrity="sha512-UXYETj+vXKSURF1UlgVRLzWRS9ZiQTv3lcL4rbeLyqTXCPNZC6PTLF/Ik3uxm2Zo+E109cUpJPZfLxJsCgKSng==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.10.0/dist/index.umd.js" integrity="sha384-ACTo60vL1/AfeYkCCXRvB1G0ugjHF0/SHU9YN7e4/KH/mitAIYpLcw5PKXW/+ekM" crossorigin="anonymous"></script>
+    <style>
+        :root {
+            --black: #0a0a0a;
+            --dark: #111111;
+            --gray: #1a1a1a;
+            --light-gray: #333333;
+            --white: #ffffff;
+            --green: #00ff88;
+            --red: #ff4444;
+            --cyan: #00ffff;
+            --purple: #8b5cf6;
+            --orange: #ff8800;
+            --yellow: #ffdd00;
+
+            --font-hero: clamp(3rem, 10vw, 8rem);
+            --font-large: clamp(1.5rem, 4vw, 3rem);
+            --font-medium: clamp(1rem, 2vw, 1.5rem);
+            --font-body: clamp(0.875rem, 1.5vw, 1rem);
+            --font-small: clamp(0.75rem, 1.2vw, 0.875rem);
+
+            --spacing-xs: 0.5rem;
+            --spacing-sm: 1rem;
+            --spacing-md: 2rem;
+            --spacing-lg: 4rem;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: var(--black);
+            color: var(--white);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.4;
+        }
+
+        /* HEADER */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-sm) var(--spacing-md);
+            background: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--light-gray);
+            z-index: 1000;
+        }
+
+        .logo {
+            font-size: var(--font-medium);
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            text-transform: uppercase;
+        }
+
+        .logo span {
+            color: var(--green);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: var(--spacing-sm);
+            align-items: center;
+        }
+
+        .network-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--gray);
+            border: 1px solid var(--light-gray);
+            font-size: var(--font-small);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .network-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+        }
+
+        .btn {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            color: var(--white);
+            border: 2px solid var(--white);
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            transition: all 0.15s ease;
+        }
+
+        .btn:hover {
+            background: var(--white);
+            color: var(--black);
+        }
+
+        .btn.connected {
+            background: var(--green);
+            color: var(--black);
+            border-color: var(--green);
+        }
+
+        .btn.primary {
+            background: var(--green);
+            color: var(--black);
+            border-color: var(--green);
+        }
+
+        .btn.primary:hover {
+            background: var(--white);
+            border-color: var(--white);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* MAIN CONTENT */
+        .main {
+            padding-top: 80px;
+        }
+
+        /* HERO SECTION */
+        .hero {
+            padding: var(--spacing-lg) var(--spacing-md);
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-lg);
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 900px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .hero-left {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .hero-title {
+            font-size: var(--font-hero);
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            line-height: 0.9;
+            text-transform: uppercase;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .hero-title .highlight {
+            color: var(--green);
+        }
+
+        .hero-subtitle {
+            font-size: var(--font-body);
+            color: rgba(255, 255, 255, 0.6);
+            max-width: 500px;
+            margin-bottom: var(--spacing-md);
+        }
+
+        /* LIVE GAS DISPLAY */
+        .gas-display {
+            background: var(--dark);
+            border: 1px solid var(--light-gray);
+            padding: var(--spacing-md);
+        }
+
+        .gas-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: var(--spacing-sm) 0;
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .gas-row:last-child {
+            border-bottom: none;
+        }
+
+        .gas-label {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .gas-value {
+            font-size: var(--font-large);
+            font-weight: 900;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .gas-value.current {
+            color: var(--green);
+        }
+
+        .gas-value.twap {
+            color: var(--cyan);
+        }
+
+        .gas-unit {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.5);
+            margin-left: 0.25rem;
+        }
+
+        .gas-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: var(--spacing-sm);
+            margin-top: var(--spacing-sm);
+            padding-top: var(--spacing-sm);
+            border-top: 1px solid var(--light-gray);
+        }
+
+        .gas-stat {
+            text-align: center;
+        }
+
+        .gas-stat-value {
+            font-size: var(--font-medium);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .gas-stat-value.high {
+            color: var(--red);
+        }
+
+        .gas-stat-value.low {
+            color: var(--green);
+        }
+
+        .gas-stat-label {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+        }
+
+        /* CHART SECTION */
+        .chart-section {
+            padding: var(--spacing-md);
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto var(--spacing-md);
+        }
+
+        .section-title {
+            font-size: var(--font-medium);
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: -0.02em;
+        }
+
+        .chart-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: var(--dark);
+            border: 1px solid var(--light-gray);
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart-loading {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: var(--font-small);
+            text-transform: uppercase;
+        }
+
+        .chart-tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid var(--green);
+            padding: 8px 12px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            z-index: 100;
+            white-space: nowrap;
+        }
+
+        .chart-tooltip.visible {
+            opacity: 1;
+        }
+
+        .chart-tooltip-value {
+            color: var(--green);
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .chart-tooltip-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+            margin-top: 2px;
+        }
+
+        /* MARKETS SECTION */
+        .markets-section {
+            padding: var(--spacing-md);
+        }
+
+        .markets-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto var(--spacing-md);
+            flex-wrap: wrap;
+            gap: var(--spacing-sm);
+        }
+
+        .markets-tabs {
+            display: flex;
+            gap: 0;
+        }
+
+        .tab-btn {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.5);
+            border: 1px solid var(--light-gray);
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: all 0.15s ease;
+        }
+
+        .tab-btn:first-child {
+            border-right: none;
+        }
+
+        .tab-btn.active {
+            background: var(--gray);
+            color: var(--white);
+        }
+
+        .tab-btn:hover:not(.active) {
+            color: var(--white);
+        }
+
+        .markets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: var(--spacing-sm);
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 500px) {
+            .markets-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* MARKET CARD */
+        .market-card {
+            background: var(--dark);
+            border: 1px solid var(--light-gray);
+            padding: var(--spacing-md);
+            transition: border-color 0.15s ease;
+        }
+
+        .market-card:hover {
+            border-color: var(--green);
+        }
+
+        .market-type {
+            font-size: var(--font-small);
+            font-weight: 700;
+            color: var(--cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: var(--spacing-xs);
+        }
+
+        .market-question {
+            font-size: var(--font-body);
+            font-weight: 700;
+            margin-bottom: var(--spacing-sm);
+            line-height: 1.3;
+        }
+
+        .market-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-sm) 0;
+            border-top: 1px solid var(--light-gray);
+            border-bottom: 1px solid var(--light-gray);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .market-meta-item {
+            text-align: center;
+        }
+
+        .market-meta-value {
+            font-size: var(--font-body);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .market-meta-value.yes {
+            color: var(--green);
+        }
+
+        .market-meta-value.no {
+            color: var(--red);
+        }
+
+        .market-meta-label {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+        }
+
+        .market-progress {
+            height: 4px;
+            background: var(--light-gray);
+            margin-bottom: var(--spacing-sm);
+            overflow: hidden;
+        }
+
+        .market-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--green), var(--cyan));
+            transition: width 0.3s ease;
+        }
+
+        .market-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-xs);
+        }
+
+        .market-btn {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            padding: 0.75rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: all 0.15s ease;
+            border: none;
+        }
+
+        .market-btn.yes {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--green);
+            border: 1px solid var(--green);
+        }
+
+        .market-btn.yes:hover {
+            background: var(--green);
+            color: var(--black);
+        }
+
+        .market-btn.no {
+            background: rgba(255, 68, 68, 0.1);
+            color: var(--red);
+            border: 1px solid var(--red);
+        }
+
+        .market-btn.no:hover {
+            background: var(--red);
+            color: var(--black);
+        }
+
+        .market-btn.resolve {
+            background: rgba(0, 255, 255, 0.1);
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            width: 100%;
+            margin-top: var(--spacing-xs);
+        }
+
+        .market-btn.resolve:hover:not(:disabled) {
+            background: var(--cyan);
+            color: var(--black);
+        }
+
+        .market-btn.resolve:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .market-resolved {
+            text-align: center;
+            padding: var(--spacing-sm);
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .market-resolved.won {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--green);
+        }
+
+        .market-resolved.lost {
+            background: rgba(255, 68, 68, 0.1);
+            color: var(--red);
+        }
+
+        .market-closes {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.4);
+            text-align: center;
+        }
+
+        /* CREATE MARKET SECTION */
+        .create-section {
+            padding: var(--spacing-md);
+            background: var(--dark);
+            border-top: 1px solid var(--light-gray);
+        }
+
+        .create-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .create-title {
+            font-size: var(--font-medium);
+            font-weight: 900;
+            text-transform: uppercase;
+            margin-bottom: var(--spacing-xs);
+            text-align: center;
+        }
+
+        .create-subtitle {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.6);
+            text-align: center;
+            margin-bottom: var(--spacing-md);
+        }
+
+        .create-subtitle .highlight {
+            color: var(--green);
+            font-weight: 700;
+        }
+
+        .create-type-icon {
+            font-size: 1.5rem;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .create-types {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-md);
+        }
+
+        .create-type-btn {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            padding: var(--spacing-sm);
+            background: var(--gray);
+            color: rgba(255, 255, 255, 0.6);
+            border: 1px solid var(--light-gray);
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: all 0.15s ease;
+        }
+
+        .create-type-btn:hover, .create-type-btn.active {
+            background: var(--black);
+            color: var(--green);
+            border-color: var(--green);
+        }
+
+        .create-type-desc {
+            font-size: 0.7rem;
+            font-weight: 400;
+            opacity: 0.6;
+            margin-top: 0.25rem;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .create-form {
+            display: none;
+            background: var(--gray);
+            padding: var(--spacing-md);
+            border: 1px solid var(--light-gray);
+        }
+
+        .create-form.active {
+            display: block;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        @media (max-width: 600px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .form-label {
+            display: block;
+            font-size: var(--font-small);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-body);
+            background: var(--black);
+            color: var(--white);
+            border: 1px solid var(--light-gray);
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+
+        .form-input:focus {
+            border-color: var(--green);
+        }
+
+        .form-input::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .form-hint {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 0.25rem;
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 0.75rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-body);
+            background: var(--black);
+            color: var(--white);
+            border: 1px solid var(--light-gray);
+            outline: none;
+            cursor: pointer;
+        }
+
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+
+        .form-checkbox input {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .create-preview {
+            background: var(--black);
+            padding: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+            border: 1px solid var(--light-gray);
+        }
+
+        .preview-title {
+            font-size: var(--font-small);
+            font-weight: 700;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 0.5rem;
+        }
+
+        .preview-question {
+            font-size: var(--font-body);
+            font-weight: 700;
+            color: var(--cyan);
+        }
+
+        .create-submit {
+            width: 100%;
+        }
+
+        /* STATUS MESSAGE */
+        .status-message {
+            padding: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+            font-size: var(--font-small);
+            text-align: center;
+            display: none;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        .status-message.error {
+            background: rgba(255, 68, 68, 0.1);
+            color: var(--red);
+            border: 1px solid var(--red);
+        }
+
+        .status-message.success {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--green);
+            border: 1px solid var(--green);
+        }
+
+        .status-message.info {
+            background: rgba(0, 255, 255, 0.1);
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+        }
+
+        /* MODAL */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            padding: var(--spacing-md);
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--dark);
+            border: 1px solid var(--light-gray);
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .modal-title {
+            font-size: var(--font-body);
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .modal-close {
+            font-size: 1.5rem;
+            background: none;
+            border: none;
+            color: var(--white);
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .modal-body {
+            padding: var(--spacing-md);
+        }
+
+        .wallet-option {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm);
+            background: var(--gray);
+            border: 1px solid var(--light-gray);
+            cursor: pointer;
+            margin-bottom: var(--spacing-xs);
+            transition: all 0.15s ease;
+        }
+
+        .wallet-option:hover {
+            border-color: var(--green);
+        }
+
+        .wallet-option-icon {
+            font-size: 1.5rem;
+        }
+
+        .wallet-option-name {
+            font-weight: 700;
+        }
+
+        .wallet-option.disconnect {
+            border-color: var(--red);
+            color: var(--red);
+            justify-content: center;
+        }
+
+        .wallet-option.disconnect:hover {
+            background: var(--red);
+            color: var(--black);
+        }
+
+        /* TRADE MODAL */
+        .trade-mode-toggle {
+            display: flex;
+            gap: 0;
+            margin-bottom: var(--spacing-md);
+            border: 1px solid var(--light-gray);
+        }
+
+        .trade-mode-btn {
+            flex: 1;
+            padding: 0.75rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            text-transform: uppercase;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.5);
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .trade-mode-btn.active {
+            background: var(--green);
+            color: var(--black);
+        }
+
+        .trade-mode-btn:not(.active):hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--white);
+        }
+
+        .trade-position {
+            background: var(--black);
+            border: 1px solid var(--light-gray);
+            padding: var(--spacing-sm);
+            margin-bottom: var(--spacing-md);
+        }
+
+        .trade-position-label {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+        }
+
+        .trade-position-values {
+            display: flex;
+            gap: var(--spacing-md);
+        }
+
+        .trade-pos {
+            font-size: var(--font-body);
+            font-weight: 600;
+        }
+
+        .trade-pos.yes {
+            color: var(--green);
+        }
+
+        .trade-pos.no {
+            color: var(--red);
+        }
+
+        .trade-input-group {
+            margin-bottom: var(--spacing-md);
+        }
+
+        .trade-input-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .trade-balance {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .trade-input-wrapper {
+            display: flex;
+            background: var(--black);
+            border: 1px solid var(--light-gray);
+        }
+
+        .trade-input {
+            flex: 1;
+            padding: 1rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-medium);
+            font-weight: 700;
+            background: transparent;
+            color: var(--white);
+            border: none;
+            outline: none;
+        }
+
+        .trade-input::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .trade-max-btn {
+            padding: 0.5rem 1rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            background: var(--gray);
+            color: var(--green);
+            border: none;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        .trade-token {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0 1rem;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .trade-preview {
+            background: var(--gray);
+            padding: var(--spacing-sm);
+            margin-bottom: var(--spacing-md);
+        }
+
+        .trade-preview-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: var(--font-small);
+            margin-bottom: 0.5rem;
+        }
+
+        .trade-preview-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .trade-preview-label {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .trade-preview-value {
+            font-weight: 700;
+        }
+
+        /* EMPTY STATE */
+        .empty-state {
+            text-align: center;
+            padding: var(--spacing-lg);
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .empty-state-text {
+            font-size: var(--font-body);
+            margin-bottom: var(--spacing-md);
+        }
+
+        /* LOADING */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--spacing-lg);
+        }
+
+        .loading-spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--light-gray);
+            border-top-color: var(--green);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* FOOTER */
+        .footer {
+            padding: var(--spacing-md);
+            border-top: 1px solid var(--light-gray);
+            text-align: center;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: var(--spacing-md);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .footer-link {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.5);
+            text-decoration: none;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            transition: color 0.15s ease;
+        }
+
+        .footer-link:hover {
+            color: var(--green);
+        }
+
+        .footer-text {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* ORACLE UPDATE */
+        .oracle-update {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm);
+            background: var(--gray);
+            border: 1px solid var(--light-gray);
+            margin-top: var(--spacing-sm);
+        }
+
+        .oracle-update-info {
+            flex: 1;
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .oracle-update-btn {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            padding: 0.5rem 1rem;
+            background: transparent;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.15s ease;
+        }
+
+        .oracle-update-btn:hover {
+            background: var(--cyan);
+            color: var(--black);
+        }
+
+        /* ======================== MOBILE OPTIMIZATION ======================== */
+        @media (max-width: 768px) {
+            :root {
+                --spacing-md: 1rem;
+                --spacing-lg: 2rem;
+            }
+
+            .header {
+                padding: 0.75rem 1rem;
+            }
+
+            .logo {
+                font-size: 1.2rem;
+            }
+
+            .network-badge {
+                padding: 0.4rem 0.6rem;
+                font-size: 0.7rem;
+            }
+
+            .btn {
+                padding: 0.6rem 1rem;
+                font-size: 0.7rem;
+            }
+
+            .hero {
+                padding: var(--spacing-md);
+            }
+
+            .hero-title {
+                font-size: 2.5rem;
+            }
+
+            .hero-subtitle {
+                font-size: 0.9rem;
+            }
+
+            .gas-display {
+                padding: var(--spacing-sm);
+            }
+
+            .gas-value {
+                font-size: 1.5rem;
+            }
+
+            .gas-stat-value {
+                font-size: 1rem;
+            }
+
+            .chart-container {
+                height: 220px;
+            }
+
+            .chart-tooltip {
+                font-size: 11px;
+                padding: 6px 10px;
+            }
+
+            .section-title {
+                font-size: 1rem;
+            }
+
+            .markets-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .markets-tabs {
+                width: 100%;
+            }
+
+            .tab-btn {
+                flex: 1;
+                padding: 0.6rem 0.8rem;
+                font-size: 0.7rem;
+            }
+
+            .market-card {
+                padding: var(--spacing-sm);
+            }
+
+            .market-question {
+                font-size: 0.9rem;
+            }
+
+            .market-meta {
+                padding: 0.75rem 0;
+            }
+
+            .market-btn {
+                padding: 0.6rem;
+                font-size: 0.7rem;
+            }
+
+            /* Create section mobile */
+            .create-types {
+                flex-wrap: wrap;
+            }
+
+            .create-type-btn {
+                flex: 1 1 45%;
+                min-width: 100px;
+                padding: 0.75rem;
+                font-size: 0.7rem;
+            }
+
+            .form-group label {
+                font-size: 0.75rem;
+            }
+
+            .form-group input,
+            .form-group select {
+                padding: 0.75rem;
+                font-size: 0.9rem;
+            }
+
+            .preview-question {
+                font-size: 0.9rem;
+                padding: var(--spacing-sm);
+            }
+
+            /* Modal mobile */
+            .modal-content {
+                margin: 10px;
+                max-height: calc(100vh - 20px);
+                overflow-y: auto;
+            }
+
+            .modal-header h2 {
+                font-size: 1.1rem;
+            }
+
+            .trade-preview {
+                padding: var(--spacing-sm);
+            }
+
+            .trade-preview-row {
+                font-size: 0.85rem;
+            }
+
+            .wallet-options {
+                max-height: 50vh;
+            }
+
+            .wallet-option {
+                padding: 0.75rem 1rem;
+                font-size: 0.9rem;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .header-actions {
+                gap: 0.5rem;
+            }
+
+            .network-badge {
+                display: none;
+            }
+
+            .hero-title {
+                font-size: 2rem;
+            }
+
+            .gas-stats {
+                grid-template-columns: 1fr 1fr;
+                gap: 0.5rem;
+            }
+
+            .gas-stats .gas-stat:nth-child(3) {
+                grid-column: span 2;
+            }
+
+            .create-type-btn {
+                flex: 1 1 100%;
+            }
+
+            .market-actions {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+            }
+        }
+
+        /* Touch-friendly adjustments */
+        @media (hover: none) {
+            .btn:hover,
+            .market-btn:hover,
+            .tab-btn:hover,
+            .create-type-btn:hover {
+                background: inherit;
+                color: inherit;
+                border-color: inherit;
+            }
+
+            .btn:active,
+            .market-btn:active,
+            .tab-btn:active,
+            .create-type-btn:active {
+                opacity: 0.7;
+            }
+
+            .market-btn.yes:active {
+                background: var(--green);
+                color: var(--black);
+            }
+
+            .market-btn.no:active {
+                background: var(--red);
+                color: var(--black);
+            }
+
+            .chart-tooltip {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <header class="header">
+        <div class="logo">Gas<span>PM</span></div>
+        <div class="header-actions">
+            <div class="network-badge">
+                <div class="network-dot"></div>
+                <span id="networkName">Ethereum</span>
+            </div>
+            <button id="walletBtn" class="btn" onclick="connectWallet()">Connect</button>
+        </div>
+    </header>
+
+    <!-- MAIN -->
+    <main class="main">
+        <!-- HERO -->
+        <section class="hero">
+            <div class="hero-grid">
+                <div class="hero-left">
+                    <h1 class="hero-title">
+                        Predict<br>
+                        <span class="highlight">Gas</span>
+                    </h1>
+                    <p class="hero-subtitle">
+                        Ethereum base fee prediction markets. Trade on TWAP, volatility, peaks, and more.
+                    </p>
+                    <button class="btn primary" onclick="scrollToMarkets()">View Markets</button>
+                </div>
+                <div class="hero-right">
+                    <div class="gas-display">
+                        <div class="gas-row">
+                            <span class="gas-label">Current Base Fee</span>
+                            <span class="gas-value current" id="currentGas">--<span class="gas-unit">gwei</span></span>
+                        </div>
+                        <div class="gas-row">
+                            <span class="gas-label">TWAP (All-Time)</span>
+                            <span class="gas-value twap" id="twapGas">--<span class="gas-unit">gwei</span></span>
+                        </div>
+                        <div class="gas-stats">
+                            <div class="gas-stat">
+                                <div class="gas-stat-value high" id="maxGas">--</div>
+                                <div class="gas-stat-label">Peak</div>
+                            </div>
+                            <div class="gas-stat">
+                                <div class="gas-stat-value low" id="minGas">--</div>
+                                <div class="gas-stat-label">Trough</div>
+                            </div>
+                            <div class="gas-stat">
+                                <div class="gas-stat-value" id="spreadGas">--</div>
+                                <div class="gas-stat-label">Spread</div>
+                            </div>
+                        </div>
+                        <div class="oracle-update">
+                            <div class="oracle-update-info">
+                                Last update: <span id="lastUpdate">--</span>
+                            </div>
+                            <button class="oracle-update-btn" onclick="updateOracle()">Update</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CHART -->
+        <section class="chart-section">
+            <div class="section-header">
+                <h2 class="section-title">Gas Price History</h2>
+            </div>
+            <div class="chart-container">
+                <canvas id="gasChart" class="chart-canvas"></canvas>
+                <div id="chartTooltip" class="chart-tooltip">
+                    <div class="chart-tooltip-value" id="tooltipValue">--</div>
+                    <div class="chart-tooltip-label" id="tooltipLabel">gwei</div>
+                </div>
+                <div class="chart-loading" id="chartLoading">Loading historical data...</div>
+            </div>
+        </section>
+
+        <!-- MARKETS -->
+        <section class="markets-section" id="marketsSection">
+            <div class="markets-header">
+                <h2 class="section-title">Markets</h2>
+                <div class="markets-tabs">
+                    <button class="tab-btn active" onclick="showTab('active')" id="activeTab">Active</button>
+                    <button class="tab-btn" onclick="showTab('resolved')" id="resolvedTab">Resolved</button>
+                </div>
+            </div>
+            <div id="marketsGrid" class="markets-grid">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CREATE MARKET -->
+        <section class="create-section" id="createSection">
+            <div class="create-container">
+                <h2 class="create-title">Create Market</h2>
+                <p class="create-subtitle">Choose how you want to predict gas prices. Current: <span id="createCurrentGas" class="highlight">--</span> gwei, TWAP: <span id="createTwapGas" class="highlight">--</span> gwei</p>
+
+                <div class="create-types">
+                    <button class="create-type-btn" onclick="selectMarketType('directional', this)">
+                        <span class="create-type-icon">↕</span>
+                        Above/Below
+                        <div class="create-type-desc">Will avg gas be above or below X gwei?</div>
+                    </button>
+                    <button class="create-type-btn" onclick="selectMarketType('range', this)">
+                        <span class="create-type-icon">↔</span>
+                        Range
+                        <div class="create-type-desc">Will avg gas stay between X-Y gwei?</div>
+                    </button>
+                    <button class="create-type-btn" onclick="selectMarketType('peak', this)">
+                        <span class="create-type-icon">📈</span>
+                        Spike
+                        <div class="create-type-desc">Will gas spike above X gwei?</div>
+                    </button>
+                    <button class="create-type-btn" onclick="selectMarketType('trough', this)">
+                        <span class="create-type-icon">📉</span>
+                        Dip
+                        <div class="create-type-desc">Will gas dip below X gwei?</div>
+                    </button>
+                    <button class="create-type-btn" onclick="selectMarketType('volatility', this)">
+                        <span class="create-type-icon">〰</span>
+                        Volatility
+                        <div class="create-type-desc">Will max-min spread exceed X gwei?</div>
+                    </button>
+                    <button class="create-type-btn" onclick="selectMarketType('spot', this)">
+                        <span class="create-type-icon">◉</span>
+                        Spot
+                        <div class="create-type-desc">Where will gas be when market closes?</div>
+                    </button>
+                </div>
+
+                <div id="createForm" class="create-form">
+                    <div id="statusMessage" class="status-message"></div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" id="thresholdLabel">Target Gas Price (gwei)</label>
+                            <input type="number" id="threshold" class="form-input" placeholder="20" oninput="updatePreview()">
+                            <div class="form-hint" id="thresholdHint">Set your prediction target</div>
+                        </div>
+                        <div class="form-group" id="threshold2Group" style="display: none;">
+                            <label class="form-label">Upper Bound (gwei)</label>
+                            <input type="number" id="threshold2" class="form-input" placeholder="50" oninput="updatePreview()">
+                            <div class="form-hint">Upper bound for the range</div>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Market Duration</label>
+                            <select id="closeTime" class="form-select" onchange="updatePreview()">
+                                <option value="3600">1 hour</option>
+                                <option value="86400" selected>1 day</option>
+                                <option value="604800">1 week</option>
+                                <option value="2592000">30 days</option>
+                            </select>
+                            <div class="form-hint">How long until resolution</div>
+                        </div>
+                        <div class="form-group" id="opGroup">
+                            <label class="form-label">Condition</label>
+                            <select id="opSelect" class="form-select" onchange="updatePreview()">
+                                <option value="2">Below or Equal (≤)</option>
+                                <option value="3">Above or Equal (≥)</option>
+                            </select>
+                            <div class="form-hint">YES wins if TWAP meets condition</div>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Initial Liquidity (ETH)</label>
+                            <input type="number" id="seedAmount" class="form-input" placeholder="1" step="1" min="1" value="1">
+                            <div class="form-hint">Min 1 ETH (must be whole number)</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" id="canClose">
+                                <span>Early Resolution</span>
+                            </label>
+                            <div class="form-hint">Resolve immediately when condition triggers</div>
+                        </div>
+                    </div>
+
+                    <div class="create-preview">
+                        <div class="preview-title">Market Preview</div>
+                        <div class="preview-question" id="previewQuestion">--</div>
+                    </div>
+
+                    <button class="btn primary create-submit" onclick="createMarket()">Create Market</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+        <div class="footer-links">
+            <a href="https://github.com/z0r0z/pm" target="_blank" class="footer-link">GitHub</a>
+            <a href="https://etherscan.io/address/0x0000000000667ecd419766a90fad86fae21547f1" target="_blank" class="footer-link">Contract</a>
+        </div>
+        <div class="footer-text">Ethereum Gas Prediction Markets</div>
+    </footer>
+
+    <!-- WALLET MODAL -->
+    <div id="walletModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Connect Wallet</div>
+                <button class="modal-close" onclick="closeWalletModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="walletOptions"></div>
+        </div>
+    </div>
+
+    <!-- TRADE MODAL -->
+    <div id="tradeModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title" id="tradeModalTitle">Trade YES</div>
+                <button class="modal-close" onclick="closeTradeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="tradeStatus" class="status-message"></div>
+
+                <!-- Buy/Sell Toggle -->
+                <div class="trade-mode-toggle">
+                    <button class="trade-mode-btn active" id="buyModeBtn" onclick="setTradeMode('buy')">Buy</button>
+                    <button class="trade-mode-btn" id="sellModeBtn" onclick="setTradeMode('sell')">Sell</button>
+                </div>
+
+                <!-- Position Display -->
+                <div class="trade-position" id="tradePosition">
+                    <div class="trade-position-label">Your Position</div>
+                    <div class="trade-position-values">
+                        <span class="trade-pos yes"><span id="posYes">0</span> YES</span>
+                        <span class="trade-pos no"><span id="posNo">0</span> NO</span>
+                    </div>
+                </div>
+
+                <div class="trade-input-group">
+                    <div class="trade-input-label">
+                        <span class="form-label" id="tradeInputLabel">Amount (ETH)</span>
+                        <span class="trade-balance" id="tradeBalanceDisplay">Balance: <span id="tradeBalance">--</span> <span id="tradeBalanceUnit">ETH</span></span>
+                    </div>
+                    <div class="trade-input-wrapper">
+                        <input type="number" id="tradeAmount" class="trade-input" placeholder="0.0" oninput="updateTradePreview()">
+                        <button class="trade-max-btn" onclick="setMaxTrade()">Max</button>
+                        <div class="trade-token" id="tradeTokenLabel">ETH</div>
+                    </div>
+                </div>
+
+                <div class="trade-preview">
+                    <div class="trade-preview-row">
+                        <span class="trade-preview-label" id="tradeReceiveLabel">You receive (est.)</span>
+                        <span class="trade-preview-value" id="tradeReceive">-- tokens</span>
+                    </div>
+                    <div class="trade-preview-row" id="leftoverRow" style="display: none;">
+                        <span class="trade-preview-label">Leftover tokens</span>
+                        <span class="trade-preview-value" id="tradeLeftover">--</span>
+                    </div>
+                    <div class="trade-preview-row">
+                        <span class="trade-preview-label">Price impact</span>
+                        <span class="trade-preview-value" id="tradePriceImpact">--%</span>
+                    </div>
+                </div>
+
+                <button class="btn primary" style="width: 100%;" onclick="executeTrade()" id="tradeSubmitBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ======================== CONFIG ========================
+        const GASPM_ADDRESS = '0x0000000000667ecd419766a90fad86fae21547f1';
+        const PAMM_ADDRESS = '0x0000000000f8ba51d6e987660d3e455ac2c4be9d';
+        const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+
+        const MULTICALL3_ABI = [
+            'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) view returns (tuple(bool success, bytes returnData)[])'
+        ];
+
+        const GASPM_ABI = [
+            'function update() public',
+            'function baseFeeAverage() public view returns (uint256)',
+            'function baseFeeAverageGwei() public view returns (uint256)',
+            'function baseFeeCurrent() public view returns (uint256)',
+            'function baseFeeCurrentGwei() public view returns (uint256)',
+            'function baseFeeMax() public view returns (uint256)',
+            'function baseFeeMin() public view returns (uint256)',
+            'function baseFeeSpread() public view returns (uint256)',
+            'function lastUpdateTime() public view returns (uint64)',
+            'function startTime() public view returns (uint64)',
+            'function trackingDuration() public view returns (uint256)',
+            'function cumulativeBaseFee() public view returns (uint256)',
+            'function lastBaseFee() public view returns (uint256)',
+            'function marketCount() public view returns (uint256)',
+            'function getMarkets(uint256 start, uint256 count) public view returns (uint256[])',
+            'function getMarketInfos(uint256 start, uint256 count) public view returns (tuple(uint256 marketId, uint64 close, bool resolved, bool outcome, uint256 currentValue, bool conditionMet, bool ready)[])',
+            'function isOurMarket(uint256 marketId) public view returns (bool)',
+            'function owner() public view returns (address)',
+            'function publicCreation() public view returns (bool)',
+            'function createMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint8 op, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
+            'function createRangeMarket(uint256 lower, uint256 upper, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
+            'function createPeakMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
+            'function createTroughMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
+            'function createVolatilityMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
+            'function createSpotMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
+            'event Updated(uint256 baseFee, uint256 cumulativeBaseFee, address indexed updater, uint256 reward)',
+            'event MarketCreated(uint256 indexed marketId, uint256 threshold, uint256 threshold2, uint64 close, bool canClose, uint8 op)'
+        ];
+
+        const PAMM_ABI = [
+            'function getMarket(uint256 marketId) public view returns (address resolver, address collateral, uint8 decimals, bool resolved, bool outcome, bool canClose, uint64 close, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply, string description)',
+            'function getNoId(uint256 marketId) public pure returns (uint256)',
+            'function balanceOf(address owner, uint256 id) public view returns (uint256)',
+            'function buyYes(uint256 marketId, uint256 collateralIn, uint256 minYesOut, uint256 minSwapOut, uint256 feeOrHook, address to, uint256 deadline) public payable returns (uint256 yesOut)',
+            'function buyNo(uint256 marketId, uint256 collateralIn, uint256 minNoOut, uint256 minSwapOut, uint256 feeOrHook, address to, uint256 deadline) public payable returns (uint256 noOut)',
+            'function sellYes(uint256 marketId, uint256 yesAmount, uint256 swapAmount, uint256 minCollateralOut, uint256 minSwapOut, uint256 feeOrHook, address to, uint256 deadline) public returns (uint256 collateralOut)',
+            'function sellNo(uint256 marketId, uint256 noAmount, uint256 swapAmount, uint256 minCollateralOut, uint256 minSwapOut, uint256 feeOrHook, address to, uint256 deadline) public returns (uint256 collateralOut)',
+            'function claim(uint256 marketId, address to) public returns (uint256 shares, uint256 payout)'
+        ];
+
+        const RESOLVER_ABI = [
+            'function resolveMarket(uint256 marketId) public',
+            'function preview(uint256 marketId) public view returns (uint256 value, bool condTrue, bool ready)'
+        ];
+
+        const ZAMM_ABI = [
+            'function pools(uint256 poolId) public view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast, uint256 price0CumulativeLast, uint256 price1CumulativeLast, uint256 kLast, uint256 supply)'
+        ];
+
+        // Contract addresses
+        const RESOLVER_ADDRESS = '0x0000000000b0ba1b2bb3AF96FbB893d835970ec4'; // Must match GasPM.RESOLVER
+        const ZAMM_ADDRESS = '0x000000000000040470635EB91b7CE4D132D616eD'; // From PAMM constant
+        const FEE_TIER = 30n; // 0.3% fee for all GasPM markets
+
+        // Market type constants
+        const MARKET_TYPES = {
+            2: { name: 'Below', icon: '↓' },
+            3: { name: 'Above', icon: '↑' },
+            4: { name: 'Range', icon: '↔' },
+            5: { name: 'Breakout', icon: '⇔' },
+            6: { name: 'Peak', icon: '⤴' },
+            7: { name: 'Trough', icon: '⤵' },
+            8: { name: 'Volatility', icon: '〰' },
+            9: { name: 'Stability', icon: '—' },
+            10: { name: 'Spot', icon: '◉' },
+            11: { name: 'Comparison', icon: '⇅' }
+        };
+
+        // ======================== STATE ========================
+        let provider = null;
+        let signer = null;
+        let connectedAddress = null;
+        let connectedWalletProvider = null;
+        let walletConnectProvider = null;
+        let isConnecting = false;
+        let markets = [];
+        let selectedMarketType = null;
+        let currentTradeMarket = null;
+        let currentTradeIsYes = true;
+        let currentTradeMode = 'buy'; // 'buy' or 'sell'
+        let currentUserPosition = { yesBalance: 0n, noBalance: 0n };
+        const eip6963Providers = new Map();
+
+        // Cached gas data for chart redraws and tooltips
+        let cachedGasData = { twap: 0, current: 0, max: 0, min: 0 };
+        let chartState = { data: [], padding: 40, min: 0, max: 0, width: 0, height: 0 };
+
+        // Parse threshold values from observable strings for chart overlay
+        function parseMarketThresholds(observable) {
+            if (!observable) return null;
+
+            // Match patterns like "20 gwei", "15-30 gwei", "20.5 gwei"
+            const gweiPattern = /(\d+\.?\d*)\s*(?:-\s*(\d+\.?\d*))?\s*gwei/i;
+            const match = observable.match(gweiPattern);
+
+            if (!match) return null;
+
+            const threshold1 = parseFloat(match[1]);
+            const threshold2 = match[2] ? parseFloat(match[2]) : null;
+
+            // Determine market type and thresholds
+            if (observable.includes('between')) {
+                return { type: 'range', lower: threshold1, upper: threshold2, color: 'rgba(0, 255, 136, 0.15)' };
+            } else if (observable.includes('outside')) {
+                return { type: 'breakout', lower: threshold1, upper: threshold2, color: 'rgba(255, 100, 100, 0.15)' };
+            } else if (observable.includes('spike') || observable.includes('peak')) {
+                return { type: 'peak', threshold: threshold1, color: '#ff6b6b' };
+            } else if (observable.includes('dip') || observable.includes('trough')) {
+                return { type: 'trough', threshold: threshold1, color: '#4ecdc4' };
+            } else if (observable.includes('swing') || observable.includes('spread exceeds')) {
+                return { type: 'volatility', threshold: threshold1, color: '#ffd93d' };
+            } else if (observable.includes('stays within') || observable.includes('spread stays')) {
+                return { type: 'stability', threshold: threshold1, color: '#6bcb77' };
+            } else if (observable.includes('spot')) {
+                return { type: 'spot', threshold: threshold1, color: '#9d4edd' };
+            } else if (observable.includes('<=')) {
+                return { type: 'below', threshold: threshold1, color: '#4ecdc4' };
+            } else if (observable.includes('>=')) {
+                return { type: 'above', threshold: threshold1, color: '#ff6b6b' };
+            }
+
+            return { type: 'directional', threshold: threshold1, color: '#ffd93d' };
+        }
+
+        // ======================== QUOTE HELPERS ========================
+        // Compute pool ID for YES/NO pair (matches ZAMM logic)
+        function computePoolId(yesId, noId, feeOrHook) {
+            // Pool ID = keccak256(abi.encode(id0, id1, token0, token1, feeOrHook))
+            // For PAMM pools: token0 = token1 = PAMM_ADDRESS, ids sorted
+            const id0 = yesId < noId ? yesId : noId;
+            const id1 = yesId < noId ? noId : yesId;
+            // Use abi.encode (not encodePacked) to match PAMM/ZAMM
+            const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+            const encoded = abiCoder.encode(
+                ['uint256', 'uint256', 'address', 'address', 'uint256'],
+                [id0, id1, PAMM_ADDRESS, PAMM_ADDRESS, feeOrHook]
+            );
+            return ethers.keccak256(encoded);
+        }
+
+        // Get quote for buying YES or NO shares
+        // Returns estimated output and pool reserves
+        async function getQuote(marketId, buyYes, amountIn) {
+            const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+            const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpcProvider);
+            const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, rpcProvider);
+
+            // Get NO token ID
+            const noId = await pamm.getNoId(marketId);
+            const yesId = marketId;
+
+            // Compute pool ID
+            const poolId = computePoolId(yesId, noId, FEE_TIER);
+
+            // Get pool reserves
+            const pool = await zamm.pools(poolId);
+            const reserve0 = pool.reserve0;
+            const reserve1 = pool.reserve1;
+
+            if (reserve0 === 0n || reserve1 === 0n) {
+                return { amountOut: 0n, reserve0, reserve1 };
+            }
+
+            // Determine which reserve is YES vs NO
+            const yesIsToken0 = yesId < noId;
+            const yesReserve = yesIsToken0 ? reserve0 : reserve1;
+            const noReserve = yesIsToken0 ? reserve1 : reserve0;
+
+            // For buying: split collateral into YES+NO, then swap unwanted for wanted
+            // shares = amountIn (1:1 for 18 decimal collateral)
+            const shares = amountIn;
+
+            // Swap calculation: amountOut = reserveOut * amountIn / (reserveIn + amountIn)
+            // Apply 0.3% fee: amountInWithFee = amountIn * 997 / 1000
+            let amountOut;
+            if (buyYes) {
+                // Swap NO for YES: sell NO, get YES
+                const amountInWithFee = shares * 997n / 1000n;
+                const swapOut = (yesReserve * amountInWithFee) / (noReserve + amountInWithFee);
+                amountOut = shares + swapOut; // Split shares + swap output
+            } else {
+                // Swap YES for NO: sell YES, get NO
+                const amountInWithFee = shares * 997n / 1000n;
+                const swapOut = (noReserve * amountInWithFee) / (yesReserve + amountInWithFee);
+                amountOut = shares + swapOut; // Split shares + swap output
+            }
+
+            return { amountOut, yesReserve, noReserve };
+        }
+
+        // Get quote for selling YES or NO shares for ETH
+        // Returns estimated ETH output and leftover tokens
+        async function getSellQuote(marketId, sellYes, amount) {
+            const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+            const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpcProvider);
+            const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, rpcProvider);
+
+            const noId = await pamm.getNoId(marketId);
+            const yesId = marketId;
+            const poolId = computePoolId(yesId, noId, FEE_TIER);
+
+            const pool = await zamm.pools(poolId);
+            const reserve0 = pool.reserve0;
+            const reserve1 = pool.reserve1;
+
+            if (reserve0 === 0n || reserve1 === 0n) {
+                return { ethOut: 0n, leftoverYes: 0n, leftoverNo: 0n };
+            }
+
+            const yesIsToken0 = yesId < noId;
+            const yesReserve = yesIsToken0 ? reserve0 : reserve1;
+            const noReserve = yesIsToken0 ? reserve1 : reserve0;
+
+            // Selling works by swapping half to the other side, then merging pairs
+            const swapAmount = amount / 2n;
+            const remaining = amount - swapAmount;
+
+            let swapOut, merged, leftoverSelling, leftoverOther;
+
+            if (sellYes) {
+                // Swap YES for NO
+                const amountInWithFee = swapAmount * 997n / 1000n;
+                swapOut = (noReserve * amountInWithFee) / (yesReserve + amountInWithFee);
+                merged = remaining < swapOut ? remaining : swapOut;
+                leftoverSelling = remaining - merged; // leftover YES
+                leftoverOther = swapOut - merged;     // leftover NO
+            } else {
+                // Swap NO for YES
+                const amountInWithFee = swapAmount * 997n / 1000n;
+                swapOut = (yesReserve * amountInWithFee) / (noReserve + amountInWithFee);
+                merged = remaining < swapOut ? remaining : swapOut;
+                leftoverSelling = remaining - merged; // leftover NO
+                leftoverOther = swapOut - merged;     // leftover YES
+            }
+
+            // ETH out = merged pairs (1:1 for 18 decimal ETH)
+            const ethOut = merged;
+
+            return {
+                ethOut,
+                leftoverYes: sellYes ? leftoverSelling : leftoverOther,
+                leftoverNo: sellYes ? leftoverOther : leftoverSelling,
+                yesReserve,
+                noReserve
+            };
+        }
+
+        // Get user's position for a market
+        async function getUserPosition(marketId) {
+            if (!connectedAddress) return { yesBalance: 0n, noBalance: 0n };
+
+            const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+            const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpcProvider);
+
+            const noId = await pamm.getNoId(marketId);
+            const [yesBalance, noBalance] = await Promise.all([
+                pamm.balanceOf(connectedAddress, marketId),
+                pamm.balanceOf(connectedAddress, noId)
+            ]);
+
+            return { yesBalance, noBalance, noId };
+        }
+
+        // ======================== WALLET ========================
+        const WALLET_CONFIG = {
+            metamask: { name: 'MetaMask', icon: '🦊', detect: () => window.ethereum?.isMetaMask, getProvider: () => window.ethereum },
+            coinbase: { name: 'Coinbase', icon: '🔵', detect: () => window.ethereum?.isCoinbaseWallet, getProvider: () => window.ethereum },
+            rabby: { name: 'Rabby', icon: '🐰', detect: () => window.ethereum?.isRabby, getProvider: () => window.ethereum },
+            rainbow: { name: 'Rainbow', icon: '🌈', detect: () => window.ethereum?.isRainbow, getProvider: () => window.ethereum },
+            walletconnect: { name: 'WalletConnect', icon: '📱' }
+        };
+
+        function initEIP6963() {
+            if (typeof window === 'undefined') return;
+            window.addEventListener('eip6963:announceProvider', (event) => {
+                const { info, provider } = event.detail;
+                eip6963Providers.set(info.uuid, { info, provider });
+            });
+            window.dispatchEvent(new Event('eip6963:requestProvider'));
+        }
+
+        function detectWallets() {
+            const detected = [];
+            const seenNames = new Set();
+
+            for (const [key, config] of Object.entries(WALLET_CONFIG)) {
+                if (key === 'walletconnect') continue;
+                if (config.detect && config.detect()) {
+                    detected.push({ key, ...config });
+                    seenNames.add(config.name.toLowerCase());
+                }
+            }
+
+            for (const [uuid, { info, provider }] of eip6963Providers.entries()) {
+                if (!seenNames.has(info.name.toLowerCase())) {
+                    detected.push({
+                        key: `eip6963_${uuid}`,
+                        name: info.name,
+                        icon: info.icon ? `<img src="${info.icon}" style="width:1.5rem;height:1.5rem;">` : '🔌',
+                        getProvider: () => provider
+                    });
+                    seenNames.add(info.name.toLowerCase());
+                }
+            }
+
+            if (detected.length === 0 && window.ethereum) {
+                detected.push({ key: 'injected', name: 'Browser Wallet', icon: '🔗', getProvider: () => window.ethereum });
+            }
+
+            const wcModule = (typeof globalThis !== 'undefined' ? globalThis : window)['@walletconnect/ethereum-provider'];
+            if (wcModule?.EthereumProvider) {
+                detected.push({ key: 'walletconnect', name: 'WalletConnect', icon: '📱', isWalletConnect: true });
+            }
+
+            return detected;
+        }
+
+        function showWalletModal() {
+            const wallets = detectWallets();
+            const container = document.getElementById('walletOptions');
+
+            if (connectedAddress) {
+                container.innerHTML = `
+                    <div style="padding: 1rem; background: var(--gray); margin-bottom: 1rem;">
+                        <div style="font-weight: 700; margin-bottom: 0.5rem;">Connected</div>
+                        <div style="font-size: 0.9rem; word-break: break-all; color: var(--green);">${connectedAddress}</div>
+                    </div>
+                    <div class="wallet-option disconnect" onclick="disconnectWallet()">
+                        <span class="wallet-option-name">Disconnect</span>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = wallets.map(w => `
+                    <div class="wallet-option" onclick="connectWithWallet('${w.key}')">
+                        <span class="wallet-option-icon">${w.icon}</span>
+                        <span class="wallet-option-name">${w.name}</span>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('walletModal').classList.add('show');
+        }
+
+        function closeWalletModal() {
+            document.getElementById('walletModal').classList.remove('show');
+        }
+
+        async function connectWallet() {
+            showWalletModal();
+        }
+
+        async function connectWithWallet(walletKey) {
+            if (isConnecting) return;
+            isConnecting = true;
+
+            try {
+                closeWalletModal();
+                let walletProvider;
+
+                if (walletKey === 'walletconnect') {
+                    const wcModule = (typeof globalThis !== 'undefined' ? globalThis : window)['@walletconnect/ethereum-provider'];
+                    const WCProvider = wcModule?.EthereumProvider;
+
+                    if (!WCProvider?.init) throw new Error('WalletConnect not available');
+
+                    if (walletConnectProvider) {
+                        try { await walletConnectProvider.disconnect?.(); } catch (e) {}
+                        walletConnectProvider = null;
+                    }
+
+                    walletConnectProvider = await WCProvider.init({
+                        projectId: '1e8390ef1c1d8a185e035912a1409749',
+                        chains: [1],
+                        showQrModal: true,
+                        rpcMap: { 1: 'https://1rpc.io/eth' },
+                        metadata: {
+                            name: 'GasPM',
+                            description: 'Ethereum Gas Prediction Markets',
+                            url: window.location.origin,
+                            icons: []
+                        }
+                    });
+
+                    await walletConnectProvider.enable();
+                    walletProvider = walletConnectProvider;
+                } else if (walletKey.startsWith('eip6963_')) {
+                    const uuid = walletKey.replace('eip6963_', '');
+                    walletProvider = eip6963Providers.get(uuid)?.provider;
+                } else {
+                    walletProvider = WALLET_CONFIG[walletKey]?.getProvider() || window.ethereum;
+                }
+
+                if (!walletProvider) throw new Error('Wallet not found');
+
+                if (walletKey !== 'walletconnect') {
+                    await walletProvider.request({ method: 'eth_requestAccounts' });
+                }
+
+                provider = new ethers.BrowserProvider(walletProvider);
+                signer = await provider.getSigner();
+                connectedAddress = await signer.getAddress();
+                connectedWalletProvider = walletProvider;
+
+                const shortAddr = connectedAddress.slice(0, 6) + '...' + connectedAddress.slice(-4);
+                document.getElementById('walletBtn').textContent = shortAddr;
+                document.getElementById('walletBtn').classList.add('connected');
+
+                walletProvider.on('accountsChanged', () => window.location.reload());
+                walletProvider.on('chainChanged', () => window.location.reload());
+
+                loadAllData();
+
+            } catch (error) {
+                console.error('Connection failed:', error);
+                if (!error.message?.includes('rejected')) {
+                    showStatus('Connection failed: ' + error.message, 'error');
+                }
+            } finally {
+                isConnecting = false;
+            }
+        }
+
+        function disconnectWallet() {
+            if (walletConnectProvider) {
+                try { walletConnectProvider.disconnect(); } catch (e) {}
+                walletConnectProvider = null;
+            }
+            provider = null;
+            signer = null;
+            connectedAddress = null;
+            connectedWalletProvider = null;
+            document.getElementById('walletBtn').textContent = 'Connect';
+            document.getElementById('walletBtn').classList.remove('connected');
+            closeWalletModal();
+        }
+
+        // ======================== DATA LOADING ========================
+        // Optimized: Load all GasPM state in 2 RPC calls (down from 3)
+        // CALL 1: Gas data + market infos (batched)
+        // CALL 2: PAMM market data (batched)
+        const MAX_MARKETS = 1000; // Upper bound for market count
+
+        async function loadAllData() {
+            try {
+                const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+                const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpcProvider);
+                const gasPmInterface = new ethers.Interface(GASPM_ABI);
+                const pammInterface = new ethers.Interface(PAMM_ABI);
+
+                // Get live base fee from latest block (most reliable method)
+                // Run in parallel with multicall for efficiency
+                const blockPromise = rpcProvider.getBlock('latest');
+
+                // CALL 1: Gas oracle data + market infos in single batch
+                const call1 = [
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeAverageGwei') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeMax') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeMin') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeSpread') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('lastUpdateTime') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('getMarketInfos', [0, MAX_MARKETS]) }
+                ];
+
+                const [results1, latestBlock] = await Promise.all([
+                    multicall.aggregate3(call1),
+                    blockPromise
+                ]);
+
+                // Get live base fee from block (baseFeePerGas is in wei)
+                const liveGwei = latestBlock.baseFeePerGas ? Number(latestBlock.baseFeePerGas) / 1e9 : 0;
+
+                // Decode oracle data (may be 0 if not updated yet)
+                const twapGwei = results1[0].success ? Number(gasPmInterface.decodeFunctionResult('baseFeeAverageGwei', results1[0].returnData)[0]) : 0;
+                const maxFee = results1[1].success ? gasPmInterface.decodeFunctionResult('baseFeeMax', results1[1].returnData)[0] : 0n;
+                const minFee = results1[2].success ? gasPmInterface.decodeFunctionResult('baseFeeMin', results1[2].returnData)[0] : 0n;
+                const spread = results1[3].success ? gasPmInterface.decodeFunctionResult('baseFeeSpread', results1[3].returnData)[0] : 0n;
+                const lastUpdate = results1[4].success ? gasPmInterface.decodeFunctionResult('lastUpdateTime', results1[4].returnData)[0] : 0n;
+
+                // Use live base fee as current, oracle TWAP for average
+                const currentGwei = liveGwei.toFixed(2);
+
+                // Cache gas data for chart redraws
+                cachedGasData = {
+                    twap: twapGwei || liveGwei,  // Fallback to live if no TWAP yet
+                    current: liveGwei,
+                    max: Number(maxFee) / 1e9 || liveGwei,
+                    min: Number(minFee) / 1e9 || liveGwei
+                };
+
+                // Update gas display
+                document.getElementById('currentGas').innerHTML = `${currentGwei}<span class="gas-unit">gwei</span>`;
+                document.getElementById('twapGas').innerHTML = `${twapGwei || '--'}<span class="gas-unit">gwei</span>`;
+                document.getElementById('maxGas').textContent = maxFee ? formatGwei(maxFee) : '--';
+                document.getElementById('minGas').textContent = minFee ? formatGwei(minFee) : '--';
+                document.getElementById('spreadGas').textContent = spread ? formatGwei(spread) : '--';
+                document.getElementById('lastUpdate').textContent = lastUpdate ? new Date(Number(lastUpdate) * 1000).toLocaleTimeString() : 'Never';
+
+                // Update create section gas values
+                document.getElementById('createCurrentGas').textContent = currentGwei;
+                document.getElementById('createTwapGas').textContent = twapGwei || currentGwei;
+
+                // Draw chart with actual on-chain data
+                drawChart(cachedGasData);
+
+                // Decode market infos (may be empty or fail if no markets)
+                let marketInfos = [];
+                if (results1[5].success) {
+                    try {
+                        marketInfos = gasPmInterface.decodeFunctionResult('getMarketInfos', results1[5].returnData)[0];
+                    } catch (e) {
+                        console.warn('No markets or failed to decode:', e);
+                    }
+                }
+
+                if (marketInfos.length === 0) {
+                    markets = [];
+                    renderMarkets([]);
+                    return;
+                }
+
+                // CALL 2: All PAMM.getMarket calls batched
+                const call2 = marketInfos.map(info => ({
+                    target: PAMM_ADDRESS,
+                    allowFailure: true,
+                    callData: pammInterface.encodeFunctionData('getMarket', [info.marketId])
+                }));
+
+                const results2 = await multicall.aggregate3(call2);
+
+                // Combine all market data
+                markets = [];
+                for (let i = 0; i < marketInfos.length; i++) {
+                    const info = marketInfos[i];
+                    const result = results2[i];
+
+                    if (result.success) {
+                        try {
+                            const marketData = pammInterface.decodeFunctionResult('getMarket', result.returnData);
+                            markets.push({
+                                id: info.marketId,
+                                close: Number(info.close),
+                                resolved: info.resolved,
+                                outcome: info.outcome,
+                                currentValue: info.currentValue,
+                                conditionMet: info.conditionMet,
+                                ready: info.ready,
+                                observable: marketData[10], // description
+                                yesSupply: marketData[8],
+                                noSupply: marketData[9]
+                            });
+                        } catch (e) {
+                            console.warn('Failed to decode market', info.marketId, e);
+                        }
+                    }
+                }
+
+                renderMarkets(markets);
+
+            } catch (error) {
+                console.error('Failed to load data:', error);
+            }
+        }
+
+        function formatGwei(wei) {
+            const gwei = Number(wei) / 1e9;
+            if (gwei >= 100) return Math.round(gwei).toString();
+            if (gwei >= 10) return gwei.toFixed(1);
+            return gwei.toFixed(2);
+        }
+
+        async function updateOracle() {
+            if (!signer) {
+                showStatus('Connect wallet to update oracle', 'error');
+                return;
+            }
+
+            try {
+                const contract = new ethers.Contract(GASPM_ADDRESS, GASPM_ABI, signer);
+                const tx = await contract.update();
+                showStatus('Updating oracle...', 'info');
+                await tx.wait();
+                showStatus('Oracle updated!', 'success');
+                loadAllData();
+            } catch (error) {
+                console.error('Update failed:', error);
+                showStatus('Update failed: ' + error.message, 'error');
+            }
+        }
+
+        // ======================== CHART ========================
+        let chartDataPoints = []; // Store historical data points from events
+
+        async function loadChartData() {
+            try {
+                const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+                const gaspm = new ethers.Contract(GASPM_ADDRESS, [
+                    'event Updated(uint256 baseFee, uint256 cumulativeBaseFee, address indexed updater, uint256 reward)'
+                ], rpcProvider);
+
+                // Query Updated events (last 10000 blocks or so)
+                const currentBlock = await rpcProvider.getBlockNumber();
+                const fromBlock = Math.max(0, currentBlock - 10000);
+
+                const events = await gaspm.queryFilter('Updated', fromBlock, currentBlock);
+
+                // Convert events to data points (gwei values)
+                chartDataPoints = events.map(e => Number(e.args.baseFee) / 1e9);
+
+                console.log(`Loaded ${chartDataPoints.length} chart data points`);
+            } catch (err) {
+                console.warn('Failed to load chart events:', err);
+                chartDataPoints = [];
+            }
+        }
+
+        function drawChart(gasData) {
+            const { twap, current } = gasData;
+
+            const canvas = document.getElementById('gasChart');
+            const ctx = canvas.getContext('2d');
+            const container = canvas.parentElement;
+
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const padding = 40;
+
+            // Clear
+            ctx.fillStyle = '#111111';
+            ctx.fillRect(0, 0, width, height);
+            document.getElementById('chartLoading').style.display = 'none';
+
+            // Use actual data points, or just current if no history
+            const data = chartDataPoints.length > 0 ? [...chartDataPoints] : [current];
+
+            // Ensure current is last point
+            if (data.length === 0 || data[data.length - 1] !== current) {
+                data.push(current);
+            }
+
+            // Parse market thresholds for overlays
+            const now = Date.now() / 1000;
+            const activeMarkets = markets.filter(m => !m.resolved && m.close > now);
+            const marketOverlays = activeMarkets.map(m => {
+                const parsed = parseMarketThresholds(m.observable);
+                return parsed ? { ...parsed, market: m } : null;
+            }).filter(Boolean);
+
+            // Calculate Y range
+            let max = Math.max(...data, twap) * 1.1;
+            let min = Math.min(...data, twap) * 0.9;
+
+            marketOverlays.forEach(overlay => {
+                if (overlay.threshold) {
+                    min = Math.min(min, overlay.threshold * 0.9);
+                    max = Math.max(max, overlay.threshold * 1.1);
+                }
+                if (overlay.lower) min = Math.min(min, overlay.lower * 0.9);
+                if (overlay.upper) max = Math.max(max, overlay.upper * 1.1);
+            });
+
+            const range = max - min;
+            const gweiToY = (gwei) => padding + (height - padding * 2) * (1 - (gwei - min) / range);
+
+            // Draw market overlays
+            marketOverlays.forEach(overlay => {
+                if (overlay.type === 'range' && overlay.lower && overlay.upper) {
+                    const y1 = gweiToY(overlay.upper);
+                    const y2 = gweiToY(overlay.lower);
+                    ctx.fillStyle = 'rgba(0, 255, 136, 0.1)';
+                    ctx.fillRect(padding, y1, width - padding * 2, y2 - y1);
+                    ctx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(padding, y1); ctx.lineTo(width - padding, y1);
+                    ctx.moveTo(padding, y2); ctx.lineTo(width - padding, y2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                } else if (overlay.threshold) {
+                    const y = gweiToY(overlay.threshold);
+                    ctx.strokeStyle = overlay.color;
+                    ctx.setLineDash([6, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(padding, y);
+                    ctx.lineTo(width - padding, y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            });
+
+            // Draw grid
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const y = padding + (height - padding * 2) * i / 4;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(width - padding, y);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.font = '10px Helvetica';
+                ctx.textAlign = 'right';
+                ctx.fillText((max - range * i / 4).toFixed(1), padding - 5, y + 4);
+            }
+
+            // Draw TWAP reference line
+            const twapY = gweiToY(twap);
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(padding, twapY);
+            ctx.lineTo(width - padding, twapY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#00ffff';
+            ctx.font = '10px Helvetica';
+            ctx.textAlign = 'left';
+            ctx.fillText('TWAP ' + twap.toFixed(1), width - padding + 5, twapY + 4);
+
+            // Draw line chart connecting data points
+            if (data.length > 0) {
+                ctx.strokeStyle = '#00ff88';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let i = 0; i < data.length; i++) {
+                    const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                    const y = gweiToY(data[i]);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Draw gradient fill under line
+                const gradient = ctx.createLinearGradient(0, padding, 0, height - padding);
+                gradient.addColorStop(0, 'rgba(0, 255, 136, 0.2)');
+                gradient.addColorStop(1, 'rgba(0, 255, 136, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(padding, height - padding);
+                for (let i = 0; i < data.length; i++) {
+                    const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                    const y = gweiToY(data[i]);
+                    ctx.lineTo(x, y);
+                }
+                ctx.lineTo(width - padding, height - padding);
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw data points
+                ctx.fillStyle = '#00ff88';
+                for (let i = 0; i < data.length; i++) {
+                    const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                    const y = gweiToY(data[i]);
+                    ctx.beginPath();
+                    ctx.arc(x, y, i === data.length - 1 ? 6 : 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // White center on current point
+                const lastX = padding + (width - padding * 2);
+                const lastY = gweiToY(data[data.length - 1]);
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(lastX, lastY, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Point count label
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.font = '9px Helvetica';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${data.length} observation${data.length !== 1 ? 's' : ''}`, padding, height - padding + 15);
+
+            // Store state for tooltips
+            chartState = { data, padding, min, max, width, height, twap, current };
+        }
+
+        // ======================== MARKETS ========================
+        function renderMarkets(marketList) {
+            const grid = document.getElementById('marketsGrid');
+            if (!grid) return;
+
+            const isActive = document.getElementById('activeTab').classList.contains('active');
+            const now = Math.floor(Date.now() / 1000);
+
+            const filtered = marketList.filter(m => {
+                const isOpen = !m.resolved && m.close > now;
+                return isActive ? isOpen : !isOpen;
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">${isActive ? '📊' : '✓'}</div>
+                        <div class="empty-state-text">No ${isActive ? 'active' : 'resolved'} markets</div>
+                        ${isActive ? '<button class="btn" onclick="scrollToCreate()">Create Market</button>' : ''}
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = filtered.map(m => renderMarketCard(m)).join('');
+        }
+
+        function renderMarketCard(market) {
+            const now = Math.floor(Date.now() / 1000);
+            const isOpen = !market.resolved && market.close > now;
+            const timeLeft = market.close - now;
+
+            // Parse observable for display
+            const observable = market.observable || 'Gas Market';
+
+            // Calculate prices from supplies (simplified)
+            const totalSupply = Number(market.yesSupply) + Number(market.noSupply);
+            const yesPrice = totalSupply > 0 ? (Number(market.noSupply) / totalSupply * 100).toFixed(0) : 50;
+            const noPrice = totalSupply > 0 ? (Number(market.yesSupply) / totalSupply * 100).toFixed(0) : 50;
+
+            // Determine market type from observable
+            let marketType = 'TWAP';
+            if (observable.includes('spike') || observable.includes('peak')) marketType = 'Peak';
+            else if (observable.includes('dip') || observable.includes('trough')) marketType = 'Trough';
+            else if (observable.includes('between')) marketType = 'Range';
+            else if (observable.includes('outside')) marketType = 'Breakout';
+            else if (observable.includes('swing') || observable.includes('spread exceeds')) marketType = 'Volatility';
+            else if (observable.includes('stays within') || observable.includes('spread stays')) marketType = 'Stability';
+            else if (observable.includes('spot')) marketType = 'Spot';
+            else if (observable.includes('higher than') && observable.includes('start')) marketType = 'Comparison';
+
+            let actionsHtml;
+            if (market.resolved) {
+                // Show outcome and redeem button if connected
+                actionsHtml = `
+                    <div class="market-resolved ${market.outcome ? 'won' : 'lost'}">
+                        Resolved: ${market.outcome ? 'YES' : 'NO'}
+                    </div>
+                    ${connectedAddress ? `<button class="market-btn" onclick="redeemWinnings('${market.id}', ${market.outcome})">Redeem</button>` : ''}
+                `;
+            } else if (isOpen) {
+                actionsHtml = `
+                    <div class="market-actions">
+                        <button class="market-btn yes" onclick="openTrade('${market.id}', true)">Buy Yes</button>
+                        <button class="market-btn no" onclick="openTrade('${market.id}', false)">Buy No</button>
+                    </div>
+                    <div class="market-closes">Closes: ${formatTimeLeft(timeLeft)}</div>
+                `;
+            } else {
+                // Market closed but not resolved - show resolve button if ready
+                const readyText = market.ready ? '✓ Ready' : `${market.conditionMet ? 'Condition met' : 'Waiting'}`;
+                actionsHtml = `
+                    <div class="market-closes">${readyText}</div>
+                    <button class="market-btn resolve" onclick="resolveMarket('${market.id}')" ${!market.ready ? 'disabled' : ''}>
+                        Resolve
+                    </button>
+                `;
+            }
+
+            return `
+                <div class="market-card">
+                    <div class="market-type">${marketType}</div>
+                    <div class="market-question">${escapeHtml(observable)}</div>
+                    <div class="market-meta">
+                        <div class="market-meta-item">
+                            <div class="market-meta-value yes">${yesPrice}%</div>
+                            <div class="market-meta-label">Yes</div>
+                        </div>
+                        <div class="market-meta-item">
+                            <div class="market-meta-value no">${noPrice}%</div>
+                            <div class="market-meta-label">No</div>
+                        </div>
+                    </div>
+                    <div class="market-progress">
+                        <div class="market-progress-bar" style="width: ${yesPrice}%"></div>
+                    </div>
+                    ${actionsHtml}
+                </div>
+            `;
+        }
+
+        function formatTimeLeft(seconds) {
+            if (seconds <= 0) return 'Closed';
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+            return `${Math.floor(seconds / 86400)}d`;
+        }
+
+        function showTab(tab) {
+            document.getElementById('activeTab').classList.toggle('active', tab === 'active');
+            document.getElementById('resolvedTab').classList.toggle('active', tab === 'resolved');
+            renderMarkets(markets);
+        }
+
+        // ======================== CREATE MARKET ========================
+        function selectMarketType(type, btn) {
+            selectedMarketType = type;
+
+            // Update buttons
+            document.querySelectorAll('.create-type-btn').forEach(b => {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+
+            // Show form
+            document.getElementById('createForm').classList.add('active');
+
+            // Show/hide fields based on type
+            const threshold2Group = document.getElementById('threshold2Group');
+            const opGroup = document.getElementById('opGroup');
+            const thresholdLabel = document.getElementById('thresholdLabel');
+            const thresholdHint = document.getElementById('thresholdHint');
+
+            // Update labels/hints based on market type
+            const typeConfig = {
+                directional: { label: 'TWAP Target (gwei)', hint: 'Average gas price threshold for YES/NO', showOp: true },
+                range: { label: 'Lower Bound (gwei)', hint: 'Minimum of the range (YES wins if avg stays inside)', showRange: true },
+                peak: { label: 'Spike Target (gwei)', hint: 'YES wins if gas spikes above this level anytime' },
+                trough: { label: 'Dip Target (gwei)', hint: 'YES wins if gas dips below this level anytime' },
+                volatility: { label: 'Spread Threshold (gwei)', hint: 'YES wins if (max - min) exceeds this value' },
+                spot: { label: 'Target Price (gwei)', hint: 'YES wins if spot price ≥ this at close time' }
+            };
+
+            const config = typeConfig[type] || {};
+            thresholdLabel.textContent = config.label || 'Threshold (gwei)';
+            thresholdHint.textContent = config.hint || 'Set your prediction target';
+
+            threshold2Group.style.display = config.showRange ? 'block' : 'none';
+            opGroup.style.display = config.showOp ? 'block' : 'none';
+
+            updatePreview();
+        }
+
+        function updatePreview() {
+            const threshold = document.getElementById('threshold').value;
+            const threshold2 = document.getElementById('threshold2').value;
+            const op = document.getElementById('opSelect').value;
+            const closeTime = document.getElementById('closeTime').value;
+
+            let preview = '--';
+
+            if (threshold) {
+                switch (selectedMarketType) {
+                    case 'directional':
+                        const dir = op === '2' ? '<=' : '>=';
+                        preview = `Avg Ethereum base fee ${dir} ${threshold} gwei`;
+                        break;
+                    case 'range':
+                        if (threshold2) {
+                            preview = `Avg Ethereum base fee between ${threshold}-${threshold2} gwei`;
+                        }
+                        break;
+                    case 'peak':
+                        preview = `Ethereum base fee spikes to ${threshold} gwei`;
+                        break;
+                    case 'trough':
+                        preview = `Ethereum base fee dips to ${threshold} gwei`;
+                        break;
+                    case 'volatility':
+                        preview = `Ethereum base fee swings ${threshold} gwei`;
+                        break;
+                    case 'spot':
+                        preview = `Ethereum base fee spot price reaches ${threshold} gwei`;
+                        break;
+                }
+            }
+
+            document.getElementById('previewQuestion').textContent = preview;
+        }
+
+        async function createMarket() {
+            if (!signer) {
+                showStatus('Connect wallet first', 'error');
+                return;
+            }
+
+            const threshold = document.getElementById('threshold').value;
+            if (!threshold || Number(threshold) <= 0) {
+                showStatus('Enter a valid threshold', 'error');
+                return;
+            }
+
+            const thresholdWei = ethers.parseUnits(threshold, 'gwei');
+            const closeTime = Number(document.getElementById('closeTime').value);
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            const close = BigInt(nowSeconds + closeTime);
+            const canClose = document.getElementById('canClose').checked;
+            const seedAmount = document.getElementById('seedAmount').value || '0.1';
+
+            // Debug: verify timestamp is in the future
+            console.log('Current timestamp:', nowSeconds, 'Close timestamp:', close.toString(), 'Duration:', closeTime);
+            console.log('Close date:', new Date(Number(close) * 1000).toISOString());
+            if (Number(close) <= nowSeconds) {
+                showStatus('Error: Close time calculation failed. Check system clock.', 'error');
+                return;
+            }
+
+            if (Number(seedAmount) <= 0) {
+                showStatus('Seed liquidity must be greater than 0', 'error');
+                return;
+            }
+
+            const collateralIn = ethers.parseEther(seedAmount);
+
+            try {
+                showStatus('Checking permissions...', 'info');
+                const contract = new ethers.Contract(GASPM_ADDRESS, GASPM_ABI, signer);
+
+                // Check if market creation is allowed for this user
+                const [publicCreation, owner] = await Promise.all([
+                    contract.publicCreation(),
+                    contract.owner()
+                ]);
+
+                if (!publicCreation && owner.toLowerCase() !== connectedAddress.toLowerCase()) {
+                    showStatus('Market creation not enabled. Only contract owner can create markets.', 'error');
+                    return;
+                }
+
+                // Check GasPM oracle state before creating
+                const [baseFeeAvg, lastUpdate, trackingDuration] = await Promise.all([
+                    contract.baseFeeAverage(),
+                    contract.lastUpdateTime(),
+                    contract.trackingDuration()
+                ]);
+                console.log('GasPM Oracle State:', {
+                    baseFeeAverage: baseFeeAvg.toString(),
+                    baseFeeAverageGwei: Number(baseFeeAvg) / 1e9,
+                    lastUpdateTime: lastUpdate.toString(),
+                    trackingDuration: trackingDuration.toString()
+                });
+
+                if (baseFeeAvg === 0n) {
+                    showStatus('GasPM oracle has no data. Call update() first.', 'error');
+                    return;
+                }
+
+                showStatus('Creating market...', 'info');
+
+                let tx;
+
+                switch (selectedMarketType) {
+                    case 'directional':
+                        const op = Number(document.getElementById('opSelect').value);
+                        console.log('createMarket params:', {
+                            threshold: thresholdWei.toString(),
+                            collateral: ethers.ZeroAddress,
+                            close: close.toString(),
+                            canClose,
+                            op,
+                            collateralIn: collateralIn.toString(),
+                            feeOrHook: 30,
+                            minLiquidity: 0,
+                            lpRecipient: connectedAddress
+                        });
+                        tx = await contract.createMarket(
+                            thresholdWei, ethers.ZeroAddress, close, canClose, op,
+                            collateralIn, 30n, 0n, connectedAddress,
+                            { value: collateralIn }
+                        );
+                        break;
+                    case 'range':
+                        const threshold2 = document.getElementById('threshold2').value;
+                        if (!threshold2) {
+                            showStatus('Enter upper bound', 'error');
+                            return;
+                        }
+                        const threshold2Wei = ethers.parseUnits(threshold2, 'gwei');
+                        tx = await contract.createRangeMarket(
+                            thresholdWei, threshold2Wei, ethers.ZeroAddress, close, canClose,
+                            collateralIn, 30n, 0n, connectedAddress,
+                            { value: collateralIn }
+                        );
+                        break;
+                    case 'peak':
+                        tx = await contract.createPeakMarket(
+                            thresholdWei, ethers.ZeroAddress, close, canClose,
+                            collateralIn, 30n, 0n, connectedAddress,
+                            { value: collateralIn }
+                        );
+                        break;
+                    case 'trough':
+                        tx = await contract.createTroughMarket(
+                            thresholdWei, ethers.ZeroAddress, close, canClose,
+                            collateralIn, 30n, 0n, connectedAddress,
+                            { value: collateralIn }
+                        );
+                        break;
+                    case 'volatility':
+                        tx = await contract.createVolatilityMarket(
+                            thresholdWei, ethers.ZeroAddress, close, canClose,
+                            collateralIn, 30n, 0n, connectedAddress,
+                            { value: collateralIn }
+                        );
+                        break;
+                    case 'spot':
+                        tx = await contract.createSpotMarket(
+                            thresholdWei, ethers.ZeroAddress, close, canClose,
+                            collateralIn, 30n, 0n, connectedAddress,
+                            { value: collateralIn }
+                        );
+                        break;
+                    default:
+                        showStatus('Select a market type', 'error');
+                        return;
+                }
+
+                showStatus('Confirming...', 'info');
+                await tx.wait();
+                showStatus('Market created!', 'success');
+
+                // Reload all data
+                loadAllData();
+
+            } catch (error) {
+                console.error('Create failed:', error);
+                let msg = error.reason || error.message;
+                // Parse common contract errors
+                if (msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
+                    msg = 'Transaction reverted. Possible causes: Resolver contract issue, invalid parameters, or insufficient gas. Check console for details.';
+                } else if (msg.includes('Unauthorized')) {
+                    msg = 'Unauthorized: Only contract owner can create markets when publicCreation is disabled.';
+                } else if (msg.includes('InvalidThreshold')) {
+                    msg = 'Invalid threshold value.';
+                } else if (msg.includes('InvalidClose')) {
+                    msg = 'Invalid close time - must be in the future.';
+                } else if (msg.includes('InvalidOp')) {
+                    msg = 'Invalid operator - must be LTE (2) or GTE (3).';
+                } else if (msg.includes('ResolverCallFailed')) {
+                    msg = 'Resolver call failed. The Resolver contract may not be deployed correctly.';
+                }
+                showStatus('Create failed: ' + msg, 'error');
+            }
+        }
+
+        // ======================== TRADING ========================
+        async function openTrade(marketId, isYes) {
+            if (!signer) {
+                connectWallet();
+                return;
+            }
+
+            currentTradeMarket = marketId;
+            currentTradeIsYes = isYes;
+            currentTradeMode = 'buy'; // Default to buy mode
+
+            // Reset UI
+            document.getElementById('tradeAmount').value = '';
+            document.getElementById('tradeReceive').textContent = '-- tokens';
+            document.getElementById('tradePriceImpact').textContent = '--%';
+            document.getElementById('tradeStatus').className = 'status-message';
+            document.getElementById('leftoverRow').style.display = 'none';
+
+            // Load user position
+            currentUserPosition = await getUserPosition(marketId);
+            document.getElementById('posYes').textContent = parseFloat(ethers.formatEther(currentUserPosition.yesBalance)).toFixed(4);
+            document.getElementById('posNo').textContent = parseFloat(ethers.formatEther(currentUserPosition.noBalance)).toFixed(4);
+
+            // Set initial mode
+            setTradeMode('buy');
+
+            // Update title based on YES/NO selection
+            updateTradeModalTitle();
+
+            // Get ETH balance
+            await updateTradeBalance();
+
+            document.getElementById('tradeModal').classList.add('show');
+        }
+
+        function setTradeMode(mode) {
+            currentTradeMode = mode;
+
+            // Update toggle buttons
+            document.getElementById('buyModeBtn').classList.toggle('active', mode === 'buy');
+            document.getElementById('sellModeBtn').classList.toggle('active', mode === 'sell');
+
+            // Update UI labels based on mode
+            if (mode === 'buy') {
+                document.getElementById('tradeInputLabel').textContent = 'Amount (ETH)';
+                document.getElementById('tradeTokenLabel').textContent = 'ETH';
+                document.getElementById('tradeBalanceUnit').textContent = 'ETH';
+                document.getElementById('tradeReceiveLabel').textContent = 'You receive (est.)';
+                document.getElementById('leftoverRow').style.display = 'none';
+                updateTradeBalance(); // Show ETH balance
+            } else {
+                const tokenName = currentTradeIsYes ? 'YES' : 'NO';
+                document.getElementById('tradeInputLabel').textContent = `Amount (${tokenName})`;
+                document.getElementById('tradeTokenLabel').textContent = tokenName;
+                document.getElementById('tradeBalanceUnit').textContent = tokenName;
+                document.getElementById('tradeReceiveLabel').textContent = 'You receive (est.)';
+                document.getElementById('leftoverRow').style.display = 'block';
+                // Show token balance
+                const balance = currentTradeIsYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(balance)).toFixed(4);
+            }
+
+            // Update title
+            updateTradeModalTitle();
+
+            // Clear and re-calculate preview
+            document.getElementById('tradeAmount').value = '';
+            document.getElementById('tradeReceive').textContent = mode === 'buy' ? '-- tokens' : '-- ETH';
+            document.getElementById('tradePriceImpact').textContent = '--%';
+        }
+
+        function updateTradeModalTitle() {
+            const action = currentTradeMode === 'buy' ? 'Buy' : 'Sell';
+            const token = currentTradeIsYes ? 'YES' : 'NO';
+            document.getElementById('tradeModalTitle').textContent = `${action} ${token}`;
+        }
+
+        function closeTradeModal() {
+            document.getElementById('tradeModal').classList.remove('show');
+            currentTradeMarket = null;
+            currentUserPosition = { yesBalance: 0n, noBalance: 0n };
+            clearTimeout(tradePreviewTimeout);
+        }
+
+        async function updateTradeBalance() {
+            if (!provider || !connectedAddress) return;
+            try {
+                const balance = await provider.getBalance(connectedAddress);
+                document.getElementById('tradeBalance').textContent =
+                    parseFloat(ethers.formatEther(balance)).toFixed(4);
+            } catch (e) {
+                document.getElementById('tradeBalance').textContent = '--';
+            }
+        }
+
+        function setMaxTrade() {
+            if (currentTradeMode === 'buy') {
+                const balance = document.getElementById('tradeBalance').textContent;
+                if (balance !== '--') {
+                    const maxAmount = Math.max(0, parseFloat(balance) - 0.01); // Leave gas
+                    document.getElementById('tradeAmount').value = maxAmount.toFixed(4);
+                    updateTradePreview();
+                }
+            } else {
+                // Sell mode - use token balance
+                const balance = currentTradeIsYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(balance)).toFixed(4);
+                updateTradePreview();
+            }
+        }
+
+        // Debounced trade preview to prevent excessive RPC calls
+        let tradePreviewTimeout;
+        async function updateTradePreview() {
+            clearTimeout(tradePreviewTimeout);
+
+            const amount = document.getElementById('tradeAmount').value;
+            const defaultText = currentTradeMode === 'buy' ? '-- tokens' : '-- ETH';
+
+            if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+                document.getElementById('tradeReceive').textContent = defaultText;
+                document.getElementById('tradePriceImpact').textContent = '--%';
+                document.getElementById('tradeLeftover').textContent = '--';
+                return;
+            }
+
+            // Debounce: wait 300ms after user stops typing
+            tradePreviewTimeout = setTimeout(async () => {
+                if (!currentTradeMarket) return;
+
+                try {
+                    let amountIn;
+                    try {
+                        amountIn = ethers.parseEther(amount);
+                    } catch (e) {
+                        document.getElementById('tradeReceive').textContent = 'Invalid amount';
+                        return;
+                    }
+
+                    if (!currentTradeMarket) return;
+
+                    if (currentTradeMode === 'buy') {
+                        // BUY: ETH in, tokens out
+                        const { amountOut } = await getQuote(currentTradeMarket, currentTradeIsYes, amountIn);
+
+                        if (amountOut === 0n) {
+                            document.getElementById('tradeReceive').textContent = 'No liquidity';
+                            document.getElementById('tradePriceImpact').textContent = '--%';
+                            return;
+                        }
+
+                        document.getElementById('tradeReceive').textContent =
+                            parseFloat(ethers.formatEther(amountOut)).toFixed(4) + ' tokens';
+
+                        // Price impact: ideal is ~2x for 50/50 pool
+                        const ratio = Number(amountOut) / Number(amountIn);
+                        const impact = Math.max(0, (2 - ratio) / 2 * 100).toFixed(2);
+                        document.getElementById('tradePriceImpact').textContent = impact + '%';
+
+                    } else {
+                        // SELL: tokens in, ETH out
+                        const { ethOut, leftoverYes, leftoverNo } = await getSellQuote(
+                            currentTradeMarket, currentTradeIsYes, amountIn
+                        );
+
+                        if (ethOut === 0n) {
+                            document.getElementById('tradeReceive').textContent = 'No liquidity';
+                            document.getElementById('tradePriceImpact').textContent = '--%';
+                            return;
+                        }
+
+                        document.getElementById('tradeReceive').textContent =
+                            parseFloat(ethers.formatEther(ethOut)).toFixed(4) + ' ETH';
+
+                        // Show leftover tokens
+                        const leftoverText = [];
+                        if (leftoverYes > 0n) leftoverText.push(`${parseFloat(ethers.formatEther(leftoverYes)).toFixed(4)} YES`);
+                        if (leftoverNo > 0n) leftoverText.push(`${parseFloat(ethers.formatEther(leftoverNo)).toFixed(4)} NO`);
+                        document.getElementById('tradeLeftover').textContent = leftoverText.length > 0 ? leftoverText.join(', ') : 'None';
+
+                        // Price impact: ideal is ~0.5 ETH per token for 50/50 pool
+                        const ratio = Number(ethOut) / Number(amountIn);
+                        const impact = Math.max(0, (0.5 - ratio) / 0.5 * 100).toFixed(2);
+                        document.getElementById('tradePriceImpact').textContent = impact + '%';
+                    }
+
+                } catch (e) {
+                    console.error('Quote failed:', e);
+                    if (currentTradeMarket) {
+                        document.getElementById('tradeReceive').textContent = 'Error';
+                    }
+                }
+            }, 300);
+        }
+
+        async function executeTrade() {
+            if (!currentTradeMarket) {
+                showTradeStatus('No market selected', 'error');
+                return;
+            }
+
+            const amount = document.getElementById('tradeAmount').value;
+            if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+                showTradeStatus('Enter a valid amount', 'error');
+                return;
+            }
+
+            try {
+                showTradeStatus('Getting quote...', 'info');
+                const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
+
+                let amountIn;
+                try {
+                    amountIn = ethers.parseEther(amount);
+                } catch (e) {
+                    showTradeStatus('Invalid amount format', 'error');
+                    return;
+                }
+
+                const deadline = BigInt(Math.floor(Date.now() / 1000) + 600); // 10 min
+                let tx;
+
+                if (currentTradeMode === 'buy') {
+                    // BUY: ETH in, tokens out
+                    const { amountOut } = await getQuote(currentTradeMarket, currentTradeIsYes, amountIn);
+                    if (amountOut === 0n) {
+                        showTradeStatus('No liquidity in pool', 'error');
+                        return;
+                    }
+                    const minOut = amountOut * 98n / 100n; // 2% slippage
+                    const minSwapOut = 0n;
+
+                    showTradeStatus('Buying...', 'info');
+
+                    if (currentTradeIsYes) {
+                        tx = await pamm.buyYes(
+                            currentTradeMarket,
+                            amountIn,
+                            minOut,
+                            minSwapOut,
+                            FEE_TIER,
+                            connectedAddress,
+                            deadline,
+                            { value: amountIn }
+                        );
+                    } else {
+                        tx = await pamm.buyNo(
+                            currentTradeMarket,
+                            amountIn,
+                            minOut,
+                            minSwapOut,
+                            FEE_TIER,
+                            connectedAddress,
+                            deadline,
+                            { value: amountIn }
+                        );
+                    }
+
+                } else {
+                    // SELL: tokens in, ETH out
+                    const { ethOut } = await getSellQuote(currentTradeMarket, currentTradeIsYes, amountIn);
+                    if (ethOut === 0n) {
+                        showTradeStatus('No liquidity in pool', 'error');
+                        return;
+                    }
+                    const minCollateralOut = ethOut * 98n / 100n; // 2% slippage
+                    const swapAmount = 0n; // Use default 50%
+                    const minSwapOut = 0n;
+
+                    showTradeStatus('Selling...', 'info');
+
+                    if (currentTradeIsYes) {
+                        tx = await pamm.sellYes(
+                            currentTradeMarket,
+                            amountIn,         // yesAmount
+                            swapAmount,       // swapAmount (0 = default 50%)
+                            minCollateralOut, // minCollateralOut
+                            minSwapOut,       // minSwapOut
+                            FEE_TIER,
+                            connectedAddress,
+                            deadline
+                        );
+                    } else {
+                        tx = await pamm.sellNo(
+                            currentTradeMarket,
+                            amountIn,         // noAmount
+                            swapAmount,       // swapAmount (0 = default 50%)
+                            minCollateralOut, // minCollateralOut
+                            minSwapOut,       // minSwapOut
+                            FEE_TIER,
+                            connectedAddress,
+                            deadline
+                        );
+                    }
+                }
+
+                showTradeStatus('Confirming...', 'info');
+                await tx.wait();
+                showTradeStatus(currentTradeMode === 'buy' ? 'Purchase complete!' : 'Sale complete!', 'success');
+
+                setTimeout(() => {
+                    closeTradeModal();
+                    loadAllData();
+                }, 1500);
+
+            } catch (error) {
+                console.error('Trade failed:', error);
+                showTradeStatus('Trade failed: ' + (error.reason || error.message), 'error');
+            }
+        }
+
+        function showTradeStatus(msg, type) {
+            const el = document.getElementById('tradeStatus');
+            el.textContent = msg;
+            el.className = `status-message show ${type}`;
+        }
+
+        // ======================== RESOLVE & REDEEM ========================
+        async function resolveMarket(marketId) {
+            if (!signer) {
+                connectWallet();
+                return;
+            }
+
+            try {
+                showStatus('Resolving market...', 'info');
+                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, signer);
+
+                const tx = await resolver.resolveMarket(marketId);
+                showStatus('Confirming...', 'info');
+                await tx.wait();
+                showStatus('Market resolved!', 'success');
+
+                // Reload data
+                loadAllData();
+
+            } catch (error) {
+                console.error('Resolve failed:', error);
+                showStatus('Resolve failed: ' + (error.reason || error.message), 'error');
+            }
+        }
+
+        async function redeemWinnings(marketId, outcome) {
+            if (!signer) {
+                connectWallet();
+                return;
+            }
+
+            try {
+                showStatus('Checking balance...', 'info');
+                const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
+
+                // Get winning token ID (YES = marketId, NO = noId)
+                const winningId = outcome ? marketId : await pamm.getNoId(marketId);
+                const balance = await pamm.balanceOf(connectedAddress, winningId);
+
+                if (balance === 0n) {
+                    showStatus('No winning shares to claim', 'info');
+                    return;
+                }
+
+                showStatus(`Claiming ${parseFloat(ethers.formatEther(balance)).toFixed(4)} shares...`, 'info');
+
+                // claim() uses msg.sender's full balance automatically
+                const tx = await pamm.claim(marketId, connectedAddress);
+                showStatus('Confirming...', 'info');
+                await tx.wait();
+                showStatus('Claimed successfully!', 'success');
+
+                // Reload data
+                loadAllData();
+
+            } catch (error) {
+                console.error('Redeem failed:', error);
+                showStatus('Redeem failed: ' + (error.reason || error.message), 'error');
+            }
+        }
+
+        // ======================== UTILS ========================
+        function showStatus(msg, type) {
+            const el = document.getElementById('statusMessage');
+            el.textContent = msg;
+            el.className = `status-message show ${type}`;
+        }
+
+        function hideStatus() {
+            document.getElementById('statusMessage').className = 'status-message';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function scrollToMarkets() {
+            document.getElementById('marketsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function scrollToCreate() {
+            document.getElementById('createSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // ======================== INIT ========================
+        async function init() {
+            initEIP6963();
+
+            // Load chart historical data from events
+            await loadChartData();
+
+            // Load all data in single optimized call
+            await loadAllData();
+
+            // Chart tooltip interaction
+            const canvas = document.getElementById('gasChart');
+            const tooltip = document.getElementById('chartTooltip');
+            const tooltipValue = document.getElementById('tooltipValue');
+            const tooltipLabel = document.getElementById('tooltipLabel');
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (!chartState.data || !chartState.data.length) return;
+
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+
+                const { data, padding, min, max, width, height, twap } = chartState;
+                const range = max - min;
+                const chartWidth = width - padding * 2;
+
+                // Check if within chart area
+                if (x < padding || x > width - padding) {
+                    tooltip.classList.remove('visible');
+                    return;
+                }
+
+                // Find closest data point by X
+                const relX = x - padding;
+                const idx = Math.round(relX / chartWidth * Math.max(1, data.length - 1));
+                const clampedIdx = Math.max(0, Math.min(data.length - 1, idx));
+                const value = data[clampedIdx];
+
+                const pointX = padding + chartWidth * clampedIdx / Math.max(1, data.length - 1);
+                const pointY = padding + (height - padding * 2) * (1 - (value - min) / range);
+
+                // Position tooltip
+                tooltip.style.left = (pointX - 40) + 'px';
+                tooltip.style.top = (pointY - 55) + 'px';
+
+                // Format value
+                tooltipValue.textContent = value.toFixed(2) + ' gwei';
+                tooltipValue.style.color = '#00ff88';
+                const diffFromTwap = ((value - twap) / twap * 100).toFixed(1);
+                const sign = diffFromTwap >= 0 ? '+' : '';
+                const label = clampedIdx === data.length - 1 ? 'Current' : `#${clampedIdx + 1}`;
+                tooltipLabel.textContent = `${label} (${sign}${diffFromTwap}% vs TWAP)`;
+
+                tooltip.classList.add('visible');
+            });
+
+            canvas.addEventListener('mouseleave', () => {
+                tooltip.classList.remove('visible');
+            });
+
+            // Handle resize for chart - use cached data (no RPC calls)
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    if (cachedGasData.twap > 0) {
+                        drawChart(cachedGasData);
+                    }
+                }, 100);
+            });
+
+            // Auto-refresh data every 30s
+            setInterval(loadAllData, 30000);
+        }
+
+        // Start
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

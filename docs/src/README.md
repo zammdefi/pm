@@ -88,11 +88,11 @@ A simple vault that locks collateral and mints conditional tokens.
 
 | Action | What happens |
 |--------|--------------|
-| **Split** | Lock `N * 10^decimals` collateral → mint `N` YES + `N` NO |
-| **Merge** | Burn `N` YES + `N` NO → unlock `N * 10^decimals` collateral |
-| **Claim** | After resolution: burn `N` winning tokens → receive `N * 10^decimals` collateral (minus resolver fee if set) |
+| **Split** | Lock `N` collateral → mint `N` YES + `N` NO |
+| **Merge** | Burn `N` YES + `N` NO → unlock `N` collateral |
+| **Claim** | After resolution: burn `N` winning tokens → receive `N` collateral (minus resolver fee if set) |
 
-Shares are whole units. Collateral conversion uses the token's decimals (18 for ETH).
+Shares are 1:1 with collateral (1 share = 1 wei of collateral). Any amount works, no dust.
 
 ### Operation Flows
 
@@ -259,7 +259,6 @@ getUserPositions(user, start, count)
 getPoolState(marketId, feeOrHook)        // ZAMM pool reserves + implied prob
 tradingOpen(marketId)
 winningId(marketId)
-collateralPerShare(marketId)
 marketCount()
 tokenURI(id)                             // NFT-compatible metadata URI
 ```
@@ -335,7 +334,7 @@ noId           = keccak256("PMARKET:NO", marketId)
 | | PAMM | PM |
 |-|------|-----|
 | Collateral | Any ERC20 or ETH | wstETH only |
-| Payout | 1 winning share = 10^decimals collateral | Winners split pot pro-rata |
+| Payout | 1:1 (1 share = 1 collateral wei) | Winners split pot pro-rata |
 | Price discovery | AMM (ZAMM pools) | None (shares trade at par) |
 | Resolver fee | Up to 10% (deducted at claim) | Up to 10% (deducted at resolution) |
 | Refund mode | N/A (fully collateralized) | If one side has 0 supply |
@@ -484,7 +483,7 @@ buildDescription(...)     // Preview auto-generated description
 
 ```solidity
 struct SeedParams {
-    uint256 collateralIn;   // Must be divisible by 10^decimals
+    uint256 collateralIn;   // Any amount (1:1 shares, no dust)
     uint256 feeOrHook;      // ZAMM fee tier or hook address
     uint256 amount0Min;     // Slippage protection
     uint256 amount1Min;
@@ -515,7 +514,7 @@ For `SeedAndBuy` with ETH: `msg.value = seed.collateralIn + swap.collateralForSw
 
 ```solidity
 Resolver.SeedParams memory seed = Resolver.SeedParams({
-    collateralIn: 10 ether,       // Must be divisible by 10^decimals
+    collateralIn: 10 ether,       // Any amount (1:1 shares)
     feeOrHook: 30,                // ZAMM fee tier (30 = 0.3%)
     amount0Min: 0,                // Slippage protection
     amount1Min: 0,
@@ -1416,18 +1415,15 @@ struct MarketInfo {
 
 ## Collateral Support
 
-Both PAMM and Resolver support multiple collateral types:
+Both PAMM and Resolver support multiple collateral types with 1:1 shares (1 share = 1 wei of collateral):
 
-| Decimals | Token Examples | Notes |
-|----------|----------------|-------|
-| 18 | ETH, wstETH, DAI | 1 share = 1e18 collateral units |
-| 6 | USDC, USDT | 1 share = 1e6 collateral units |
-| 8 | WBTC | 1 share = 1e8 collateral units |
+| Decimals | Token Examples | 1000 shares (ZAMM minimum) |
+|----------|----------------|---------------------------|
+| 18 | ETH, wstETH, DAI | 1000 wei (~0) |
+| 6 | USDC, USDT | 1000 wei = 0.001 USDC |
+| 8 | WBTC | 1000 wei = 0.00001 WBTC |
 
-**Important:** ZAMM requires `MINIMUM_LIQUIDITY` (1000 shares) to be locked when creating a pool. For tokens with fewer decimals, this means higher collateral requirements:
-- 18 decimals: ~0.002 ETH minimum to seed
-- 6 decimals: ~0.002 USDC minimum to seed
-- 8 decimals: ~0.00002 BTC minimum to seed
+**Note:** ZAMM requires `MINIMUM_LIQUIDITY` (1000 shares) to be locked when creating a pool. With 1:1 shares, this is 1000 wei of collateral—negligible for all token types.
 
 The system also supports non-standard ERC20s:
 - **USDT-style** (no return value on transfer)
@@ -1476,7 +1472,6 @@ The system also supports non-standard ERC20s:
 | `InvalidETHAmount` | msg.value doesn't match required amount |
 | `TargetCallFailed` | staticcall to oracle failed |
 | `NotResolverMarket` | Market's resolver is not this contract |
-| `CollateralNotMultiple` | Collateral not divisible by perShare |
 
 ### GasPM Errors
 

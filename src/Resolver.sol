@@ -33,7 +33,7 @@ COLLATERAL:
   - ERC20:
       - user must approve resolver (or use permit externally)
       - msg.value must be 0
-  - collateralIn and collateralForSwap must be divisible by 10^decimals (no dust)
+  - Any collateral amount works (1:1 shares, no dust)
 
 SEED + BUY:
   - *SeedAndBuy functions do NOT set target odds
@@ -132,7 +132,6 @@ contract Resolver {
     error InvalidETHAmount();
     error TargetCallFailed();
     error NotResolverMarket();
-    error CollateralNotMultiple();
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
@@ -376,8 +375,9 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -397,8 +397,9 @@ contract Resolver {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -505,8 +506,9 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -537,8 +539,9 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -571,12 +574,10 @@ contract Resolver {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
-        uint256 perShare;
-        (shares, liquidity, perShare) =
-            _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
-        swapOut =
-            _buyToSkewOdds(collateral, marketId, perShare, seed.feeOrHook, seed.deadline, swap);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
+        swapOut = _buyToSkewOdds(collateral, marketId, seed.feeOrHook, seed.deadline, swap);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -616,12 +617,10 @@ contract Resolver {
             close,
             canClose
         );
-        uint256 perShare;
-        (shares, liquidity, perShare) =
-            _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
-        swapOut =
-            _buyToSkewOdds(collateral, marketId, perShare, seed.feeOrHook, seed.deadline, swap);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
+        swapOut = _buyToSkewOdds(collateral, marketId, seed.feeOrHook, seed.deadline, swap);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -860,11 +859,7 @@ contract Resolver {
         uint256 marketId,
         SeedParams calldata p,
         uint256 extraETH
-    ) internal returns (uint256 shares, uint256 liquidity, uint256 perShare) {
-        (,, uint8 decimals,,,,,,,,) = IPAMM(PAMM).getMarket(marketId);
-        perShare = 10 ** decimals;
-        if (p.collateralIn == 0 || p.collateralIn % perShare != 0) revert CollateralNotMultiple();
-
+    ) internal returns (uint256 shares, uint256 liquidity) {
         if (collateral == address(0)) {
             if (msg.value != p.collateralIn + extraETH) revert InvalidETHAmount();
             (shares, liquidity) = IPAMM(PAMM).splitAndAddLiquidity{value: p.collateralIn}(
@@ -908,19 +903,30 @@ contract Resolver {
         }
     }
 
+    /// @dev Refunds any dust collateral (ETH or ERC20) to msg.sender.
+    function _refundDust(address collateral) internal {
+        if (collateral == address(0)) {
+            uint256 dust = address(this).balance;
+            if (dust != 0) {
+                safeTransferETH(msg.sender, dust);
+            }
+        } else {
+            uint256 dust = getBalance(collateral, address(this));
+            if (dust != 0) {
+                safeTransfer(collateral, msg.sender, dust);
+            }
+        }
+    }
+
     /// @dev Executes buyYes or buyNo to skew pool odds. Does NOT set a target probability.
     function _buyToSkewOdds(
         address collateral,
         uint256 marketId,
-        uint256 perShare,
         uint256 feeOrHook,
         uint256 deadline,
         SwapParams calldata s
     ) internal returns (uint256 amountOut) {
         if (s.collateralForSwap == 0) return 0;
-
-        // Enforce whole-share multiple to avoid dust trapped in Resolver
-        if (s.collateralForSwap % perShare != 0) revert CollateralNotMultiple();
 
         if (collateral != address(0)) {
             safeTransferFrom(collateral, msg.sender, address(this), s.collateralForSwap);
@@ -1021,5 +1027,44 @@ function ensureApproval(address token, address spender) {
             }
         }
         mstore(0x34, 0)
+    }
+}
+
+/// @dev Sends ETH to `to`, reverts on failure.
+function safeTransferETH(address to, uint256 amount) {
+    assembly ("memory-safe") {
+        if iszero(call(gas(), to, amount, 0, 0, 0, 0)) {
+            mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
+            revert(0x1c, 0x04)
+        }
+    }
+}
+
+/// @dev Transfers tokens using transfer (not transferFrom), reverts on failure.
+function safeTransfer(address token, address to, uint256 amount) {
+    assembly ("memory-safe") {
+        mstore(0x14, to)
+        mstore(0x34, amount)
+        mstore(0x00, 0xa9059cbb000000000000000000000000) // transfer(address,uint256)
+        let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
+        if iszero(and(eq(mload(0x00), 1), success)) {
+            if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                mstore(0x00, 0x90b8ec18) // TransferFailed()
+                revert(0x1c, 0x04)
+            }
+        }
+        mstore(0x34, 0)
+    }
+}
+
+/// @dev Returns the ERC20 balance of an account.
+function getBalance(address token, address account) view returns (uint256 bal) {
+    assembly ("memory-safe") {
+        mstore(0x14, account)
+        mstore(0x00, 0x70a08231000000000000000000000000) // balanceOf(address)
+        if iszero(staticcall(gas(), token, 0x10, 0x24, 0x00, 0x20)) {
+            revert(0, 0)
+        }
+        bal := mload(0x00)
     }
 }

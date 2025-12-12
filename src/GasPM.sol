@@ -381,6 +381,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
     }
@@ -427,6 +428,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
 
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
@@ -478,6 +480,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
@@ -524,6 +527,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
@@ -574,6 +578,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_BREAKOUT);
     }
@@ -621,6 +626,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_PEAK);
     }
@@ -668,6 +674,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_TROUGH);
     }
@@ -715,6 +722,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_VOLATILITY);
     }
@@ -762,6 +770,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_STABILITY);
     }
@@ -810,6 +819,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_SPOT);
     }
@@ -856,6 +866,7 @@ contract GasPM {
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, startTwap, 0, close, false, MARKET_TYPE_COMPARISON);
     }
@@ -911,6 +922,7 @@ contract GasPM {
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
     }
@@ -960,6 +972,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
     }
@@ -1011,6 +1024,7 @@ contract GasPM {
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
@@ -1060,6 +1074,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
@@ -1111,6 +1126,7 @@ contract GasPM {
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_BREAKOUT);
     }
@@ -1161,6 +1177,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_PEAK);
     }
@@ -1211,6 +1228,7 @@ contract GasPM {
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_TROUGH);
     }
@@ -1263,6 +1281,7 @@ contract GasPM {
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_VOLATILITY);
     }
@@ -1315,6 +1334,7 @@ contract GasPM {
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
 
+        _refundDust(collateral);
         _registerMarket(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_STABILITY);
     }
@@ -1540,6 +1560,50 @@ contract GasPM {
             if iszero(call(gas(), to, amount, codesize(), 0x00, codesize(), 0x00)) {
                 mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
                 revert(0x1c, 0x04)
+            }
+        }
+    }
+
+    /// @dev Transfers ERC20 tokens using transfer (not transferFrom), reverts on failure.
+    function _safeTransfer(address token, address to, uint256 amount) internal {
+        assembly ("memory-safe") {
+            mstore(0x14, to)
+            mstore(0x34, amount)
+            mstore(0x00, 0xa9059cbb000000000000000000000000) // transfer(address,uint256)
+            let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
+            if iszero(and(eq(mload(0x00), 1), success)) {
+                if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                    mstore(0x00, 0x90b8ec18) // TransferFailed()
+                    revert(0x1c, 0x04)
+                }
+            }
+            mstore(0x34, 0)
+        }
+    }
+
+    /// @dev Returns the ERC20 balance of an account.
+    function _balanceOf(address token, address account) internal view returns (uint256 bal) {
+        assembly ("memory-safe") {
+            mstore(0x14, account)
+            mstore(0x00, 0x70a08231000000000000000000000000) // balanceOf(address)
+            if iszero(staticcall(gas(), token, 0x10, 0x24, 0x00, 0x20)) {
+                revert(0, 0)
+            }
+            bal := mload(0x00)
+        }
+    }
+
+    /// @dev Refunds any dust collateral (ETH or ERC20) to msg.sender.
+    function _refundDust(address collateral) internal {
+        if (collateral == address(0)) {
+            uint256 dust = address(this).balance;
+            if (dust != 0) {
+                _safeTransferETH(msg.sender, dust);
+            }
+        } else {
+            uint256 dust = _balanceOf(collateral, address(this));
+            if (dust != 0) {
+                _safeTransfer(collateral, msg.sender, dust);
             }
         }
     }
