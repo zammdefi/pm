@@ -3,7 +3,7 @@ solc_version = "0.8.30"
 evm_version = "prague"
 
 optimizer = true
-optimizer_runs = 3333
+optimizer_runs = 120
 
 via_ir = true
 

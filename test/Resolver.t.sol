@@ -274,7 +274,7 @@ contract ResolverTest is Test {
         );
 
         // Verify market created in PAMM
-        (address mResolver,,,,,, uint64 close,,,,) = pm.getMarket(marketId);
+        (address mResolver,,,,, uint64 close,,,,) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
         assertEq(close, closeTime);
         assertTrue(noId != 0);
@@ -468,7 +468,7 @@ contract ResolverTest is Test {
 
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
 
@@ -494,7 +494,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
     }
@@ -516,7 +516,7 @@ contract ResolverTest is Test {
         // Still before close, but condition is true
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins via early close
     }
@@ -604,14 +604,14 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 2 > 1.5
     }
 
-    function test_ResolveMarket_Ratio_RevertDivisionByZero() public {
+    function test_ResolveMarket_Ratio_DenominatorZero_ReturnsMax() public {
         oracleA.setValue(100);
-        oracleB.setValue(0); // Division by zero
+        oracleB.setValue(0); // Division by zero -> returns type(uint256).max
 
         (uint256 marketId,) = resolver.createRatioMarketSimple(
             "A/B",
@@ -626,10 +626,20 @@ contract ResolverTest is Test {
             false
         );
 
+        // Preview should show max value and condition true (max > 1e18)
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, type(uint256).max);
+        assertTrue(condTrue);
+        assertFalse(ready); // Not ready yet (before close, canClose=false)
+
         vm.warp(closeTime);
 
-        vm.expectRevert(bytes4(0xad251c27)); // MulDivFailed()
+        // Should resolve successfully with YES winning (max > threshold)
         resolver.resolveMarket(marketId);
+
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins because max > 1e18
     }
 
     function test_ResolveMarket_RevertTargetCallFailed_Reverts() public {
@@ -673,7 +683,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 40 < 50
     }
@@ -695,7 +705,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50 <= 50
     }
@@ -717,7 +727,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50 >= 50
     }
@@ -739,7 +749,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50 == 50
     }
@@ -761,7 +771,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 51 != 50
     }
@@ -1038,7 +1048,7 @@ contract ResolverTest is Test {
             false
         );
 
-        (, address collateral,,,,,,,,,) = pm.getMarket(marketId);
+        (, address collateral,,,,,,,,) = pm.getMarket(marketId);
         assertEq(collateral, address(0));
     }
 
@@ -1063,7 +1073,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -1085,7 +1095,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 0 == 0
     }
@@ -1114,7 +1124,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
 
         // Verify outcome matches expected comparison
@@ -1154,7 +1164,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
 
         uint256 ratio = (valueA * 1e18) / valueB;
@@ -1281,7 +1291,7 @@ contract ResolverTest is Test {
         // Should succeed - maxSafe * 1e18 doesn't overflow
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // maxSafe * 1e18 / 1 > 1e18
     }
@@ -1408,7 +1418,7 @@ contract ResolverTest is Test {
 
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -1446,7 +1456,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // Current value 100 > 50
     }
@@ -1502,7 +1512,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 50 > 50 is FALSE
     }
@@ -1524,7 +1534,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 50 < 50 is FALSE
     }
@@ -1546,7 +1556,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 51 == 50 is FALSE
     }
@@ -1568,7 +1578,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 50 != 50 is FALSE
     }
@@ -1651,7 +1661,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 0/100 * 1e18 = 0, 0 == 0
     }
@@ -1676,7 +1686,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 200/100 * 1e18 = 2e18, 2e18 == 2e18
     }
@@ -1701,7 +1711,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50/100 * 1e18 = 0.5e18, 0.5e18 < 1e18
     }
@@ -1927,7 +1937,7 @@ contract ResolverTest is Test {
         oracleA.setValue(30);
 
         // Market should still be resolved as YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -1968,8 +1978,8 @@ contract ResolverTest is Test {
         resolver.resolveMarket(marketId1);
         resolver.resolveMarket(marketId2);
 
-        (,,, bool resolved1, bool outcome1,,,,,,) = pm.getMarket(marketId1);
-        (,,, bool resolved2, bool outcome2,,,,,,) = pm.getMarket(marketId2);
+        (,, bool resolved1, bool outcome1,,,,,,) = pm.getMarket(marketId1);
+        (,, bool resolved2, bool outcome2,,,,,,) = pm.getMarket(marketId2);
 
         assertTrue(resolved1);
         assertTrue(outcome1); // 75 > 50
@@ -2005,7 +2015,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 2e18 == 2e18
     }
@@ -2025,7 +2035,7 @@ contract ResolverTest is Test {
         );
 
         // Should still work - description will just be " > 50 by X Unix time."
-        (address mResolver,,,,,,,,,, string memory desc) = pm.getMarket(marketId);
+        (address mResolver,,,,,,,,, string memory desc) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
         assertTrue(bytes(desc).length > 0);
     }
@@ -2073,7 +2083,7 @@ contract ResolverTest is Test {
         vm.prank(randomUser);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved,,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved,,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
     }
 
@@ -2101,7 +2111,7 @@ contract ResolverTest is Test {
         vm.warp(justAfter);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved,,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved,,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
     }
 
@@ -2164,7 +2174,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // isPaused() == true, so YES wins
     }
@@ -2187,7 +2197,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // isPaused() == false (0), not equal to 1, so NO wins
     }
@@ -2211,7 +2221,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // isPaused() == false (0), equals 0, so YES wins
     }
@@ -2235,7 +2245,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // isPaused() = 0, 0 != 1, so YES wins
     }
@@ -2266,7 +2276,7 @@ contract ResolverTest is Test {
         // Now can resolve early
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // Insurance pays out
     }
@@ -2330,8 +2340,8 @@ contract ResolverTest is Test {
 
         assertTrue(marketId1 != marketId2);
 
-        (address r1,,,,,,,,,,) = pm.getMarket(marketId1);
-        (address r2,,,,,,,,,,) = pm.getMarket(marketId2);
+        (address r1,,,,,,,,,) = pm.getMarket(marketId1);
+        (address r2,,,,,,,,,) = pm.getMarket(marketId2);
 
         assertEq(r1, address(resolver));
         assertEq(r2, address(resolver));
@@ -2389,8 +2399,9 @@ contract ResolverTest is Test {
     }
 
     function test_SwapParams_Struct() public pure {
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1 ether, minOut: 0.9 ether, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1 ether, minOut: 0.9 ether, yesForNo: true, recipient: address(0)
+        });
 
         assertEq(swap.collateralForSwap, 1 ether);
         assertEq(swap.minOut, 0.9 ether);
@@ -2493,7 +2504,7 @@ contract Resolver_Integration_Test is Test {
         );
 
         // Verify market created
-        (address mResolver,,,,,,,,,,) = pm.getMarket(marketId);
+        (address mResolver,,,,,,,,,) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
 
         // Verify shares minted (1:1 with collateral)
@@ -2617,7 +2628,7 @@ contract Resolver_Integration_Test is Test {
         assertTrue(liquidity > 0);
 
         // Verify market uses ETH
-        (, address collateral,,,,,,,,,) = pm.getMarket(marketId);
+        (, address collateral,,,,,,,,) = pm.getMarket(marketId);
         assertEq(collateral, address(0));
     }
 
@@ -2643,8 +2654,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Use 1000 ether to buy NO (via split + swap YES→NO)
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -2691,8 +2703,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Use 500 ether to buy YES (via split + swap NO→YES)
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 500 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 500 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -2735,8 +2748,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Zero collateral for swap = no swap
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 0, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 0, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -2770,8 +2784,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         // msg.value must be seed.collateralIn + swap.collateralForSwap
         vm.deal(ALICE, 11000 ether);
@@ -2843,7 +2858,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // 5. Verify resolution
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES won
 
@@ -2888,7 +2903,7 @@ contract Resolver_Integration_Test is Test {
         // Now can resolve early
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES won via early close
     }
@@ -2944,8 +2959,9 @@ contract Resolver_Integration_Test is Test {
             deadline: 500 // expired - applies to both seed and swap
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         vm.expectRevert(ZAMM.Expired.selector); // ZAMM checks deadline first
@@ -3007,7 +3023,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000 ether,
             minOut: type(uint256).max, // impossible to satisfy
-            yesForNo: true
+            yesForNo: true,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3046,7 +3063,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000 ether,
             minOut: 1800, // expect ~1906 NO shares total
-            yesForNo: true
+            yesForNo: true,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3082,8 +3100,9 @@ contract Resolver_Integration_Test is Test {
             deadline: 0 // no deadline
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         // Warp far into future - should still work with deadline=0
         vm.warp(block.timestamp + 365 days);
@@ -3123,7 +3142,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 500 ether,
             minOut: 0,
-            yesForNo: false // buy YES
+            yesForNo: false, // buy YES
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3410,7 +3430,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 500 ether,
             minOut: 0,
-            yesForNo: true // buy NO
+            yesForNo: true, // buy NO
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3441,7 +3462,7 @@ contract Resolver_Integration_Test is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -3886,7 +3907,7 @@ contract Resolver_Integration_Test is Test {
         );
 
         // Verify market created
-        (address mResolver,,,,,, uint64 close,,,,) = pm.getMarket(marketId);
+        (address mResolver,,,,, uint64 close,,,,) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
         assertEq(close, closeTime);
         assertTrue(noId != 0);
@@ -3967,7 +3988,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify YES outcome
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -4010,7 +4031,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify NO outcome
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
     }
@@ -4243,7 +4264,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000e6, // 1000 USDC (must be multiple of 1e6)
             minOut: 0,
-            yesForNo: false
+            yesForNo: false,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -4319,7 +4341,7 @@ contract Resolver_Integration_Test is Test {
         // Resolve early (canClose = true)
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -4382,7 +4404,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 500 ether,
             minOut: 0,
-            yesForNo: true // buy NO
+            yesForNo: true, // buy NO
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -4423,8 +4446,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 500 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 500 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -4467,8 +4491,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Swap larger than seed
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 20000 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 20000 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (,,,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -4503,8 +4528,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 100 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 100 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -4558,8 +4584,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (,, uint256 shares,,) = resolver.createNumericMarketSeedAndBuy(
@@ -4783,7 +4810,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
 
@@ -4853,7 +4880,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with NO (condition was false)
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
 
@@ -4889,8 +4916,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         uint256 resolverBalanceBefore = address(resolver).balance;
         uint256 aliceBalanceBefore = ALICE.balance;
@@ -4943,8 +4971,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         // Too little ETH should revert
         vm.prank(ALICE);
@@ -4983,7 +5012,7 @@ contract Resolver_Integration_Test is Test {
                     RATIO MARKET B=0 TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_RatioMarket_BZero_RevertsOnPreview() public {
+    function test_RatioMarket_BZero_ReturnsMaxValue() public {
         address targetA = makeAddr("TARGET_A");
         address targetB = makeAddr("TARGET_B");
 
@@ -5017,12 +5046,24 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Preview should revert when B=0 (division by zero in mulDiv)
-        vm.expectRevert(); // MulDivFailed
-        resolver.preview(marketId);
+        // Preview should return max value when B=0 (prevents bricked markets)
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, type(uint256).max);
+        assertTrue(condTrue); // max > 1e18
+        assertFalse(ready); // Not at close time yet, canClose=false
+
+        // Wait until close time
+        vm.warp(closeTime);
+
+        // Resolution should succeed with YES winning
+        resolver.resolveMarket(marketId);
+
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins because max > threshold
     }
 
-    function test_RatioMarket_BZero_RecoverAndResolve() public {
+    function test_RatioMarket_BZero_LTCondition_NoWins() public {
         address targetA = makeAddr("TARGET_A");
         address targetB = makeAddr("TARGET_B");
 
@@ -5040,45 +5081,34 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        // Create ratio market
+        // Create ratio market with LT operator (ratio < threshold)
         vm.prank(ALICE);
         (uint256 marketId,,,) = resolver.createRatioMarketAndSeed(
-            "ratio recovery test",
+            "ratio LT test",
             address(token),
             targetA,
             "",
             targetB,
             "",
-            Resolver.Op.GT,
+            Resolver.Op.LT, // Less than
             1e18,
             closeTime,
             false,
             seed
         );
 
-        // Resolution should fail when B=0
-        vm.expectRevert(); // MulDivFailed
-        resolver.resolveMarket(marketId);
+        // Preview: max is NOT < 1e18, so condTrue = false
+        (uint256 value, bool condTrue,) = resolver.preview(marketId);
+        assertEq(value, type(uint256).max);
+        assertFalse(condTrue); // max is NOT < 1e18
 
-        // Now give targetB some balance
-        vm.deal(targetB, 50 ether);
-
-        // Preview should now work
-        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
-        assertEq(value, (100 ether * 1e18) / 50 ether); // 2e18
-        assertTrue(condTrue); // 2e18 > 1e18
-        assertFalse(ready); // Not at close time yet
-
-        // Wait until close time
         vm.warp(closeTime);
-
-        // Now resolution should succeed
         resolver.resolveMarket(marketId);
 
-        // Verify resolved with YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        // NO wins because condition is false
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
-        assertTrue(outcome); // YES wins because ratio > threshold
+        assertFalse(outcome); // NO wins
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -5125,7 +5155,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -5178,7 +5208,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with NO (condition was false)
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
     }
@@ -5226,7 +5256,7 @@ contract Resolver_Integration_Test is Test {
         // Now resolution should work
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -5253,8 +5283,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         uint256 aliceTokenBefore = token.balanceOf(ALICE);
 
@@ -5311,7 +5342,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000e6, // Exact multiple of 1e6
             minOut: 0,
-            yesForNo: false
+            yesForNo: false,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);

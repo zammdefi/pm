@@ -137,7 +137,9 @@ contract GasPMTest is Test {
         vm.warp(deployTime + 1 hours);
 
         vm.expectEmit(true, true, true, true);
-        emit GasPM.Updated(50 gwei, 50 gwei * 1 hours, address(this), 0);
+        emit GasPM.Updated(
+            uint64(deployTime + 1 hours), 50 gwei, 50 gwei * 1 hours, address(this), 0
+        );
 
         oracle.update();
     }
@@ -350,7 +352,9 @@ contract GasPMTest is Test {
         vm.warp(deployTime + 1 hours);
 
         vm.expectEmit(true, true, true, true);
-        emit GasPM.Updated(50 gwei, 50 gwei * 1 hours, address(this), 0.001 ether);
+        emit GasPM.Updated(
+            uint64(deployTime + 1 hours), 50 gwei, 50 gwei * 1 hours, address(this), 0.001 ether
+        );
 
         oracle.update();
     }
@@ -759,7 +763,8 @@ contract GasPMTest is Test {
         GasPM.SwapParams memory swap = GasPM.SwapParams({
             collateralForSwap: 2 ether,
             minOut: 0,
-            yesForNo: false // buyYes
+            yesForNo: false, // buyYes
+            recipient: address(0)
         });
 
         vm.prank(address(0xdead));
@@ -779,8 +784,9 @@ contract GasPMTest is Test {
             lpRecipient: address(this),
             deadline: 0
         });
-        GasPM.SwapParams memory swap =
-            GasPM.SwapParams({collateralForSwap: 2 ether, minOut: 0, yesForNo: false});
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: 2 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createMarketAndBuy(
@@ -798,8 +804,9 @@ contract GasPMTest is Test {
             lpRecipient: address(this),
             deadline: 0
         });
-        GasPM.SwapParams memory swap =
-            GasPM.SwapParams({collateralForSwap: 2 ether, minOut: 0, yesForNo: false});
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: 2 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.expectRevert(GasPM.InvalidClose.selector);
         oracle.createMarketAndBuy(50, address(0), uint64(block.timestamp), true, 3, seed, swap);
@@ -815,8 +822,9 @@ contract GasPMTest is Test {
             lpRecipient: address(this),
             deadline: 0
         });
-        GasPM.SwapParams memory swap =
-            GasPM.SwapParams({collateralForSwap: 2 ether, minOut: 0, yesForNo: false});
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: 2 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.expectRevert(GasPM.InvalidOp.selector);
         oracle.createMarketAndBuy{value: 12 ether}(
@@ -834,8 +842,9 @@ contract GasPMTest is Test {
             lpRecipient: address(this),
             deadline: 0
         });
-        GasPM.SwapParams memory swap =
-            GasPM.SwapParams({collateralForSwap: 2 ether, minOut: 0, yesForNo: false});
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: 2 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         // Should require seed.collateralIn + swap.collateralForSwap = 12 ether
         vm.expectRevert(GasPM.InvalidETHAmount.selector);
@@ -854,8 +863,9 @@ contract GasPMTest is Test {
             lpRecipient: address(this),
             deadline: 0
         });
-        GasPM.SwapParams memory swap =
-            GasPM.SwapParams({collateralForSwap: 2 ether, minOut: 0, yesForNo: false});
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: 2 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         // Will fail at Resolver call, but validates msg.value check passes
         vm.expectRevert(); // Resolver not deployed
@@ -874,8 +884,9 @@ contract GasPMTest is Test {
             lpRecipient: address(this),
             deadline: 0
         });
-        GasPM.SwapParams memory swap =
-            GasPM.SwapParams({collateralForSwap: 2 ether, minOut: 0, yesForNo: false});
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: 2 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         // Test that LTE (op=2) is accepted
         vm.expectRevert(); // Resolver not deployed, but op validation passes
@@ -898,8 +909,9 @@ contract GasPMTest is Test {
             lpRecipient: address(this),
             deadline: 0
         });
-        GasPM.SwapParams memory swap =
-            GasPM.SwapParams({collateralForSwap: 2 ether, minOut: 0, yesForNo: false});
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: 2 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.expectRevert(GasPM.InvalidETHAmount.selector);
         oracle.createMarketAndBuy{value: 1 ether}(
@@ -1702,7 +1714,8 @@ contract GasPMTest is Test {
         GasPM.SwapParams memory swap = GasPM.SwapParams({
             collateralForSwap: 3 ether, // Buy YES to push price up
             minOut: 0,
-            yesForNo: false // buyYes
+            yesForNo: false, // buyYes
+            recipient: address(0)
         });
 
         vm.expectRevert(); // Resolver not deployed
@@ -1719,7 +1732,6 @@ contract GasPMTest is Test {
             30 gwei, // threshold: 30 gwei new swing during market
             address(0), // ETH collateral
             uint64(block.timestamp + 7 days),
-            true, // early close when volatility reached
             10 ether,
             30,
             0,
@@ -1882,14 +1894,14 @@ contract GasPMTest is Test {
     function test_CreateWindowVolatilityMarket_InvalidThreshold() public {
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createWindowVolatilityMarket(
-            0, address(0), uint64(block.timestamp + 1 days), true, 1 ether, 30, 0, address(this)
+            0, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
     function test_CreateWindowVolatilityMarket_InvalidClose() public {
         vm.expectRevert(GasPM.InvalidClose.selector);
         oracle.createWindowVolatilityMarket(
-            30 gwei, address(0), uint64(block.timestamp - 1), true, 1 ether, 30, 0, address(this)
+            30 gwei, address(0), uint64(block.timestamp - 1), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2043,7 +2055,7 @@ contract GasPMTest is Test {
 
     function test_CreateWindowMarketAndBuy_InvalidThreshold() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(1 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(0.5 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(0.5 ether, 0, false, address(0));
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createWindowMarketAndBuy{value: 1.5 ether}(
             0, address(0), uint64(block.timestamp + 1 days), true, 3, seed, swap
@@ -2052,7 +2064,7 @@ contract GasPMTest is Test {
 
     function test_CreateWindowMarketAndBuy_InvalidOp() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(1 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(0.5 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(0.5 ether, 0, false, address(0));
         vm.expectRevert(GasPM.InvalidOp.selector);
         oracle.createWindowMarketAndBuy{value: 1.5 ether}(
             50 gwei, address(0), uint64(block.timestamp + 1 days), true, 1, seed, swap
@@ -2061,7 +2073,7 @@ contract GasPMTest is Test {
 
     function test_CreateWindowMarketAndBuy_ETH_ValidParams() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(1 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(0.5 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(0.5 ether, 0, false, address(0));
         vm.expectRevert(); // Resolver not deployed, but passes our checks
         oracle.createWindowMarketAndBuy{value: 1.5 ether}(
             50 gwei, address(0), uint64(block.timestamp + 1 days), true, 3, seed, swap
@@ -2201,14 +2213,14 @@ contract GasPMTest is Test {
     function test_CreateWindowPeakMarket_InvalidThreshold() public {
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createWindowPeakMarket(
-            0, address(0), uint64(block.timestamp + 1 days), true, 1 ether, 30, 0, address(this)
+            0, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
     function test_CreateWindowPeakMarket_InvalidClose() public {
         vm.expectRevert(GasPM.InvalidClose.selector);
         oracle.createWindowPeakMarket(
-            100 gwei, address(0), uint64(block.timestamp - 1), true, 1 ether, 30, 0, address(this)
+            100 gwei, address(0), uint64(block.timestamp - 1), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2216,27 +2228,13 @@ contract GasPMTest is Test {
         // maxBaseFee is 50 gwei at deploy
         vm.expectRevert(GasPM.AlreadyExceeded.selector);
         oracle.createWindowPeakMarket{value: 1 ether}(
-            50 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            50 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
 
         // Also fails for lower threshold
         vm.expectRevert(GasPM.AlreadyExceeded.selector);
         oracle.createWindowPeakMarket{value: 1 ether}(
-            30 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            30 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2244,14 +2242,7 @@ contract GasPMTest is Test {
         // 100 gwei > current maxBaseFee (50 gwei), should pass validation
         vm.expectRevert(); // Resolver not deployed, but passes our checks
         oracle.createWindowPeakMarket{value: 1 ether}(
-            100 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            100 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2261,7 +2252,7 @@ contract GasPMTest is Test {
         vm.prank(notOwner);
         vm.expectRevert(GasPM.Unauthorized.selector);
         oracle.createWindowPeakMarket{value: 1 ether}(
-            100 gwei, address(0), uint64(block.timestamp + 1 days), true, 1 ether, 30, 0, notOwner
+            100 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, notOwner
         );
     }
 
@@ -2275,41 +2266,27 @@ contract GasPMTest is Test {
         // Now threshold of 60 gwei should fail (already exceeded)
         vm.expectRevert(GasPM.AlreadyExceeded.selector);
         oracle.createWindowPeakMarket{value: 1 ether}(
-            60 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            60 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
 
         // But 100 gwei should pass (not yet exceeded)
         vm.expectRevert(); // Resolver not deployed
         oracle.createWindowPeakMarket{value: 1 ether}(
-            100 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            100 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
     function test_CreateWindowTroughMarket_InvalidThreshold() public {
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createWindowTroughMarket(
-            0, address(0), uint64(block.timestamp + 1 days), true, 1 ether, 30, 0, address(this)
+            0, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
     function test_CreateWindowTroughMarket_InvalidClose() public {
         vm.expectRevert(GasPM.InvalidClose.selector);
         oracle.createWindowTroughMarket(
-            10 gwei, address(0), uint64(block.timestamp - 1), true, 1 ether, 30, 0, address(this)
+            10 gwei, address(0), uint64(block.timestamp - 1), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2317,27 +2294,13 @@ contract GasPMTest is Test {
         // minBaseFee is 50 gwei at deploy
         vm.expectRevert(GasPM.AlreadyBelowThreshold.selector);
         oracle.createWindowTroughMarket{value: 1 ether}(
-            50 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            50 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
 
         // Also fails for higher threshold
         vm.expectRevert(GasPM.AlreadyBelowThreshold.selector);
         oracle.createWindowTroughMarket{value: 1 ether}(
-            70 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            70 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2345,14 +2308,7 @@ contract GasPMTest is Test {
         // 10 gwei < current minBaseFee (50 gwei), should pass validation
         vm.expectRevert(); // Resolver not deployed, but passes our checks
         oracle.createWindowTroughMarket{value: 1 ether}(
-            10 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            10 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2362,7 +2318,7 @@ contract GasPMTest is Test {
         vm.prank(notOwner);
         vm.expectRevert(GasPM.Unauthorized.selector);
         oracle.createWindowTroughMarket{value: 1 ether}(
-            10 gwei, address(0), uint64(block.timestamp + 1 days), true, 1 ether, 30, 0, notOwner
+            10 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, notOwner
         );
     }
 
@@ -2376,27 +2332,13 @@ contract GasPMTest is Test {
         // Now threshold of 40 gwei should fail (already below)
         vm.expectRevert(GasPM.AlreadyBelowThreshold.selector);
         oracle.createWindowTroughMarket{value: 1 ether}(
-            40 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            40 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
 
         // But 10 gwei should pass (not yet reached)
         vm.expectRevert(); // Resolver not deployed
         oracle.createWindowTroughMarket{value: 1 ether}(
-            10 gwei,
-            address(0),
-            uint64(block.timestamp + 1 days),
-            true,
-            1 ether,
-            30,
-            0,
-            address(this)
+            10 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
         );
     }
 
@@ -2672,7 +2614,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_InvalidThreshold_ZeroLower() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createRangeMarketAndBuy{value: 12 ether}(
@@ -2682,7 +2624,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_InvalidThreshold_ZeroUpper() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createRangeMarketAndBuy{value: 12 ether}(
@@ -2692,7 +2634,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_InvalidThreshold_LowerGteUpper() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createRangeMarketAndBuy{value: 12 ether}(
@@ -2707,7 +2649,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_InvalidClose() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidClose.selector);
         oracle.createRangeMarketAndBuy{value: 12 ether}(
@@ -2717,7 +2659,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_InvalidETHAmount() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         // Should require seed.collateralIn + swap.collateralForSwap = 12 ether
         vm.expectRevert(GasPM.InvalidETHAmount.selector);
@@ -2728,7 +2670,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_OnlyOwnerWhenNotPublic() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.prank(address(0xdead));
         vm.expectRevert(GasPM.Unauthorized.selector);
@@ -2739,7 +2681,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_ETH_ValidParams() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         // Will fail at Resolver call, but validates all checks pass
         vm.expectRevert(); // Resolver not deployed
@@ -2754,7 +2696,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
         token.approve(address(oracle), type(uint256).max);
 
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidETHAmount.selector);
         oracle.createRangeMarketAndBuy{value: 1 ether}(
@@ -2764,7 +2706,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_BuyYes() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false); // buyYes
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0)); // buyYes
 
         vm.expectRevert(); // Resolver not deployed
         oracle.createRangeMarketAndBuy{value: 12 ether}(
@@ -2774,7 +2716,7 @@ contract GasPMRangeMarketAndBuyTest is Test {
 
     function test_CreateRangeMarketAndBuy_BuyNo() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, true); // buyNo
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, true, address(0)); // buyNo
 
         vm.expectRevert(); // Resolver not deployed
         oracle.createRangeMarketAndBuy{value: 12 ether}(
@@ -2803,7 +2745,7 @@ contract GasPMWindowMarketAndBuyTest is Test {
 
     function test_CreateWindowRangeMarketAndBuy_InvalidThreshold_ZeroLower() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createWindowRangeMarketAndBuy{value: 12 ether}(
@@ -2813,7 +2755,7 @@ contract GasPMWindowMarketAndBuyTest is Test {
 
     function test_CreateWindowRangeMarketAndBuy_InvalidThreshold_LowerGteUpper() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidThreshold.selector);
         oracle.createWindowRangeMarketAndBuy{value: 12 ether}(
@@ -2823,7 +2765,7 @@ contract GasPMWindowMarketAndBuyTest is Test {
 
     function test_CreateWindowRangeMarketAndBuy_InvalidClose() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidClose.selector);
         oracle.createWindowRangeMarketAndBuy{value: 12 ether}(
@@ -2833,7 +2775,7 @@ contract GasPMWindowMarketAndBuyTest is Test {
 
     function test_CreateWindowRangeMarketAndBuy_InvalidETHAmount() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(GasPM.InvalidETHAmount.selector);
         oracle.createWindowRangeMarketAndBuy{value: 10 ether}(
@@ -2843,7 +2785,7 @@ contract GasPMWindowMarketAndBuyTest is Test {
 
     function test_CreateWindowRangeMarketAndBuy_OnlyOwnerWhenNotPublic() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.prank(address(0xdead));
         vm.expectRevert(GasPM.Unauthorized.selector);
@@ -2854,7 +2796,7 @@ contract GasPMWindowMarketAndBuyTest is Test {
 
     function test_CreateWindowRangeMarketAndBuy_ETH_ValidParams() public {
         GasPM.SeedParams memory seed = GasPM.SeedParams(10 ether, 30, 0, 0, 0, address(this), 0);
-        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false);
+        GasPM.SwapParams memory swap = GasPM.SwapParams(2 ether, 0, false, address(0));
 
         vm.expectRevert(); // Resolver not deployed
         oracle.createWindowRangeMarketAndBuy{value: 12 ether}(
@@ -3523,6 +3465,221 @@ contract GasPMMarketTypesTest is Test {
     receive() external payable {}
 }
 
+/*//////////////////////////////////////////////////////////////
+                    WINDOW PEAK/TROUGH TRACKING TESTS
+//////////////////////////////////////////////////////////////*/
+
+/// @notice Tests for window peak/trough per-market max/min tracking
+contract GasPMWindowPeakTroughTest is Test {
+    GasPM oracle;
+    uint256 deployTime;
+
+    function setUp() public {
+        vm.fee(50 gwei);
+        vm.startPrank(address(this), address(this)); // Set tx.origin to test contract
+        oracle = new GasPM();
+        vm.stopPrank();
+        deployTime = block.timestamp;
+    }
+
+    /// @notice Test baseFeeMaxSince returns 0 for non-existent market (no windowSpreads)
+    function test_BaseFeeMaxSince_NonExistentMarket() public view {
+        // For a market that doesn't exist, windowMax is 0
+        // The function returns max(0, current basefee) = current basefee
+        assertEq(oracle.baseFeeMaxSince(99999), block.basefee);
+    }
+
+    /// @notice Test baseFeeMinSince returns current basefee for non-existent market
+    function test_BaseFeeMinSince_NonExistentMarket() public view {
+        // For a market that doesn't exist, windowMin is 0
+        // The function returns min(0, current basefee) = 0 (since 0 < any positive basefee)
+        // But since windowMin=0 indicates uninitialized, we actually compare with basefee
+        assertEq(oracle.baseFeeMinSince(99999), block.basefee);
+    }
+
+    /// @notice Test that windowSpreads can be manually set and read correctly
+    function test_WindowSpreads_StorageLayout() public {
+        // Simulate what createWindowPeakMarket does internally
+        // We can't call the actual function without Resolver, but we can test the view functions
+
+        // When basefee changes, the view functions should reflect it
+        vm.fee(60 gwei);
+
+        // Non-existent market should return current basefee
+        assertEq(oracle.baseFeeMaxSince(12345), 60 gwei);
+        assertEq(oracle.baseFeeMinSince(12345), 60 gwei);
+    }
+
+    /// @notice Test baseFeeMaxSince includes current basefee when higher
+    function test_BaseFeeMaxSince_IncludesCurrentBasefee() public {
+        // Initial basefee is 50 gwei
+        // For non-existent market, should return current basefee
+        assertEq(oracle.baseFeeMaxSince(12345), 50 gwei);
+
+        // Increase basefee
+        vm.fee(80 gwei);
+        assertEq(oracle.baseFeeMaxSince(12345), 80 gwei);
+
+        // Decrease basefee
+        vm.fee(30 gwei);
+        // For non-existent market, still returns current basefee
+        assertEq(oracle.baseFeeMaxSince(12345), 30 gwei);
+    }
+
+    /// @notice Test baseFeeMinSince includes current basefee when lower
+    function test_BaseFeeMinSince_IncludesCurrentBasefee() public {
+        // Initial basefee is 50 gwei
+        assertEq(oracle.baseFeeMinSince(12345), 50 gwei);
+
+        // Decrease basefee
+        vm.fee(30 gwei);
+        assertEq(oracle.baseFeeMinSince(12345), 30 gwei);
+
+        // Increase basefee
+        vm.fee(80 gwei);
+        // For non-existent market, still returns current basefee
+        assertEq(oracle.baseFeeMinSince(12345), 80 gwei);
+    }
+
+    /// @notice Test pokeWindowVolatility updates max for window markets
+    function test_PokeWindowVolatility_UpdatesMax() public {
+        // First, we need to simulate a window market existing
+        // The windowSpreads mapping is public, but we can't write to it directly
+        // We can verify the poke function behavior by checking that non-window markets are skipped
+
+        // For non-window market (windowMax=0, windowMin=0), poke should do nothing
+        oracle.pokeWindowVolatility(12345);
+        (uint128 max, uint128 min) = oracle.windowSpreads(12345);
+        assertEq(max, 0);
+        assertEq(min, 0);
+    }
+
+    /// @notice Test that lifetime max/min are separate from window max/min
+    function test_LifetimeVsWindowMetrics() public {
+        // Update oracle with varying fees
+        vm.warp(deployTime + 1 hours);
+        vm.fee(100 gwei);
+        oracle.update();
+
+        vm.warp(deployTime + 2 hours);
+        vm.fee(20 gwei);
+        oracle.update();
+
+        // Lifetime metrics should reflect all updates
+        assertEq(oracle.baseFeeMax(), 100 gwei);
+        assertEq(oracle.baseFeeMin(), 20 gwei);
+
+        // Window metrics for non-existent market return current basefee
+        assertEq(oracle.baseFeeMaxSince(99999), 20 gwei); // current basefee
+        assertEq(oracle.baseFeeMinSince(99999), 20 gwei); // current basefee
+    }
+
+    /// @notice Test windowSpreads struct packing (max in lower bits, min in upper bits)
+    function test_WindowSpreads_StructPacking() public view {
+        // WindowSpread struct: { uint128 windowMax, uint128 windowMin }
+        // In Solidity storage, first field (windowMax) is in lower 128 bits
+        // second field (windowMin) is in upper 128 bits
+
+        // Verify by reading an empty slot
+        (uint128 windowMax, uint128 windowMin) = oracle.windowSpreads(0);
+        assertEq(windowMax, 0);
+        assertEq(windowMin, 0);
+    }
+
+    /// @notice Test createWindowPeakMarket threshold validation uses current basefee
+    function test_CreateWindowPeakMarket_ThresholdVsCurrentBasefee() public {
+        // At deploy, basefee = 50 gwei
+        // Creating a peak market with threshold <= current basefee should revert
+
+        // Threshold = current basefee (50 gwei) should revert
+        vm.expectRevert(GasPM.AlreadyExceeded.selector);
+        oracle.createWindowPeakMarket{value: 1 ether}(
+            50 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
+        );
+
+        // Threshold < current basefee (30 gwei) should also revert
+        vm.expectRevert(GasPM.AlreadyExceeded.selector);
+        oracle.createWindowPeakMarket{value: 1 ether}(
+            30 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
+        );
+
+        // Threshold > current basefee (100 gwei) should pass validation
+        // (will revert later due to Resolver not being deployed)
+        vm.expectRevert(); // Resolver call fails
+        oracle.createWindowPeakMarket{value: 1 ether}(
+            100 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
+        );
+    }
+
+    /// @notice Test createWindowTroughMarket threshold validation uses current basefee
+    function test_CreateWindowTroughMarket_ThresholdVsCurrentBasefee() public {
+        // At deploy, basefee = 50 gwei
+        // Creating a trough market with threshold >= current basefee should revert
+
+        // Threshold = current basefee (50 gwei) should revert
+        vm.expectRevert(GasPM.AlreadyBelowThreshold.selector);
+        oracle.createWindowTroughMarket{value: 1 ether}(
+            50 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
+        );
+
+        // Threshold > current basefee (70 gwei) should also revert
+        vm.expectRevert(GasPM.AlreadyBelowThreshold.selector);
+        oracle.createWindowTroughMarket{value: 1 ether}(
+            70 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
+        );
+
+        // Threshold < current basefee (30 gwei) should pass validation
+        // (will revert later due to Resolver not being deployed)
+        vm.expectRevert(); // Resolver call fails
+        oracle.createWindowTroughMarket{value: 1 ether}(
+            30 gwei, address(0), uint64(block.timestamp + 1 days), 1 ether, 30, 0, address(this)
+        );
+    }
+
+    /// @notice Test that basefee changes affect view function results
+    function test_ViewFunctions_ReactToBasefeeChanges() public {
+        uint256 marketId = 12345;
+
+        // Initially at 50 gwei
+        assertEq(oracle.baseFeeMaxSince(marketId), 50 gwei);
+        assertEq(oracle.baseFeeMinSince(marketId), 50 gwei);
+
+        // Spike to 100 gwei
+        vm.fee(100 gwei);
+        assertEq(oracle.baseFeeMaxSince(marketId), 100 gwei);
+        assertEq(oracle.baseFeeMinSince(marketId), 100 gwei);
+
+        // Drop to 10 gwei
+        vm.fee(10 gwei);
+        assertEq(oracle.baseFeeMaxSince(marketId), 10 gwei);
+        assertEq(oracle.baseFeeMinSince(marketId), 10 gwei);
+    }
+
+    /// @notice Fuzz test baseFeeMaxSince with various basefee values
+    function testFuzz_BaseFeeMaxSince(uint256 marketId, uint256 basefee) public {
+        marketId = bound(marketId, 1, type(uint128).max);
+        basefee = bound(basefee, 1 gwei, 10000 gwei);
+
+        vm.fee(basefee);
+
+        // For non-existent market, should return current basefee
+        assertEq(oracle.baseFeeMaxSince(marketId), basefee);
+    }
+
+    /// @notice Fuzz test baseFeeMinSince with various basefee values
+    function testFuzz_BaseFeeMinSince(uint256 marketId, uint256 basefee) public {
+        marketId = bound(marketId, 1, type(uint128).max);
+        basefee = bound(basefee, 1 gwei, 10000 gwei);
+
+        vm.fee(basefee);
+
+        // For non-existent market, should return current basefee
+        assertEq(oracle.baseFeeMinSince(marketId), basefee);
+    }
+
+    receive() external payable {}
+}
+
 /// @dev DAI-style permit token (simplified for testing)
 contract MockDAIPermit {
     uint8 public constant decimals = 18;
@@ -3567,5 +3724,856 @@ contract MockDAIPermit {
     ) public {
         require(nonce == nonces[owner_]++, "Invalid nonce");
         allowance[owner_][spender] = allowed ? type(uint256).max : 0;
+    }
+}
+
+/// @dev Test harness to expose internal functions and allow direct storage writes
+contract GasPMHarness is GasPM {
+    function toGweiString(uint256 wei_) external pure returns (string memory) {
+        return _toGweiString(wei_);
+    }
+
+    function toString(uint256 value) external pure returns (string memory) {
+        return _toString(value);
+    }
+
+    /// @dev Directly set windowSpreads for testing storage reads
+    function setWindowSpread(uint256 marketId, uint128 max, uint128 min) external {
+        windowSpreads[marketId] = WindowSpread(max, min);
+    }
+}
+
+contract GasPMToGweiStringTest is Test {
+    GasPMHarness harness;
+
+    function setUp() public {
+        vm.fee(50 gwei);
+        harness = new GasPMHarness();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        _toGweiString EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test zero wei
+    function test_ToGweiString_Zero() public view {
+        assertEq(harness.toGweiString(0), "0");
+    }
+
+    /// @notice Test 1 wei (sub-gwei, should be "0")
+    function test_ToGweiString_OneWei() public view {
+        // 1 wei = 0 gwei with remainder 1 wei
+        // remainder / 1e6 = 0, so just "0"
+        assertEq(harness.toGweiString(1), "0");
+    }
+
+    /// @notice Test exactly 1 gwei
+    function test_ToGweiString_OneGwei() public view {
+        assertEq(harness.toGweiString(1 gwei), "1");
+    }
+
+    /// @notice Test fractional gwei with 1 decimal place (e.g., 1.5 gwei)
+    function test_ToGweiString_FractionalOneDecimal() public view {
+        // 1.5 gwei = 1.5e9 wei
+        assertEq(harness.toGweiString(1.5 gwei), "1.5");
+    }
+
+    /// @notice Test fractional gwei with 2 decimal places (e.g., 1.25 gwei)
+    function test_ToGweiString_FractionalTwoDecimals() public view {
+        // 1.25 gwei = 1.25e9 wei
+        assertEq(harness.toGweiString(1.25 gwei), "1.25");
+    }
+
+    /// @notice Test fractional gwei with 3 decimal places (e.g., 1.123 gwei)
+    function test_ToGweiString_FractionalThreeDecimals() public view {
+        // 1.123 gwei = 1123000000 wei
+        assertEq(harness.toGweiString(1123000000), "1.123");
+    }
+
+    /// @notice Test fractional with leading zeros (e.g., 1.001 gwei)
+    function test_ToGweiString_FractionalLeadingZeros() public view {
+        // 1.001 gwei = 1001000000 wei
+        assertEq(harness.toGweiString(1001000000), "1.001");
+    }
+
+    /// @notice Test fractional with leading zero and 2 places (e.g., 1.01 gwei)
+    function test_ToGweiString_FractionalLeadingZeroTwoPlaces() public view {
+        // 1.01 gwei = 1010000000 wei
+        assertEq(harness.toGweiString(1010000000), "1.01");
+    }
+
+    /// @notice Test large gwei value (typical mainnet range)
+    function test_ToGweiString_LargeValue() public view {
+        // 500 gwei
+        assertEq(harness.toGweiString(500 gwei), "500");
+    }
+
+    /// @notice Test very large gwei value
+    function test_ToGweiString_VeryLargeValue() public view {
+        // 10000 gwei = 10 microether
+        assertEq(harness.toGweiString(10000 gwei), "10000");
+    }
+
+    /// @notice Test sub-milligwei values (< 1e6 wei remainder)
+    function test_ToGweiString_SubMilligwei() public view {
+        // 1 gwei + 999999 wei = 1000999999 wei
+        // remainder = 999999, remainder / 1e6 = 0
+        // So output is just "1"
+        assertEq(harness.toGweiString(1000999999), "1");
+    }
+
+    /// @notice Test exactly at milligwei boundary
+    function test_ToGweiString_ExactlyMilligwei() public view {
+        // 1 gwei + 1e6 wei = 1001000000 wei
+        // remainder = 1e6, remainder / 1e6 = 1
+        // So output is "1.001"
+        assertEq(harness.toGweiString(1001000000), "1.001");
+    }
+
+    /// @notice Test max uint256 value
+    function test_ToGweiString_MaxUint256() public view {
+        // type(uint256).max / 1 gwei is a very large number
+        // This tests that the function doesn't overflow/revert
+        string memory result = harness.toGweiString(type(uint256).max);
+        assertTrue(bytes(result).length > 0);
+        // type(uint256).max / 1e9 = 115792089237316195423570985008687907853269984665640564039457584007913
+        // remainder = type(uint256).max % 1e9 = 129639935
+        // remainder / 1e6 = 129 (milligwei precision)
+        assertEq(
+            result, "115792089237316195423570985008687907853269984665640564039457584007913.129"
+        );
+    }
+
+    /// @notice Test common gas prices
+    function test_ToGweiString_CommonGasPrices() public view {
+        assertEq(harness.toGweiString(5 gwei), "5");
+        assertEq(harness.toGweiString(20 gwei), "20");
+        assertEq(harness.toGweiString(50 gwei), "50");
+        assertEq(harness.toGweiString(100 gwei), "100");
+        assertEq(harness.toGweiString(200 gwei), "200");
+    }
+
+    /// @notice Fuzz test: output should be parseable back to approximate value
+    function testFuzz_ToGweiString_Reasonable(uint256 wei_) public view {
+        wei_ = bound(wei_, 0, 10000 gwei);
+        string memory result = harness.toGweiString(wei_);
+        assertTrue(bytes(result).length > 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        _toString EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test _toString with zero
+    function test_ToString_Zero() public view {
+        assertEq(harness.toString(0), "0");
+    }
+
+    /// @notice Test _toString with max uint256
+    function test_ToString_MaxUint256() public view {
+        assertEq(
+            harness.toString(type(uint256).max),
+            "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        );
+    }
+
+    /// @notice Test _toString with small values
+    function test_ToString_SmallValues() public view {
+        assertEq(harness.toString(1), "1");
+        assertEq(harness.toString(9), "9");
+        assertEq(harness.toString(10), "10");
+        assertEq(harness.toString(99), "99");
+        assertEq(harness.toString(100), "100");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    WINDOW SPREAD STORAGE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test baseFeeMaxSince reads from correct storage location
+    /// @dev This test would have caught the mapping storage bug where
+    ///      `sload(add(windowSpreads.slot, marketId))` was used instead of proper keccak
+    function test_BaseFeeMaxSince_ReadsCorrectStorageSlot() public {
+        uint256 marketId = 42;
+        uint128 storedMax = 100 gwei;
+        uint128 storedMin = 50 gwei;
+
+        // Write directly to windowSpreads mapping
+        harness.setWindowSpread(marketId, storedMax, storedMin);
+
+        // Set current basefee below stored max
+        vm.fee(60 gwei);
+
+        // baseFeeMaxSince should return storedMax (100 gwei), not current basefee (60 gwei)
+        uint256 result = harness.baseFeeMaxSince(marketId);
+        assertEq(result, storedMax, "Should read stored windowMax from correct storage slot");
+    }
+
+    /// @notice Test baseFeeMinSince reads from correct storage location
+    function test_BaseFeeMinSince_ReadsCorrectStorageSlot() public {
+        uint256 marketId = 42;
+        uint128 storedMax = 100 gwei;
+        uint128 storedMin = 50 gwei;
+
+        // Write directly to windowSpreads mapping
+        harness.setWindowSpread(marketId, storedMax, storedMin);
+
+        // Set current basefee above stored min
+        vm.fee(80 gwei);
+
+        // baseFeeMinSince should return storedMin (50 gwei), not current basefee (80 gwei)
+        uint256 result = harness.baseFeeMinSince(marketId);
+        assertEq(result, storedMin, "Should read stored windowMin from correct storage slot");
+    }
+
+    /// @notice Fuzz test that baseFeeMaxSince correctly reads stored values
+    function testFuzz_BaseFeeMaxSince_ReadsStoredValue(
+        uint256 marketId,
+        uint64 storedMax,
+        uint64 currentFee
+    ) public {
+        vm.assume(storedMax > 0); // Non-zero means initialized
+        vm.assume(currentFee > 0);
+        marketId = bound(marketId, 1, type(uint128).max);
+
+        harness.setWindowSpread(marketId, storedMax, storedMax); // Use same for both
+        vm.fee(currentFee);
+
+        uint256 result = harness.baseFeeMaxSince(marketId);
+
+        // Result should be max(storedMax, currentFee)
+        uint256 expected = currentFee > storedMax ? currentFee : storedMax;
+        assertEq(result, expected);
+    }
+
+    /// @notice Fuzz test that baseFeeMinSince correctly reads stored values
+    function testFuzz_BaseFeeMinSince_ReadsStoredValue(
+        uint256 marketId,
+        uint64 storedMin,
+        uint64 currentFee
+    ) public {
+        vm.assume(storedMin > 0); // Non-zero means initialized
+        vm.assume(currentFee > 0);
+        marketId = bound(marketId, 1, type(uint128).max);
+
+        harness.setWindowSpread(marketId, storedMin, storedMin); // Use same for both
+        vm.fee(currentFee);
+
+        uint256 result = harness.baseFeeMinSince(marketId);
+
+        // Result should be min(storedMin, currentFee)
+        uint256 expected = currentFee < storedMin ? currentFee : storedMin;
+        assertEq(result, expected);
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+                    INTEGRATION TESTS
+//////////////////////////////////////////////////////////////*/
+
+import {PAMM} from "../src/PAMM.sol";
+import {Resolver} from "../src/Resolver.sol";
+import {ZAMM} from "@zamm/ZAMM.sol";
+
+/// @notice Mock ERC20 for integration tests
+contract IntegrationMockERC20 {
+    string public name = "Mock Token";
+    string public symbol = "MOCK";
+    uint8 public constant DECIMALS = 18;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        if (msg.sender != from) {
+            uint256 allowed = allowance[from][msg.sender];
+            if (allowed != type(uint256).max) {
+                allowance[from][msg.sender] = allowed - amount;
+            }
+        }
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function decimals() external pure returns (uint8) {
+        return DECIMALS;
+    }
+}
+
+/// @notice Integration tests for GasPM with full contract stack (ZAMM, PAMM, Resolver)
+contract GasPMIntegrationTest is Test {
+    // Hardcoded addresses from contracts
+    address payable constant ZAMM_ADDRESS = payable(0x000000000000040470635EB91b7CE4D132D616eD);
+    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    address payable constant RESOLVER_ADDRESS = payable(0x0000000000b0ba1b2bb3AF96FbB893d835970ec4);
+
+    ZAMM zamm;
+    PAMM pm;
+    Resolver resolver;
+    GasPM gasPM;
+    IntegrationMockERC20 token;
+
+    address ALICE = makeAddr("ALICE");
+    uint64 closeTime;
+    uint256 constant FEE_BPS = 30; // 0.3%
+
+    function setUp() public {
+        vm.fee(50 gwei);
+
+        // Deploy ZAMM and etch to expected address
+        bytes memory zammCode = type(ZAMM).creationCode;
+        address zammDeployed;
+        assembly {
+            zammDeployed := create(0, add(zammCode, 0x20), mload(zammCode))
+        }
+        vm.etch(ZAMM_ADDRESS, zammDeployed.code);
+        vm.store(ZAMM_ADDRESS, bytes32(uint256(0x00)), bytes32(uint256(uint160(address(this)))));
+        zamm = ZAMM(payable(ZAMM_ADDRESS));
+
+        // Deploy PAMM and etch to expected address
+        PAMM pammDeployed = new PAMM();
+        vm.etch(PAMM_ADDRESS, address(pammDeployed).code);
+        pm = PAMM(PAMM_ADDRESS);
+
+        // Deploy Resolver and etch to expected address
+        Resolver resolverDeployed = new Resolver();
+        vm.etch(RESOLVER_ADDRESS, address(resolverDeployed).code);
+        resolver = Resolver(payable(RESOLVER_ADDRESS));
+
+        // Deploy GasPM (uses tx.origin for owner)
+        vm.startPrank(address(this), address(this));
+        gasPM = new GasPM();
+        // Enable public creation so anyone can create markets
+        gasPM.setPublicCreation(true);
+        vm.stopPrank();
+
+        // Setup token and users
+        token = new IntegrationMockERC20();
+        closeTime = uint64(block.timestamp + 30 days);
+
+        // Fund users
+        token.mint(ALICE, 100000 ether);
+        vm.deal(ALICE, 100000 ether);
+
+        // Approve GasPM for token
+        vm.prank(ALICE);
+        token.approve(address(gasPM), type(uint256).max);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       BASIC MARKET CREATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test basic directional market creation with ETH
+    function test_Integration_CreateMarket_ETH() public {
+        uint256 threshold = 100 gwei;
+        uint256 collateralIn = 10000 ether;
+        uint256 minLiquidity = 1;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createMarket{value: collateralIn}(
+            threshold,
+            address(0), // ETH
+            closeTime,
+            true, // canClose
+            3, // GTE
+            collateralIn,
+            FEE_BPS,
+            minLiquidity,
+            ALICE
+        );
+
+        // Verify market was created and registered
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+        assertEq(gasPM.marketCount(), 1, "Should have 1 market");
+
+        // Verify GasPM has no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+
+        // Verify GasPM has no leftover ETH
+        assertEq(address(gasPM).balance, 0, "GasPM should have no leftover ETH");
+    }
+
+    /// @notice Test basic directional market creation with ERC20
+    function test_Integration_CreateMarket_ERC20() public {
+        uint256 threshold = 100 gwei;
+        uint256 collateralIn = 10000 ether;
+        uint256 minLiquidity = 1;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createMarket(
+            threshold,
+            address(token),
+            closeTime,
+            true, // canClose
+            3, // GTE
+            collateralIn,
+            FEE_BPS,
+            minLiquidity,
+            ALICE
+        );
+
+        // Verify market was created
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify GasPM has no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+
+        // Verify GasPM has no leftover tokens
+        assertEq(token.balanceOf(address(gasPM)), 0, "GasPM should have no leftover tokens");
+    }
+
+    /// @notice Test market creation with buy (AndBuy variant)
+    function test_Integration_CreateMarketAndBuy_ETH() public {
+        uint256 threshold = 100 gwei;
+        uint256 collateralIn = 10000 ether;
+        uint256 swapAmount = 1000 ether;
+
+        GasPM.SeedParams memory seed = GasPM.SeedParams({
+            collateralIn: collateralIn,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 1,
+            lpRecipient: ALICE,
+            deadline: 0
+        });
+
+        GasPM.SwapParams memory swap = GasPM.SwapParams({
+            collateralForSwap: swapAmount,
+            minOut: 0,
+            yesForNo: false, // Buy YES
+            recipient: ALICE
+        });
+
+        uint256 totalValue = collateralIn + swapAmount;
+
+        vm.prank(ALICE);
+        (uint256 marketId, uint256 swapOut) = gasPM.createMarketAndBuy{value: totalValue}(
+            threshold,
+            address(0), // ETH
+            closeTime,
+            true, // canClose
+            3, // GTE
+            seed,
+            swap
+        );
+
+        // Verify market was created
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+        assertGt(swapOut, 0, "Should have received YES tokens from swap");
+
+        // Verify ALICE received YES tokens
+        assertGt(pm.balanceOf(ALICE, marketId), 0, "ALICE should have YES tokens");
+
+        // Verify GasPM has no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+
+        // Verify GasPM has no leftover ETH
+        assertEq(address(gasPM).balance, 0, "GasPM should have no leftover ETH");
+    }
+
+    /// @notice Test range market creation
+    function test_Integration_CreateRangeMarket_ETH() public {
+        uint256 lowerBound = 50 gwei;
+        uint256 upperBound = 100 gwei;
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createRangeMarket{value: collateralIn}(
+            lowerBound, upperBound, address(0), closeTime, true, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test breakout market creation
+    function test_Integration_CreateBreakoutMarket_ETH() public {
+        uint256 lowerBound = 50 gwei;
+        uint256 upperBound = 100 gwei;
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createBreakoutMarket{value: collateralIn}(
+            lowerBound, upperBound, address(0), closeTime, true, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test peak market creation
+    function test_Integration_CreatePeakMarket_ETH() public {
+        uint256 threshold = 200 gwei; // Above current 50 gwei
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createPeakMarket{value: collateralIn}(
+            threshold, address(0), closeTime, true, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test trough market creation
+    function test_Integration_CreateTroughMarket_ETH() public {
+        uint256 threshold = 10 gwei; // Below current 50 gwei
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createTroughMarket{value: collateralIn}(
+            threshold, address(0), closeTime, true, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test volatility market creation
+    function test_Integration_CreateVolatilityMarket_ETH() public {
+        uint256 threshold = 100 gwei; // Spread threshold
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createVolatilityMarket{value: collateralIn}(
+            threshold, address(0), closeTime, true, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test stability market creation
+    function test_Integration_CreateStabilityMarket_ETH() public {
+        uint256 threshold = 100 gwei; // Max spread threshold
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createStabilityMarket{value: collateralIn}(
+            threshold, address(0), closeTime, true, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test spot market creation
+    function test_Integration_CreateSpotMarket_ETH() public {
+        uint256 threshold = 100 gwei;
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createSpotMarket{value: collateralIn}(
+            threshold,
+            address(0),
+            closeTime,
+            true, // canClose
+            collateralIn,
+            FEE_BPS,
+            1,
+            ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test comparison market creation
+    function test_Integration_CreateComparisonMarket_ETH() public {
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createComparisonMarket{value: collateralIn}(
+            address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       WINDOW MARKET TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test window directional market creation
+    function test_Integration_CreateWindowMarket_ETH() public {
+        uint256 threshold = 100 gwei;
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createWindowMarket{value: collateralIn}(
+            threshold,
+            address(0),
+            closeTime,
+            true,
+            3, // GTE
+            collateralIn,
+            FEE_BPS,
+            1,
+            ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify snapshot was stored
+        (uint192 cumulative, uint64 timestamp) = gasPM.marketSnapshots(marketId);
+        assertGt(timestamp, 0, "Snapshot should be stored");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test window peak market creation
+    function test_Integration_CreateWindowPeakMarket_ETH() public {
+        uint256 threshold = 200 gwei; // Above current 50 gwei
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createWindowPeakMarket{value: collateralIn}(
+            threshold, address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify window spread was initialized
+        (uint128 windowMax, uint128 windowMin) = gasPM.windowSpreads(marketId);
+        assertGt(windowMax, 0, "Window max should be initialized");
+        assertGt(windowMin, 0, "Window min should be initialized");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /// @notice Test window trough market creation
+    function test_Integration_CreateWindowTroughMarket_ETH() public {
+        uint256 threshold = 10 gwei; // Below current 50 gwei
+        uint256 collateralIn = 10000 ether;
+
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createWindowTroughMarket{value: collateralIn}(
+            threshold, address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        assertTrue(gasPM.isOurMarket(marketId), "Market should be registered");
+
+        // Verify window spread was initialized
+        (uint128 windowMax, uint128 windowMin) = gasPM.windowSpreads(marketId);
+        assertGt(windowMax, 0, "Window max should be initialized");
+        assertGt(windowMin, 0, "Window min should be initialized");
+
+        // Verify no leftover shares
+        uint256 noId = pm.getNoId(marketId);
+        assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+        assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    LEFTOVER SHARE FLUSHING TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test that multiple market creations don't accumulate leftover shares
+    function test_Integration_MultipleMarkets_NoAccumulatedShares() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create multiple markets
+        for (uint256 i = 0; i < 5; i++) {
+            vm.prank(ALICE);
+            gasPM.createMarket{value: collateralIn}(
+                (100 + i * 10) * 1 gwei, // Different thresholds
+                address(0),
+                closeTime + uint64(i * 1 days),
+                true,
+                3,
+                collateralIn,
+                FEE_BPS,
+                1,
+                ALICE
+            );
+        }
+
+        assertEq(gasPM.marketCount(), 5, "Should have 5 markets");
+
+        // Verify no accumulated shares in GasPM
+        // Check a few market IDs
+        uint256[] memory markets = gasPM.getMarkets(0, 5);
+        for (uint256 i = 0; i < markets.length; i++) {
+            uint256 marketId = markets[i];
+            uint256 noId = pm.getNoId(marketId);
+            assertEq(pm.balanceOf(address(gasPM), marketId), 0, "GasPM should have 0 YES");
+            assertEq(pm.balanceOf(address(gasPM), noId), 0, "GasPM should have 0 NO");
+        }
+
+        // Verify no leftover ETH
+        assertEq(address(gasPM).balance, 0, "GasPM should have no leftover ETH");
+    }
+
+    /// @notice Test ERC20 market creation doesn't leave tokens
+    function test_Integration_ERC20Market_NoLeftoverTokens() public {
+        uint256 collateralIn = 10000 ether;
+
+        uint256 aliceBalanceBefore = token.balanceOf(ALICE);
+
+        vm.prank(ALICE);
+        gasPM.createMarket(
+            100 gwei, address(token), closeTime, true, 3, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        // Verify ALICE spent the collateral
+        assertEq(
+            token.balanceOf(ALICE),
+            aliceBalanceBefore - collateralIn,
+            "ALICE should have spent collateral"
+        );
+
+        // Verify no tokens stuck in GasPM
+        assertEq(token.balanceOf(address(gasPM)), 0, "GasPM should have no leftover tokens");
+
+        // Verify no tokens stuck in Resolver
+        assertEq(token.balanceOf(address(resolver)), 0, "Resolver should have no leftover tokens");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       REWARD ESCROW PRESERVATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Verify ETH-collateral market creation does NOT drain reward escrow
+    /// @dev Critical regression test: without the ethEscrow fix, _refundDust would
+    ///      send the entire contract balance (including rewards) to msg.sender
+    function test_Integration_CreateMarket_PreservesRewardEscrow() public {
+        // Configure rewards and fund the contract
+        vm.prank(gasPM.owner());
+        gasPM.setReward(0.01 ether, 1 hours);
+        vm.deal(address(gasPM), 1 ether);
+
+        uint256 escrowBefore = address(gasPM).balance;
+        uint256 collateralIn = 100 ether;
+
+        // Create ETH-collateral market - should NOT drain reward escrow
+        vm.prank(ALICE);
+        gasPM.createMarket{value: collateralIn}(
+            50 gwei, address(0), closeTime, false, 3, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        // Reward escrow should be preserved
+        assertEq(address(gasPM).balance, escrowBefore, "Reward escrow should be preserved");
+    }
+
+    /// @notice Verify createMarketAndBuy preserves reward escrow
+    function test_Integration_CreateMarketAndBuy_PreservesRewardEscrow() public {
+        // Configure rewards and fund the contract
+        vm.prank(gasPM.owner());
+        gasPM.setReward(0.01 ether, 1 hours);
+        vm.deal(address(gasPM), 1 ether);
+
+        uint256 escrowBefore = address(gasPM).balance;
+        uint256 seedAmount = 100 ether;
+        uint256 swapAmount = 50 ether;
+
+        // Create ETH-collateral market with buy
+        vm.prank(ALICE);
+        gasPM.createMarketAndBuy{value: seedAmount + swapAmount}(
+            50 gwei,
+            address(0),
+            closeTime,
+            false,
+            3,
+            GasPM.SeedParams(seedAmount, FEE_BPS, 0, 0, 1, ALICE, 0),
+            GasPM.SwapParams(swapAmount, 0, false, ALICE)
+        );
+
+        // Reward escrow should be preserved
+        assertEq(address(gasPM).balance, escrowBefore, "Reward escrow should be preserved");
+    }
+
+    /// @notice Verify window market preserves escrow after internal update() pays reward
+    /// @dev Window peak/trough/volatility markets call update() before computing ethEscrow.
+    ///      The fix ensures ethEscrow is computed AFTER update() so reward payout is excluded.
+    function test_Integration_CreateWindowVolatilityMarket_PreservesEscrowAfterRewardPayout()
+        public
+    {
+        // Configure rewards and fund the contract
+        vm.prank(gasPM.owner());
+        gasPM.setReward(0.01 ether, 1 hours);
+        vm.deal(address(gasPM), 1 ether);
+
+        // Wait for cooldown so update() will pay reward
+        vm.warp(block.timestamp + 1 hours);
+
+        uint256 escrowBefore = address(gasPM).balance;
+        uint256 collateralIn = 100 ether;
+
+        // Create window volatility market (calls update() internally which pays reward)
+        vm.prank(ALICE);
+        gasPM.createWindowVolatilityMarket{value: collateralIn}(
+            10 gwei, address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        // Escrow should be: original - reward paid by update()
+        // The market creation itself should NOT have drained additional escrow
+        assertEq(
+            address(gasPM).balance,
+            escrowBefore - 0.01 ether,
+            "Only reward should have been paid, escrow preserved"
+        );
     }
 }

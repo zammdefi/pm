@@ -53,11 +53,6 @@ abstract contract ERC6909Minimal {
     }
 }
 
-/// @notice Minimal ERC20 interface.
-interface IERC20 {
-    function decimals() external view returns (uint8);
-}
-
 /// @notice ZAMM interface for LP operations.
 interface IZAMM {
     struct PoolKey {
@@ -142,23 +137,25 @@ contract PAMM is ERC6909Minimal {
 
     error AmountZero();
     error FeeOverflow();
+    error Reentrancy();
     error NotClosable();
     error InvalidClose();
     error MarketClosed();
     error MarketExists();
     error OnlyResolver();
+    error TransferFailed();
     error ExcessiveInput();
     error MarketNotFound();
     error DeadlineExpired();
     error InvalidReceiver();
     error InvalidResolver();
     error AlreadyResolved();
-    error InvalidDecimals();
     error MarketNotClosed();
     error InvalidETHAmount();
-    error InvalidCollateral();
+    error ETHTransferFailed();
     error InvalidSwapAmount();
     error InsufficientOutput();
+    error TransferFromFailed();
     error WrongCollateralType();
 
     /*//////////////////////////////////////////////////////////////
@@ -171,7 +168,6 @@ contract PAMM is ERC6909Minimal {
         string description,
         address resolver,
         address collateral,
-        uint8 decimals,
         uint64 close,
         bool canClose
     );
@@ -192,11 +188,10 @@ contract PAMM is ERC6909Minimal {
 
     struct Market {
         address resolver; // who can resolve (20 bytes)
-        uint8 decimals; // collateral decimals (1 byte)
         bool resolved; // outcome set? (1 byte)
         bool outcome; // YES wins if true (1 byte)
         bool canClose; // resolver can early-close (1 byte)
-        uint64 close; // resolve allowed after (8 bytes) -- slot 1: 32 bytes
+        uint64 close; // resolve allowed after (8 bytes) -- slot 1: 31 bytes
         address collateral; // collateral token (address(0) = ETH) -- slot 2
         uint256 collateralLocked; // collateral locked for market -- slot 3
     }
@@ -520,18 +515,6 @@ contract PAMM is ERC6909Minimal {
         if (resolver == address(0)) revert InvalidResolver();
         if (close <= block.timestamp) revert InvalidClose();
 
-        uint8 decimals;
-        if (collateral == ETH) {
-            decimals = 18;
-        } else {
-            try IERC20(collateral).decimals() returns (uint8 d) {
-                decimals = d;
-            } catch {
-                revert InvalidCollateral();
-            }
-        }
-        if (decimals > 77) revert InvalidDecimals();
-
         marketId = getMarketId(description, resolver, collateral);
         if (markets[marketId].resolver != address(0)) revert MarketExists();
 
@@ -540,7 +523,6 @@ contract PAMM is ERC6909Minimal {
         markets[marketId] = Market({
             resolver: resolver,
             collateral: collateral,
-            decimals: decimals,
             resolved: false,
             outcome: false,
             canClose: canClose,
@@ -551,7 +533,7 @@ contract PAMM is ERC6909Minimal {
         descriptions[marketId] = description;
         allMarkets.push(marketId);
 
-        emit Created(marketId, noId, description, resolver, collateral, decimals, close, canClose);
+        emit Created(marketId, noId, description, resolver, collateral, close, canClose);
     }
 
     /// @notice Early-close a market (only resolver, only if canClose).
@@ -634,7 +616,7 @@ contract PAMM is ERC6909Minimal {
     }
 
     /// @notice Burn YES+NO pair -> unlock collateral.
-    /// @dev Only while market is open. Merges min(shares, yesBalance, noBalance).
+    /// @dev Allowed until market is resolved (not just until close). Merges min(shares, yesBalance, noBalance).
     function merge(uint256 marketId, uint256 shares, address to)
         public
         nonReentrant
@@ -645,7 +627,7 @@ contract PAMM is ERC6909Minimal {
 
         Market storage m = markets[marketId];
         if (m.resolver == address(0)) revert MarketNotFound();
-        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+        if (m.resolved) revert MarketClosed();
 
         uint256 noId = getNoId(marketId);
         uint256 yesBal = balanceOf[msg.sender][marketId];
@@ -888,7 +870,7 @@ contract PAMM is ERC6909Minimal {
 
         Market storage m = markets[marketId];
         if (m.resolver == address(0)) revert MarketNotFound();
-        if (m.resolved || block.timestamp >= m.close) revert MarketClosed();
+        if (m.resolved) revert MarketClosed();
 
         uint256 noId = getNoId(marketId);
         IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
@@ -1386,7 +1368,8 @@ contract PAMM is ERC6909Minimal {
         return allMarkets.length;
     }
 
-    /// @notice Check if market is open (split/merge allowed).
+    /// @notice Check if market is open for trading (split/buy/sell allowed).
+    /// @dev Merge is allowed until resolved, not just until close.
     function tradingOpen(uint256 marketId) public view returns (bool) {
         Market storage m = markets[marketId];
         return m.resolver != address(0) && !m.resolved && block.timestamp < m.close;
@@ -1406,7 +1389,6 @@ contract PAMM is ERC6909Minimal {
         returns (
             address resolver,
             address collateral,
-            uint8 decimals,
             bool resolved,
             bool outcome,
             bool canClose,
@@ -1421,7 +1403,6 @@ contract PAMM is ERC6909Minimal {
         if (m.resolver == address(0)) revert MarketNotFound();
         resolver = m.resolver;
         collateral = m.collateral;
-        decimals = m.decimals;
         resolved = m.resolved;
         outcome = m.outcome;
         canClose = m.canClose;
@@ -1456,7 +1437,6 @@ contract PAMM is ERC6909Minimal {
             uint256[] memory marketIds,
             address[] memory resolvers,
             address[] memory collaterals,
-            uint8[] memory decimalsList,
             uint8[] memory states,
             uint64[] memory closes,
             uint256[] memory collateralAmounts,
@@ -1472,7 +1452,6 @@ contract PAMM is ERC6909Minimal {
                 new uint256[](0),
                 new address[](0),
                 new address[](0),
-                new uint8[](0),
                 new uint8[](0),
                 new uint64[](0),
                 new uint256[](0),
@@ -1490,7 +1469,6 @@ contract PAMM is ERC6909Minimal {
         marketIds = new uint256[](n);
         resolvers = new address[](n);
         collaterals = new address[](n);
-        decimalsList = new uint8[](n);
         states = new uint8[](n);
         closes = new uint64[](n);
         collateralAmounts = new uint256[](n);
@@ -1505,7 +1483,6 @@ contract PAMM is ERC6909Minimal {
             marketIds[i] = mId;
             resolvers[i] = m.resolver;
             collaterals[i] = m.collateral;
-            decimalsList[i] = m.decimals;
             states[i] = (m.resolved ? 1 : 0) | (m.outcome ? 2 : 0) | (m.canClose ? 4 : 0);
             closes[i] = m.close;
             collateralAmounts[i] = m.collateralLocked;

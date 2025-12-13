@@ -331,7 +331,6 @@ contract PAMM_Test is Test {
         (
             address resolver,
             address collateral,
-            uint8 decimals,
             bool resolved,
             bool outcome,
             bool canClose,
@@ -344,7 +343,6 @@ contract PAMM_Test is Test {
 
         assertEq(resolver, RESOLVER);
         assertEq(collateral, address(wsteth));
-        assertEq(decimals, 18);
         assertFalse(resolved);
         assertFalse(outcome);
         assertFalse(canClose);
@@ -359,7 +357,7 @@ contract PAMM_Test is Test {
         (uint256 mId,) =
             pm.createMarket("Closable market", RESOLVER, address(wsteth), closeTime, true);
 
-        (,,,,, bool canClose,,,,,) = pm.getMarket(mId);
+        (,,,, bool canClose,,,,,) = pm.getMarket(mId);
         assertTrue(canClose);
     }
 
@@ -370,7 +368,7 @@ contract PAMM_Test is Test {
 
         vm.expectEmit(true, true, false, true);
         emit PAMM.Created(
-            expectedId, expectedNoId, desc2, RESOLVER, address(wsteth), 18, closeTime + 1, true
+            expectedId, expectedNoId, desc2, RESOLVER, address(wsteth), closeTime + 1, true
         );
 
         pm.createMarket(desc2, RESOLVER, address(wsteth), closeTime + 1, true);
@@ -559,7 +557,7 @@ contract PAMM_Test is Test {
         vm.prank(RESOLVER);
         pm.resolve(marketId, true);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -570,7 +568,7 @@ contract PAMM_Test is Test {
         vm.prank(RESOLVER);
         pm.resolve(marketId, false);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome);
     }
@@ -987,7 +985,7 @@ contract PAMM_Test is Test {
         vm.prank(RESOLVER);
         pm.closeMarket(mId);
 
-        (,,,,,, uint64 close,,,,) = pm.getMarket(mId);
+        (,,,,, uint64 close,,,,) = pm.getMarket(mId);
         assertEq(close, block.timestamp);
     }
 
@@ -1053,7 +1051,6 @@ contract PAMM_Test is Test {
             uint256[] memory marketIds,
             address[] memory resolvers,
             address[] memory collaterals,
-            uint8[] memory decimalsList,
             uint8[] memory states,
             uint64[] memory closes,
             uint256[] memory collateralAmounts,
@@ -1067,7 +1064,6 @@ contract PAMM_Test is Test {
         assertEq(marketIds[0], marketId);
         assertEq(resolvers[0], RESOLVER);
         assertEq(collaterals[0], address(wsteth));
-        assertEq(decimalsList[0], 18);
         assertEq(states[0], 0); // not resolved, not outcome, not canClose
         assertEq(closes[0], closeTime);
         assertEq(collateralAmounts[0], 0);
@@ -1081,17 +1077,17 @@ contract PAMM_Test is Test {
         pm.createMarket("market2", RESOLVER, address(wsteth), closeTime, false);
         pm.createMarket("market3", RESOLVER, address(wsteth), closeTime, false);
 
-        (uint256[] memory ids1,,,,,,,,,, uint256 next1) = pm.getMarkets(0, 2);
+        (uint256[] memory ids1,,,,,,,,, uint256 next1) = pm.getMarkets(0, 2);
         assertEq(ids1.length, 2);
         assertEq(next1, 2);
 
-        (uint256[] memory ids2,,,,,,,,,, uint256 next2) = pm.getMarkets(2, 2);
+        (uint256[] memory ids2,,,,,,,,, uint256 next2) = pm.getMarkets(2, 2);
         assertEq(ids2.length, 1);
         assertEq(next2, 0);
     }
 
     function test_GetMarkets_EmptyStart() public view {
-        (uint256[] memory ids,,,,,,,,,,) = pm.getMarkets(100, 10);
+        (uint256[] memory ids,,,,,,,,,) = pm.getMarkets(100, 10);
         assertEq(ids.length, 0);
     }
 
@@ -1210,7 +1206,6 @@ contract PAMM_Test is Test {
         (
             address resolver,
             address collateral,
-            uint8 decimals,
             bool resolved,
             bool outcome,
             bool canClose,
@@ -1223,7 +1218,6 @@ contract PAMM_Test is Test {
 
         assertEq(resolver, RESOLVER);
         assertEq(collateral, address(0));
-        assertEq(decimals, 18);
         assertFalse(resolved);
         assertFalse(outcome);
         assertFalse(canClose);
@@ -1384,11 +1378,10 @@ contract PAMM_Test is Test {
         (uint256 usdcMarketId,) =
             pm.createMarket("USDC market", RESOLVER, address(usdc), closeTime, false);
 
-        (address resolver, address collateral, uint8 decimals,,,,,,,,) = pm.getMarket(usdcMarketId);
+        (address resolver, address collateral,,,,,,,,) = pm.getMarket(usdcMarketId);
 
         assertEq(resolver, RESOLVER);
         assertEq(collateral, address(usdc));
-        assertEq(decimals, 6);
     }
 
     function test_Split_USDC_6Decimals() public {
@@ -1466,8 +1459,9 @@ contract PAMM_Test is Test {
         (uint256 usdcMarketId,) =
             pm.createMarket("USDC market", RESOLVER, address(usdc), closeTime, false);
 
-        (,, uint8 decimals,,,,,,,,) = pm.getMarket(usdcMarketId);
-        assertEq(decimals, 6);
+        // Verify market was created successfully
+        (,, bool resolved,,,,,,,) = pm.getMarket(usdcMarketId);
+        assertFalse(resolved);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1480,8 +1474,9 @@ contract PAMM_Test is Test {
         (uint256 wbtcMarketId,) =
             pm.createMarket("WBTC market", RESOLVER, address(wbtc), closeTime, false);
 
-        (,, uint8 decimals,,,,,,,,) = pm.getMarket(wbtcMarketId);
-        assertEq(decimals, 8);
+        // Verify market was created successfully
+        (,, bool resolved,,,,,,,) = pm.getMarket(wbtcMarketId);
+        assertFalse(resolved);
     }
 
     function test_Split_WBTC_8Decimals() public {
@@ -1504,14 +1499,15 @@ contract PAMM_Test is Test {
         assertEq(pm.balanceOf(ALICE, wbtcNoId), 10e8);
     }
 
-    function test_Decimals_WBTC() public {
+    function test_CreateMarket_WBTC_Success() public {
         MockWBTC wbtc = new MockWBTC();
 
         (uint256 wbtcMarketId,) =
             pm.createMarket("WBTC market", RESOLVER, address(wbtc), closeTime, false);
 
-        (,, uint8 decimals,,,,,,,,) = pm.getMarket(wbtcMarketId);
-        assertEq(decimals, 8);
+        // Verify market was created successfully (1:1 shares work regardless of token decimals)
+        (,, bool resolved,,,,,,,) = pm.getMarket(wbtcMarketId);
+        assertFalse(resolved);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1541,25 +1537,13 @@ contract PAMM_Test is Test {
         assertTrue(usdcMarketId != nativeMarketId);
 
         // Verify collaterals
-        (, address c1,,,,,,,,,) = pm.getMarket(ethMarketId);
-        (, address c2,,,,,,,,,) = pm.getMarket(usdcMarketId);
-        (, address c3,,,,,,,,,) = pm.getMarket(nativeMarketId);
+        (, address c1,,,,,,,,) = pm.getMarket(ethMarketId);
+        (, address c2,,,,,,,,) = pm.getMarket(usdcMarketId);
+        (, address c3,,,,,,,,) = pm.getMarket(nativeMarketId);
 
         assertEq(c1, address(wsteth));
         assertEq(c2, address(usdc));
         assertEq(c3, address(0));
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        INVALID COLLATERAL TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_CreateMarket_RevertInvalidCollateral() public {
-        // Deploy a contract without decimals() function
-        address noDecimals = address(new NoDecimalsContract());
-
-        vm.expectRevert(PAMM.InvalidCollateral.selector);
-        pm.createMarket("test", RESOLVER, noDecimals, closeTime, false);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1737,15 +1721,17 @@ contract PAMM_Test is Test {
         assertEq(payout, 10 ether);
     }
 
-    function test_Merge_AfterCloseReverts() public {
+    function test_Merge_AfterCloseSucceeds() public {
         vm.prank(ALICE);
         pm.split(marketId, 10 ether, ALICE);
 
         vm.warp(closeTime);
 
-        vm.expectRevert(PAMM.MarketClosed.selector);
+        // Merge should succeed after close but before resolution
         vm.prank(ALICE);
-        pm.merge(marketId, 5 ether, ALICE);
+        (uint256 merged, uint256 collateralOut) = pm.merge(marketId, 5 ether, ALICE);
+        assertEq(merged, 5 ether);
+        assertEq(collateralOut, 5 ether);
     }
 
     function test_Merge_AfterResolveReverts() public {
@@ -1798,14 +1784,14 @@ contract PAMM_Test is Test {
         vm.prank(ALICE);
         pm.split(marketId, 10 ether, ALICE);
 
-        (,,,,,,, uint256 locked,,,) = pm.getMarket(marketId);
+        (,,,,,, uint256 locked,,,) = pm.getMarket(marketId);
         assertEq(locked, 10 ether);
 
         // Merge subtracts from collateralLocked
         vm.prank(ALICE);
         pm.merge(marketId, 3 ether, ALICE);
 
-        (,,,,,,, locked,,,) = pm.getMarket(marketId);
+        (,,,,,, locked,,,) = pm.getMarket(marketId);
         assertEq(locked, 7 ether);
 
         // Claim subtracts from collateralLocked
@@ -1816,7 +1802,7 @@ contract PAMM_Test is Test {
         vm.prank(ALICE);
         pm.claim(marketId, ALICE);
 
-        (,,,,,,, locked,,,) = pm.getMarket(marketId);
+        (,,,,,, locked,,,) = pm.getMarket(marketId);
         assertEq(locked, 0);
     }
 
@@ -1923,7 +1909,7 @@ contract PAMM_Test is Test {
         vm.prank(RESOLVER);
         pm.resolve(mId, true);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(mId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(mId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -1934,7 +1920,7 @@ contract PAMM_Test is Test {
             pm.createMarket("Closable market", RESOLVER, address(wsteth), closeTime, true);
 
         // Get markets - check state encoding
-        (,,,, uint8[] memory states,,,,,,) = pm.getMarkets(0, 10);
+        (,,, uint8[] memory states,,,,,,) = pm.getMarkets(0, 10);
 
         // Find the new market (last one)
         uint8 state = states[states.length - 1];
@@ -1947,7 +1933,7 @@ contract PAMM_Test is Test {
         vm.prank(RESOLVER);
         pm.resolve(mId, true);
 
-        (,,,, states,,,,,,) = pm.getMarkets(0, 10);
+        (,,, states,,,,,,) = pm.getMarkets(0, 10);
         state = states[states.length - 1];
 
         // resolved=true (bit 0), outcome=true (bit 1), canClose=true (bit 2)
@@ -2037,7 +2023,7 @@ contract PAMM_Test is Test {
         }
 
         // Invariant: collateralLocked == totalSupply (with 1:1 shares)
-        (,,,,,,, uint256 locked,,,) = pm.getMarket(marketId);
+        (,,,,,, uint256 locked,,,) = pm.getMarket(marketId);
         uint256 totalYes = pm.totalSupplyId(marketId);
 
         assertEq(locked, totalYes, "collateralLocked should equal totalSupply with 1:1 shares");
@@ -2136,7 +2122,7 @@ contract PAMM_Test is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_GetMarkets_StartBeyondLength() public view {
-        (uint256[] memory marketIds,,,,,,,,,, uint256 next) = pm.getMarkets(1000, 10);
+        (uint256[] memory marketIds,,,,,,,,, uint256 next) = pm.getMarkets(1000, 10);
 
         assertEq(marketIds.length, 0);
         assertEq(next, 0);
@@ -2144,7 +2130,7 @@ contract PAMM_Test is Test {
 
     function test_GetMarkets_CountExceedsRemaining() public view {
         // Only 1 market exists
-        (uint256[] memory marketIds,,,,,,,,,, uint256 next) = pm.getMarkets(0, 1000);
+        (uint256[] memory marketIds,,,,,,,,, uint256 next) = pm.getMarkets(0, 1000);
 
         assertEq(marketIds.length, 1);
         assertEq(next, 0); // No more pages
@@ -2187,8 +2173,8 @@ contract PAMM_Test is Test {
         assertTrue(mId1 != mId2);
 
         // Both markets exist
-        (address r1,,,,,,,,,,) = pm.getMarket(mId1);
-        (address r2,,,,,,,,,,) = pm.getMarket(mId2);
+        (address r1,,,,,,,,,) = pm.getMarket(mId1);
+        (address r2,,,,,,,,,) = pm.getMarket(mId2);
 
         assertEq(r1, RESOLVER);
         assertEq(r2, RESOLVER2);
@@ -2257,7 +2243,7 @@ contract PAMM_Test is Test {
         vm.prank(RESOLVER);
         pm.resolve(marketId, true);
 
-        (,,, bool resolved, bool outcome,,, uint256 locked,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,, uint256 locked,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
         assertEq(locked, 0);
@@ -2273,7 +2259,7 @@ contract PAMM_Test is Test {
 
         assertEq(pm.descriptions(mId), desc);
 
-        (,,,,,,,,,, string memory storedDesc) = pm.getMarket(mId);
+        (,,,,,,,,, string memory storedDesc) = pm.getMarket(mId);
         assertEq(storedDesc, desc);
     }
 
@@ -2806,26 +2792,7 @@ contract PAMM_Test is Test {
         vm.expectRevert(PAMM.MarketNotFound.selector);
         pm.closeMarket(999999);
     }
-
-    function test_CreateMarket_InvalidDecimals() public {
-        // Deploy a mock token that returns decimals > 77
-        MockHighDecimals highDec = new MockHighDecimals();
-
-        vm.expectRevert(PAMM.InvalidDecimals.selector);
-        pm.createMarket("High decimals", RESOLVER, address(highDec), closeTime, false);
-    }
 }
-
-/// @notice Mock ERC20 with decimals > 77 for testing InvalidDecimals
-contract MockHighDecimals {
-    uint8 public decimals = 78;
-}
-
-/// @notice Contract without decimals() function for testing
-contract NoDecimalsContract {
-    // Intentionally no decimals() function
-
-    }
 
 /// @notice Contract that attempts reentrancy on claim
 contract ReentrantClaimAttacker {
@@ -2983,7 +2950,7 @@ contract PAMM_ZAMM_Test is Test {
         assertEq(zamm.balanceOf(ALICE, poolId), liquidity, "ALICE should have LP tokens");
 
         // PAMM should have the collateral locked
-        (,,,,,,, uint256 collateralLocked,,,) = pm.getMarket(marketId);
+        (,,,,,, uint256 collateralLocked,,,) = pm.getMarket(marketId);
         assertEq(collateralLocked, 10000 ether, "collateral should be locked");
 
         // Total supply should be updated
@@ -3135,7 +3102,7 @@ contract PAMM_ZAMM_Test is Test {
         );
 
         // Market should exist
-        (address resolver, address collateral,,,,,,,,,) = pm.getMarket(mId);
+        (address resolver, address collateral,,,,,,,,) = pm.getMarket(mId);
         assertEq(resolver, RESOLVER, "resolver set");
         assertEq(collateral, address(wsteth), "collateral set");
 
@@ -3161,7 +3128,7 @@ contract PAMM_ZAMM_Test is Test {
         );
 
         // Market should exist with ETH collateral
-        (address resolver, address collateral,,,,,,,,,) = pm.getMarket(mId);
+        (address resolver, address collateral,,,,,,,,) = pm.getMarket(mId);
         assertEq(resolver, RESOLVER, "resolver set");
         assertEq(collateral, address(0), "ETH collateral");
 
@@ -3306,7 +3273,7 @@ contract PAMM_ZAMM_Test is Test {
             0
         );
 
-        (,,,,, bool canClose,,,,,) = pm.getMarket(mId);
+        (,,,, bool canClose,,,,,) = pm.getMarket(mId);
         assertTrue(canClose, "canClose flag set");
     }
 
@@ -3340,7 +3307,7 @@ contract PAMM_ZAMM_Test is Test {
         // Expect Created event
         vm.expectEmit(true, true, false, true);
         emit PAMM.Created(
-            expectedMarketId, expectedNoId, desc, RESOLVER, address(wsteth), 18, closeTime, false
+            expectedMarketId, expectedNoId, desc, RESOLVER, address(wsteth), closeTime, false
         );
 
         // Expect Split event (1:1 shares)
@@ -4859,7 +4826,7 @@ contract PAMM_ZAMM_Test is Test {
         pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, address(0), 0);
     }
 
-    function test_RemoveLiquidityToCollateral_RevertsMarketClosed() public {
+    function test_RemoveLiquidityToCollateral_SucceedsAfterClose() public {
         vm.prank(ALICE);
         (, uint256 liquidity) =
             pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
@@ -4870,9 +4837,11 @@ contract PAMM_ZAMM_Test is Test {
         // Warp past close time
         vm.warp(closeTime + 1);
 
+        // Should succeed after close but before resolution
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSignature("MarketClosed()"));
-        pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+        (uint256 collateralOut,,) =
+            pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+        assertTrue(collateralOut > 0, "should have received collateral");
     }
 
     function test_RemoveLiquidityToCollateral_RevertsMarketNotFound() public {
@@ -4999,10 +4968,9 @@ contract PAMM_ZAMM_Test is Test {
         vm.stopPrank();
 
         // Verify market state is consistent
-        (,, uint8 decimals,,,,, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply,) =
+        (,,,,,, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply,) =
             pm.getMarket(marketId);
 
-        assertEq(decimals, 18);
         assertTrue(collateralLocked > 0);
         // YES and NO supply may differ due to trading, but total should reflect splits
         assertTrue(yesSupply > 0);
@@ -5028,6 +4996,193 @@ contract PAMM_ZAMM_Test is Test {
             token1: key.token1,
             feeOrHook: key.feeOrHook
         });
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      ADDITIONAL INVARIANT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice YES and NO supply must always be equal for unresolved markets
+    function testFuzz_YesNoSupplyEqual(uint256 aliceAmt, uint256 bobAmt, uint256 mergeAmt) public {
+        aliceAmt = bound(aliceAmt, 1 ether, 50 ether);
+        bobAmt = bound(bobAmt, 1 ether, 50 ether);
+
+        wsteth.mint(ALICE, aliceAmt);
+        wsteth.mint(BOB, bobAmt);
+
+        vm.prank(ALICE);
+        pm.split(marketId, aliceAmt, ALICE);
+
+        vm.prank(BOB);
+        pm.split(marketId, bobAmt, BOB);
+
+        mergeAmt = bound(mergeAmt, 0, pm.balanceOf(ALICE, marketId));
+
+        if (mergeAmt > 0) {
+            vm.prank(ALICE);
+            pm.merge(marketId, mergeAmt, ALICE);
+        }
+
+        // Invariant: YES supply == NO supply (always, for unresolved)
+        uint256 yesSupply = pm.totalSupplyId(marketId);
+        uint256 noSupply = pm.totalSupplyId(noId);
+        assertEq(yesSupply, noSupply, "YES and NO supply must be equal");
+    }
+
+    /// @notice Aggregate solvency: token balance >= collateralLocked
+    function testFuzz_AggregateSolvency(uint256 amt1, uint256 amt2) public {
+        amt1 = bound(amt1, 1 ether, 50 ether);
+        amt2 = bound(amt2, 1 ether, 50 ether);
+
+        // Create second market with same collateral
+        vm.prank(RESOLVER);
+        (uint256 market2,) =
+            pm.createMarket("Second market", RESOLVER, address(wsteth), closeTime, false);
+
+        wsteth.mint(ALICE, amt1 + amt2);
+
+        vm.startPrank(ALICE);
+        pm.split(marketId, amt1, ALICE);
+        pm.split(market2, amt2, ALICE);
+        vm.stopPrank();
+
+        // Get locked amounts
+        (,,,,,, uint256 locked1,,,) = pm.getMarket(marketId);
+        (,,,,,, uint256 locked2,,,) = pm.getMarket(market2);
+
+        // Invariant: actual balance >= sum of all locked
+        uint256 actualBalance = wsteth.balanceOf(address(pm));
+        assertGe(actualBalance, locked1 + locked2, "Solvency: balance >= locked");
+    }
+
+    /// @notice Buy/sell round-trip maintains solvency
+    function testFuzz_BuySellSolvency(uint256 buyAmt, bool buyYesNotNo) public {
+        buyAmt = bound(buyAmt, 1 ether, 100 ether);
+
+        // Seed pool
+        vm.prank(ALICE);
+        pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        wsteth.mint(BOB, buyAmt);
+
+        vm.startPrank(BOB);
+        if (buyYesNotNo) {
+            uint256 yesOut = pm.buyYes(marketId, buyAmt, 0, 0, FEE_BPS, BOB, 0);
+            pm.sellYes(marketId, yesOut, 0, 0, 0, FEE_BPS, BOB, 0);
+        } else {
+            uint256 noOut = pm.buyNo(marketId, buyAmt, 0, 0, FEE_BPS, BOB, 0);
+            pm.sellNo(marketId, noOut, 0, 0, 0, FEE_BPS, BOB, 0);
+        }
+        vm.stopPrank();
+
+        // After round-trip: collateralLocked unchanged (buy adds, sell removes same)
+        uint256 lockedAfter;
+        (,,,,,, lockedAfter,,,) = pm.getMarket(marketId);
+
+        // Solvency invariant still holds
+        uint256 balanceAfter = wsteth.balanceOf(address(pm));
+        assertGe(balanceAfter, lockedAfter, "Solvency maintained after buy/sell");
+
+        // YES == NO supply still
+        assertEq(pm.totalSupplyId(marketId), pm.totalSupplyId(noId), "YES == NO after buy/sell");
+    }
+
+    /// @notice Sell leftover handling - no tokens stuck in contract
+    function testFuzz_SellLeftoversReturned(uint256 buyAmt, uint256 swapPct) public {
+        buyAmt = bound(buyAmt, 10 ether, 100 ether);
+        swapPct = bound(swapPct, 10, 90); // 10-90% swap
+
+        // Seed pool
+        vm.prank(ALICE);
+        pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        wsteth.mint(BOB, buyAmt);
+
+        vm.startPrank(BOB);
+        uint256 yesOut = pm.buyYes(marketId, buyAmt, 0, 0, FEE_BPS, BOB, 0);
+
+        // Sell with specific swap amount (not 50%)
+        uint256 swapAmount = (yesOut * swapPct) / 100;
+        pm.sellYes(marketId, yesOut, swapAmount, 0, 0, FEE_BPS, BOB, 0);
+        vm.stopPrank();
+
+        // Any leftovers should be in BOB's balance, not stuck in contract
+        // Check solvency holds
+        uint256 locked;
+        (,,,,,, locked,,,) = pm.getMarket(marketId);
+        assertGe(wsteth.balanceOf(address(pm)), locked, "Solvency after sell with leftovers");
+    }
+
+    /// @notice RemoveLiquidityToCollateral returns correct leftovers
+    function testFuzz_RemoveLiquidityLeftovers(uint256 seedAmt, uint256 buyAmt) public {
+        seedAmt = bound(seedAmt, 1000 ether, 5000 ether);
+        buyAmt = bound(buyAmt, 10 ether, 200 ether);
+
+        // ALICE seeds pool
+        vm.prank(ALICE);
+        (, uint256 liquidity) =
+            pm.splitAndAddLiquidity(marketId, seedAmt, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        // BOB buys YES to imbalance pool
+        wsteth.mint(BOB, buyAmt);
+        vm.prank(BOB);
+        pm.buyYes(marketId, buyAmt, 0, 0, FEE_BPS, BOB, 0);
+
+        // ALICE approves PAMM to pull LP tokens and removes liquidity
+        vm.startPrank(ALICE);
+        zamm.setOperator(address(pm), true);
+        (uint256 collOut, uint256 leftoverYes, uint256 leftoverNo) =
+            pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+        vm.stopPrank();
+
+        // Should have gotten some collateral
+        assertTrue(collOut > 0, "Got collateral");
+
+        // Leftover YES or NO should be in ALICE's balance (imbalanced pool)
+        assertTrue(leftoverYes > 0 || leftoverNo > 0, "Pool was imbalanced, should have leftovers");
+
+        // Verify leftovers are actually in ALICE's balance
+        if (leftoverYes > 0) {
+            assertGe(pm.balanceOf(ALICE, marketId), leftoverYes, "Leftover YES returned");
+        }
+        if (leftoverNo > 0) {
+            assertGe(pm.balanceOf(ALICE, noId), leftoverNo, "Leftover NO returned");
+        }
+    }
+
+    /// @notice Claim with fee maintains solvency
+    function testFuzz_ClaimWithFeeSolvency(uint16 feeBps, uint256 splitAmt, bool yesWins) public {
+        feeBps = uint16(bound(feeBps, 1, 1000)); // 0.01% to 10%
+        splitAmt = bound(splitAmt, 1 ether, 50 ether);
+
+        vm.prank(RESOLVER);
+        pm.setResolverFeeBps(feeBps);
+
+        wsteth.mint(ALICE, splitAmt);
+        vm.prank(ALICE);
+        pm.split(marketId, splitAmt, ALICE);
+
+        vm.warp(closeTime);
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, yesWins);
+
+        uint256 pmBalanceBefore = wsteth.balanceOf(address(pm));
+        uint256 resolverBalanceBefore = wsteth.balanceOf(RESOLVER);
+
+        vm.prank(ALICE);
+        (uint256 shares, uint256 payout) = pm.claim(marketId, ALICE);
+
+        // Fee calculation
+        uint256 expectedFee = (shares * feeBps) / 10000;
+        uint256 expectedPayout = shares - expectedFee;
+
+        assertEq(payout, expectedPayout, "Payout = gross - fee");
+        assertEq(
+            wsteth.balanceOf(RESOLVER), resolverBalanceBefore + expectedFee, "Resolver got fee"
+        );
+        assertEq(
+            wsteth.balanceOf(address(pm)), pmBalanceBefore - shares, "PM balance decreased by gross"
+        );
     }
 
     receive() external payable {}
