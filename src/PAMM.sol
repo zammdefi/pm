@@ -135,9 +135,9 @@ contract PAMM is ERC6909Minimal {
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
 
+    error Reentrancy();
     error AmountZero();
     error FeeOverflow();
-    error Reentrancy();
     error NotClosable();
     error InvalidClose();
     error MarketClosed();
@@ -846,13 +846,14 @@ contract PAMM is ERC6909Minimal {
 
     /// @notice Remove LP position and convert to collateral in one tx.
     /// @dev User must approve PAMM on ZAMM to pull LP tokens (via ZAMM.setOperator or approve).
-    ///      Burns balanced YES/NO pairs, refunds any leftover shares to msg.sender.
+    ///      - Unresolved markets: Burns balanced YES/NO pairs, refunds leftover shares.
+    ///      - Resolved markets: Claims winning shares, refunds losing shares as dust.
     /// @param marketId The market to remove liquidity from
     /// @param feeOrHook Pool fee tier (bps) or hook address
     /// @param liquidity Amount of LP tokens to burn
     /// @param amount0Min Minimum amount of token0 from LP removal (slippage protection)
     /// @param amount1Min Minimum amount of token1 from LP removal (slippage protection)
-    /// @param minCollateralOut Minimum collateral to receive after merging
+    /// @param minCollateralOut Minimum collateral to receive (merged amount or claim payout)
     /// @param to Recipient of collateral
     /// @param deadline Timestamp after which the tx reverts (0 = current block)
     function removeLiquidityToCollateral(
@@ -870,7 +871,6 @@ contract PAMM is ERC6909Minimal {
 
         Market storage m = markets[marketId];
         if (m.resolver == address(0)) revert MarketNotFound();
-        if (m.resolved) revert MarketClosed();
 
         uint256 noId = getNoId(marketId);
         IZAMM.PoolKey memory key = _poolKey(marketId, noId, feeOrHook);
@@ -886,46 +886,88 @@ contract PAMM is ERC6909Minimal {
 
         // Map to YES/NO amounts based on pool ordering
         (uint256 yesAmt, uint256 noAmt) = key.id0 == marketId ? (a0, a1) : (a1, a0);
-        uint256 merged = yesAmt < noAmt ? yesAmt : noAmt;
 
-        // Burn merged pairs
-        _burn(address(this), marketId, merged);
-        _burn(address(this), noId, merged);
-        unchecked {
-            totalSupplyId[marketId] -= merged;
-            totalSupplyId[noId] -= merged;
-        }
+        if (m.resolved) {
+            // Resolved: claim winning side, losing side is dust
+            (uint256 winAmt, uint256 winId, uint256 loseAmt, uint256 loseId) =
+                m.outcome ? (yesAmt, marketId, noAmt, noId) : (noAmt, noId, yesAmt, marketId);
 
-        collateralOut = merged;
-        if (collateralOut < minCollateralOut) revert InsufficientOutput();
-        m.collateralLocked -= collateralOut;
+            if (winAmt != 0) {
+                uint16 feeBps = resolverFeeBps[m.resolver];
+                uint256 fee = (feeBps != 0) ? (winAmt * feeBps) / 10_000 : 0;
+                collateralOut = winAmt - fee;
 
-        // Transfer collateral
-        if (m.collateral == ETH) {
-            safeTransferETH(to, collateralOut);
+                _burn(address(this), winId, winAmt);
+                unchecked {
+                    totalSupplyId[winId] -= winAmt;
+                }
+                m.collateralLocked -= winAmt;
+
+                if (m.collateral == ETH) {
+                    if (fee != 0) safeTransferETH(m.resolver, fee);
+                    safeTransferETH(to, collateralOut);
+                } else {
+                    if (fee != 0) safeTransfer(m.collateral, m.resolver, fee);
+                    safeTransfer(m.collateral, to, collateralOut);
+                }
+
+                emit Claimed(to, marketId, winAmt, collateralOut);
+            }
+
+            if (collateralOut < minCollateralOut) revert InsufficientOutput();
+
+            // Refund losing shares as dust (worthless)
+            if (loseAmt != 0) {
+                balanceOf[address(this)][loseId] -= loseAmt;
+                unchecked {
+                    balanceOf[msg.sender][loseId] += loseAmt;
+                }
+                emit Transfer(msg.sender, address(this), msg.sender, loseId, loseAmt);
+            }
+
+            // Return values: leftoverYes/No indicate dust
+            (leftoverYes, leftoverNo) = m.outcome ? (uint256(0), loseAmt) : (loseAmt, uint256(0));
         } else {
-            safeTransfer(m.collateral, to, collateralOut);
-        }
+            // Unresolved: merge balanced pairs
+            uint256 merged = yesAmt < noAmt ? yesAmt : noAmt;
 
-        // Refund leftover shares to msg.sender
-        leftoverYes = yesAmt - merged;
-        leftoverNo = noAmt - merged;
-        if (leftoverYes != 0) {
-            balanceOf[address(this)][marketId] -= leftoverYes;
+            _burn(address(this), marketId, merged);
+            _burn(address(this), noId, merged);
             unchecked {
-                balanceOf[msg.sender][marketId] += leftoverYes;
+                totalSupplyId[marketId] -= merged;
+                totalSupplyId[noId] -= merged;
             }
-            emit Transfer(msg.sender, address(this), msg.sender, marketId, leftoverYes);
-        }
-        if (leftoverNo != 0) {
-            balanceOf[address(this)][noId] -= leftoverNo;
-            unchecked {
-                balanceOf[msg.sender][noId] += leftoverNo;
-            }
-            emit Transfer(msg.sender, address(this), msg.sender, noId, leftoverNo);
-        }
 
-        emit Merged(to, marketId, merged, collateralOut);
+            collateralOut = merged;
+            if (collateralOut < minCollateralOut) revert InsufficientOutput();
+            m.collateralLocked -= collateralOut;
+
+            if (m.collateral == ETH) {
+                safeTransferETH(to, collateralOut);
+            } else {
+                safeTransfer(m.collateral, to, collateralOut);
+            }
+
+            // Refund leftover shares to msg.sender
+            leftoverYes = yesAmt - merged;
+            leftoverNo = noAmt - merged;
+            if (leftoverYes != 0) {
+                balanceOf[address(this)][marketId] -= leftoverYes;
+                unchecked {
+                    balanceOf[msg.sender][marketId] += leftoverYes;
+                }
+                emit Transfer(msg.sender, address(this), msg.sender, marketId, leftoverYes);
+            }
+            if (leftoverNo != 0) {
+                balanceOf[address(this)][noId] -= leftoverNo;
+                unchecked {
+                    balanceOf[msg.sender][noId] += leftoverNo;
+                }
+                emit Transfer(msg.sender, address(this), msg.sender, noId, leftoverNo);
+            }
+
+            emit Merged(to, marketId, merged, collateralOut);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1492,6 +1534,48 @@ contract PAMM is ERC6909Minimal {
         }
 
         next = (end < len) ? end : 0;
+    }
+
+    /// @notice Batch read specific markets by ID.
+    /// @dev Skips invalid market IDs (resolver == address(0)).
+    function getMarketsByIds(uint256[] calldata ids)
+        public
+        view
+        returns (
+            address[] memory resolvers,
+            address[] memory collaterals,
+            uint8[] memory states,
+            uint64[] memory closes,
+            uint256[] memory collateralAmounts,
+            uint256[] memory yesSupplies,
+            uint256[] memory noSupplies,
+            string[] memory descs
+        )
+    {
+        uint256 n = ids.length;
+        resolvers = new address[](n);
+        collaterals = new address[](n);
+        states = new uint8[](n);
+        closes = new uint64[](n);
+        collateralAmounts = new uint256[](n);
+        yesSupplies = new uint256[](n);
+        noSupplies = new uint256[](n);
+        descs = new string[](n);
+
+        for (uint256 i; i != n; ++i) {
+            uint256 mId = ids[i];
+            Market storage m = markets[mId];
+            if (m.resolver == address(0)) continue;
+
+            resolvers[i] = m.resolver;
+            collaterals[i] = m.collateral;
+            states[i] = (m.resolved ? 1 : 0) | (m.outcome ? 2 : 0) | (m.canClose ? 4 : 0);
+            closes[i] = m.close;
+            collateralAmounts[i] = m.collateralLocked;
+            yesSupplies[i] = totalSupplyId[mId];
+            noSupplies[i] = totalSupplyId[getNoId(mId)];
+            descs[i] = descriptions[mId];
+        }
     }
 
     /// @notice Paginated batch read of user positions.

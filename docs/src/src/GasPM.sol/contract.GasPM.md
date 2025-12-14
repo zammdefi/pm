@@ -1,5 +1,5 @@
 # GasPM
-[Git Source](https://github.com/zammdefi/pm/blob/006ba95d7cfd5dfbd631c3f6ce5b2bedefc25ed2/src/GasPM.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/6409aa225054aeb8e5eb04dafccaae59a1d0f4cc/src/GasPM.sol)
 
 **Title:**
 GasPM
@@ -15,14 +15,14 @@ volatility, stability, spot, comparison. Window variants track metrics since mar
 ### PAMM
 
 ```solidity
-address public constant PAMM = 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d
+address public constant PAMM = 0x000000000044bfe6c2BBFeD8862973E0612f07C0
 ```
 
 
 ### RESOLVER
 
 ```solidity
-address payable public constant RESOLVER = payable(0x0000000000b0ba1b2bb3AF96FbB893d835970ec4)
+address payable public constant RESOLVER = payable(0x00000000002205020E387b6a378c05639047BcFB)
 ```
 
 
@@ -103,6 +103,13 @@ uint8 internal constant MARKET_TYPE_COMPARISON = 11
 ```
 
 
+### REENTRANCY_SLOT
+
+```solidity
+uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd2126a
+```
+
+
 ### cumulativeBaseFee
 
 ```solidity
@@ -142,6 +149,13 @@ uint128 public maxBaseFee
 
 ```solidity
 uint128 public minBaseFee
+```
+
+
+### observations
+
+```solidity
+Observation[] public observations
 ```
 
 
@@ -211,6 +225,13 @@ mapping(uint256 => uint256) public comparisonStartValue
 
 
 ## Functions
+### nonReentrant
+
+
+```solidity
+modifier nonReentrant() ;
+```
+
 ### onlyOwner
 
 
@@ -262,15 +283,6 @@ TWAP since deployment in wei.
 function baseFeeAverage() public view returns (uint256);
 ```
 
-### baseFeeAverageGwei
-
-TWAP since deployment in gwei.
-
-
-```solidity
-function baseFeeAverageGwei() public view returns (uint256);
-```
-
 ### baseFeeCurrent
 
 Current spot base fee in wei.
@@ -280,31 +292,13 @@ Current spot base fee in wei.
 function baseFeeCurrent() public view returns (uint256);
 ```
 
-### baseFeeCurrentGwei
-
-Current spot base fee in gwei.
-
-
-```solidity
-function baseFeeCurrentGwei() public view returns (uint256);
-```
-
-### trackingDuration
-
-Seconds since oracle started.
-
-
-```solidity
-function trackingDuration() public view returns (uint256);
-```
-
 ### baseFeeInRange
 
 Returns 1 if TWAP is within [lower, upper], 0 otherwise.
 
 
 ```solidity
-function baseFeeInRange(uint256 lower, uint256 upper) public view returns (uint256);
+function baseFeeInRange(uint256 lower, uint256 upper) public view returns (uint256 r);
 ```
 **Parameters**
 
@@ -320,7 +314,7 @@ Returns 1 if TWAP is outside (lower, upper), 0 otherwise.
 
 
 ```solidity
-function baseFeeOutOfRange(uint256 lower, uint256 upper) public view returns (uint256);
+function baseFeeOutOfRange(uint256 lower, uint256 upper) public view returns (uint256 r);
 ```
 **Parameters**
 
@@ -381,7 +375,7 @@ Returns 1 if window TWAP is within [lower, upper], 0 otherwise.
 function baseFeeInRangeSince(uint256 marketId, uint256 lower, uint256 upper)
     public
     view
-    returns (uint256);
+    returns (uint256 r);
 ```
 **Parameters**
 
@@ -401,7 +395,7 @@ Returns 1 if window TWAP is outside (lower, upper), 0 otherwise.
 function baseFeeOutOfRangeSince(uint256 marketId, uint256 lower, uint256 upper)
     public
     view
-    returns (uint256);
+    returns (uint256 r);
 ```
 **Parameters**
 
@@ -427,6 +421,40 @@ function baseFeeSpreadSince(uint256 marketId) public view returns (uint256);
 |Name|Type|Description|
 |----|----|-----------|
 |`marketId`|`uint256`|The market ID to get the window spread for|
+
+
+### baseFeeMaxSince
+
+Maximum base fee during the market window.
+
+Includes current basefee for real-time accuracy without requiring poke.
+
+
+```solidity
+function baseFeeMaxSince(uint256 marketId) public view returns (uint256 m);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`marketId`|`uint256`|The window market ID|
+
+
+### baseFeeMinSince
+
+Minimum base fee during the market window.
+
+Includes current basefee for real-time accuracy without requiring poke.
+
+
+```solidity
+function baseFeeMinSince(uint256 marketId) public view returns (uint256 m);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`marketId`|`uint256`|The window market ID|
 
 
 ### baseFeeHigherThanStart
@@ -477,6 +505,27 @@ function pokeWindowVolatilityBatch(uint256[] calldata marketIds) public;
 |`marketIds`|`uint256[]`|Array of market IDs to update|
 
 
+### observationCount
+
+Total number of stored observations.
+
+
+```solidity
+function observationCount() public view returns (uint256);
+```
+
+### getObservations
+
+Batch fetch observations for time-series graphs.
+
+
+```solidity
+function getObservations(uint256 start, uint256 count)
+    public
+    view
+    returns (Observation[] memory obs);
+```
+
 ### createMarket
 
 Create directional TWAP market: "Will avg gas be <=/>= X?"
@@ -493,7 +542,7 @@ function createMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -526,7 +575,7 @@ function createMarketAndBuy(
     uint8 op,
     SeedParams calldata seed,
     SwapParams calldata swap
-) public payable canCreate returns (uint256 marketId, uint256 swapOut);
+) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut);
 ```
 **Parameters**
 
@@ -557,7 +606,7 @@ function createRangeMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -588,7 +637,7 @@ function createRangeMarketAndBuy(
     bool canClose,
     SeedParams calldata seed,
     SwapParams calldata swap
-) public payable canCreate returns (uint256 marketId, uint256 swapOut);
+) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut);
 ```
 **Parameters**
 
@@ -619,7 +668,7 @@ function createBreakoutMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -651,7 +700,7 @@ function createPeakMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -682,7 +731,7 @@ function createTroughMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -713,7 +762,7 @@ function createVolatilityMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -744,7 +793,7 @@ function createStabilityMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -777,7 +826,7 @@ function createSpotMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -808,7 +857,7 @@ function createComparisonMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -838,7 +887,7 @@ function createWindowMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -869,7 +918,7 @@ function createWindowMarketAndBuy(
     uint8 op,
     SeedParams calldata seed,
     SwapParams calldata swap
-) public payable canCreate returns (uint256 marketId, uint256 swapOut);
+) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut);
 ```
 **Parameters**
 
@@ -900,7 +949,7 @@ function createWindowRangeMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -931,7 +980,7 @@ function createWindowRangeMarketAndBuy(
     bool canClose,
     SeedParams calldata seed,
     SwapParams calldata swap
-) public payable canCreate returns (uint256 marketId, uint256 swapOut);
+) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut);
 ```
 **Parameters**
 
@@ -962,7 +1011,7 @@ function createWindowBreakoutMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -983,7 +1032,8 @@ function createWindowBreakoutMarket(
 
 Create window peak market: "Will gas spike to X DURING THIS MARKET?"
 
-Reverts if threshold already exceeded (maxBaseFee >= threshold).
+Reverts if threshold already reached (current basefee >= threshold).
+Always enables early close since peaks should resolve when the spike occurs.
 
 
 ```solidity
@@ -991,21 +1041,19 @@ function createWindowPeakMarket(
     uint256 threshold,
     address collateral,
     uint64 close,
-    bool canClose,
     uint256 collateralIn,
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
 |Name|Type|Description|
 |----|----|-----------|
-|`threshold`|`uint256`|Target peak in wei (must be > current maxBaseFee)|
+|`threshold`|`uint256`|Target peak in wei (must be > current basefee)|
 |`collateral`|`address`|Token (address(0) for ETH)|
 |`close`|`uint64`|Resolution timestamp|
-|`canClose`|`bool`|If true, resolves early when threshold reached|
 |`collateralIn`|`uint256`|Liquidity seed amount|
 |`feeOrHook`|`uint256`|Pool fee tier|
 |`minLiquidity`|`uint256`|Min LP tokens|
@@ -1016,7 +1064,8 @@ function createWindowPeakMarket(
 
 Create window trough market: "Will gas dip to X DURING THIS MARKET?"
 
-Reverts if threshold already reached (minBaseFee <= threshold).
+Reverts if threshold already reached (current basefee <= threshold).
+Always enables early close since troughs should resolve when the dip occurs.
 
 
 ```solidity
@@ -1024,21 +1073,19 @@ function createWindowTroughMarket(
     uint256 threshold,
     address collateral,
     uint64 close,
-    bool canClose,
     uint256 collateralIn,
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
 |Name|Type|Description|
 |----|----|-----------|
-|`threshold`|`uint256`|Target trough in wei (must be < current minBaseFee)|
+|`threshold`|`uint256`|Target trough in wei (must be < current basefee)|
 |`collateral`|`address`|Token (address(0) for ETH)|
 |`close`|`uint64`|Resolution timestamp|
-|`canClose`|`bool`|If true, resolves early when threshold reached|
 |`collateralIn`|`uint256`|Liquidity seed amount|
 |`feeOrHook`|`uint256`|Pool fee tier|
 |`minLiquidity`|`uint256`|Min LP tokens|
@@ -1051,6 +1098,7 @@ Create window volatility market: "Will gas spread exceed X DURING THIS MARKET?"
 
 Tracks absolute spread (max - min) during the market window.
 Call pokeWindowVolatility() periodically to capture extremes between blocks.
+Always enables early close since volatility should resolve when spread is reached.
 
 
 ```solidity
@@ -1058,12 +1106,11 @@ function createWindowVolatilityMarket(
     uint256 threshold,
     address collateral,
     uint64 close,
-    bool canClose,
     uint256 collateralIn,
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -1072,7 +1119,6 @@ function createWindowVolatilityMarket(
 |`threshold`|`uint256`|Target spread in wei|
 |`collateral`|`address`|Token (address(0) for ETH)|
 |`close`|`uint64`|Resolution timestamp|
-|`canClose`|`bool`|If true, resolves early when spread reached|
 |`collateralIn`|`uint256`|Liquidity seed amount|
 |`feeOrHook`|`uint256`|Pool fee tier|
 |`minLiquidity`|`uint256`|Min LP tokens|
@@ -1097,7 +1143,7 @@ function createWindowStabilityMarket(
     uint256 feeOrHook,
     uint256 minLiquidity,
     address lpRecipient
-) public payable canCreate returns (uint256 marketId);
+) public payable canCreate nonReentrant returns (uint256 marketId);
 ```
 **Parameters**
 
@@ -1204,7 +1250,7 @@ function permit(
     uint8 v,
     bytes32 r,
     bytes32 s
-) public;
+) public nonReentrant;
 ```
 
 ### permitDAI
@@ -1222,7 +1268,7 @@ function permitDAI(
     uint8 v,
     bytes32 r,
     bytes32 s
-) public;
+) public nonReentrant;
 ```
 
 ### _handleCollateral
@@ -1254,7 +1300,85 @@ Transfers ETH, reverts on failure.
 function _safeTransferETH(address to, uint256 amount) internal;
 ```
 
+### _safeTransfer
+
+Transfers ERC20 tokens using transfer (not transferFrom), reverts on failure.
+
+
+```solidity
+function _safeTransfer(address token, address to, uint256 amount) internal;
+```
+
+### _balanceOf
+
+Returns the ERC20 balance of an account.
+
+
+```solidity
+function _balanceOf(address token, address account) internal view returns (uint256 bal);
+```
+
+### _verifyMarketId
+
+Verifies returned marketId matches expected, returns swapOut (5th word) if present.
+
+
+```solidity
+function _verifyMarketId(bytes memory ret, uint256 expected)
+    internal
+    pure
+    returns (uint256 swapOut);
+```
+
+### _refundDust
+
+Refunds any dust collateral (ETH or ERC20) to msg.sender.
+
+
+```solidity
+function _refundDust(address collateral, uint256 escrow) internal;
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`collateral`|`address`|Token address (address(0) for ETH)|
+|`escrow`|`uint256`|ETH balance to preserve (reward funds). Ignored for ERC20.|
+
+
+### _flushLeftoverShares
+
+Forwards any leftover YES/NO shares from this contract to msg.sender.
+
+
+```solidity
+function _flushLeftoverShares(uint256 marketId) internal;
+```
+
+### _balanceOf6909
+
+Returns ERC6909 balance: balanceOf(account, id).
+
+
+```solidity
+function _balanceOf6909(address token, address account, uint256 id)
+    internal
+    view
+    returns (uint256 bal);
+```
+
+### _transfer6909
+
+Transfers ERC6909 tokens: transfer(receiver, id, amount).
+
+
+```solidity
+function _transfer6909(address token, address to, uint256 id, uint256 amount) internal;
+```
+
 ### _toString
+
+Converts uint256 to decimal string. Gas-optimized assembly implementation.
 
 
 ```solidity
@@ -1451,7 +1575,11 @@ function _buildComparisonObservable(uint256 startTwap) internal pure returns (st
 
 ```solidity
 event Updated(
-    uint256 baseFee, uint256 cumulativeBaseFee, address indexed updater, uint256 reward
+    uint64 indexed timestamp,
+    uint256 baseFee,
+    uint256 cumulativeBaseFee,
+    address indexed updater,
+    uint256 reward
 );
 ```
 
@@ -1493,6 +1621,12 @@ event OwnershipTransferred(address indexed previousOwner, address indexed newOwn
 error InvalidOp();
 ```
 
+### Reentrancy
+
+```solidity
+error Reentrancy();
+```
+
 ### InvalidClose
 
 ```solidity
@@ -1503,6 +1637,18 @@ error InvalidClose();
 
 ```solidity
 error Unauthorized();
+```
+
+### ApproveFailed
+
+```solidity
+error ApproveFailed();
+```
+
+### TransferFailed
+
+```solidity
+error TransferFailed();
 ```
 
 ### AlreadyExceeded
@@ -1529,10 +1675,28 @@ error InvalidThreshold();
 error InvalidETHAmount();
 ```
 
+### MarketIdMismatch
+
+```solidity
+error MarketIdMismatch();
+```
+
+### ETHTransferFailed
+
+```solidity
+error ETHTransferFailed();
+```
+
 ### ResolverCallFailed
 
 ```solidity
 error ResolverCallFailed();
+```
+
+### TransferFromFailed
+
+```solidity
+error TransferFromFailed();
 ```
 
 ### AlreadyBelowThreshold
@@ -1542,6 +1706,18 @@ error AlreadyBelowThreshold();
 ```
 
 ## Structs
+### Observation
+Historical observation for time-series data. Stores spot + cumulative for charts & TWAP.
+
+
+```solidity
+struct Observation {
+    uint64 timestamp;
+    uint64 baseFee;
+    uint128 cumulativeBaseFee;
+}
+```
+
 ### Snapshot
 Snapshot of cumulative state at market creation (for window markets).
 
@@ -1554,8 +1730,8 @@ struct Snapshot {
 ```
 
 ### WindowSpread
-Per-market max/min tracking for window volatility/stability markets.
-Updated via pokeWindowVolatility() to track spread during the market window.
+Per-market max/min tracking for window peak/trough/volatility/stability markets.
+Updated via pokeWindowVolatility() to track extremes during the market window.
 
 
 ```solidity
@@ -1586,6 +1762,7 @@ struct SwapParams {
     uint256 collateralForSwap;
     uint256 minOut;
     bool yesForNo; // true = buyNo (swap yes for no), false = buyYes (swap no for yes)
+    address recipient; // recipient of swapped shares (use address(0) for msg.sender)
 }
 ```
 

@@ -215,7 +215,7 @@ contract ResolverTest is Test {
     uint64 internal closeTime;
 
     // Hardcoded PAMM address that resolver expects
-    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    address payable constant PAMM_ADDRESS = payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     uint256 constant FEE_BPS = 30;
 
     function setUp() public {
@@ -339,6 +339,22 @@ contract ResolverTest is Test {
             "test",
             address(token),
             address(0),
+            MockOracle.getValue.selector,
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false
+        );
+    }
+
+    function test_CreateNumericMarket_RevertInvalidTarget_EOAWithSelector() public {
+        // EOA with non-empty callData should revert (extcodesize check)
+        address eoa = address(0xdead);
+        vm.expectRevert(Resolver.InvalidTarget.selector);
+        resolver.createNumericMarketSimple(
+            "test",
+            address(token),
+            eoa, // EOA, not a contract
             MockOracle.getValue.selector,
             Resolver.Op.GT,
             50,
@@ -2377,6 +2393,60 @@ contract ResolverTest is Test {
         resolver.multicall(calls);
     }
 
+    function test_Multicall_ResolveMultipleMarkets_WithNonReentrant() public {
+        // Create two markets with different oracles
+        oracleA.setValue(100);
+        oracleB.setValue(200);
+
+        (uint256 marketId1,) = resolver.createNumericMarketSimple(
+            "market 1",
+            address(token),
+            address(oracleA),
+            MockOracle.getValue.selector,
+            Resolver.Op.GT,
+            50, // 100 > 50 = true (YES wins)
+            closeTime,
+            false
+        );
+
+        (uint256 marketId2,) = resolver.createNumericMarketSimple(
+            "market 2",
+            address(token),
+            address(oracleB),
+            MockOracle.getValue.selector,
+            Resolver.Op.LT,
+            100, // 200 < 100 = false (NO wins)
+            closeTime,
+            false
+        );
+
+        // Warp past close
+        vm.warp(closeTime);
+
+        // Resolve both markets via multicall - tests nonReentrant doesn't block sequential calls
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(resolver.resolveMarket, (marketId1));
+        calls[1] = abi.encodeCall(resolver.resolveMarket, (marketId2));
+
+        resolver.multicall(calls);
+
+        // Verify both markets resolved correctly
+        (,, bool resolved1, bool outcome1,,,,,,) = pm.getMarket(marketId1);
+        (,, bool resolved2, bool outcome2,,,,,,) = pm.getMarket(marketId2);
+
+        assertTrue(resolved1, "Market 1 should be resolved");
+        assertTrue(outcome1, "Market 1: YES should win (100 > 50)");
+
+        assertTrue(resolved2, "Market 2 should be resolved");
+        assertFalse(outcome2, "Market 2: NO should win (200 < 100 is false)");
+
+        // Conditions should be deleted
+        (address targetA1,,,,,,) = resolver.conditions(marketId1);
+        (address targetA2,,,,,,) = resolver.conditions(marketId2);
+        assertEq(targetA1, address(0), "Condition 1 should be deleted");
+        assertEq(targetA2, address(0), "Condition 2 should be deleted");
+    }
+
     /*//////////////////////////////////////////////////////////////
                     STRUCT TESTS
     //////////////////////////////////////////////////////////////*/
@@ -2424,7 +2494,7 @@ contract Resolver_Integration_Test is Test {
     address internal ALICE = makeAddr("ALICE");
     address internal BOB = makeAddr("BOB");
 
-    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    address payable constant PAMM_ADDRESS = payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     address constant ZAMM_ADDRESS = 0x000000000000040470635EB91b7CE4D132D616eD;
     uint256 constant FEE_BPS = 30;
 
@@ -5462,6 +5532,164 @@ contract Resolver_Integration_Test is Test {
             aliceTokenBefore - aliceTokenAfter <= collateralIn, "Should not spend more than input"
         );
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    REENTRANCY PROTECTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_Reentrancy_Claim_ETH_Blocked() public {
+        // Create and seed ETH market
+        oracleA.setValue(100);
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 1,
+            lpRecipient: ALICE,
+            deadline: 0
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeedSimple{value: 10000 ether}(
+            "eth reentrancy claim",
+            address(0),
+            address(oracleA),
+            MockOracle.getValue.selector,
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        // Buy some YES shares for attacker
+        ReentrantClaimAttacker_Integration attacker =
+            new ReentrantClaimAttacker_Integration(pm, resolver, marketId);
+        vm.deal(address(attacker), 10000 ether);
+        attacker.buyShares{value: 5000 ether}();
+
+        // Resolve market
+        vm.warp(closeTime);
+        resolver.resolveMarket(marketId);
+
+        // Attacker tries to reenter claim via receive()
+        // The reentrancy guard blocks the inner call, causing receive() to revert,
+        // which makes the ETH transfer fail with ETHTransferFailed
+        vm.expectRevert(PAMM.ETHTransferFailed.selector);
+        attacker.attackClaim();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    PREVIEW WITH FAILING ORACLE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_Preview_RevertingOracle_Reverts() public {
+        RevertingOracle badOracle = new RevertingOracle();
+
+        (uint256 marketId,) = resolver.createNumericMarketSimple(
+            "preview revert",
+            address(token),
+            address(badOracle),
+            RevertingOracle.getValue.selector,
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false
+        );
+
+        // Preview should revert when oracle reverts
+        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        resolver.preview(marketId);
+    }
+
+    function test_Integration_Preview_BadReturnOracle_Reverts() public {
+        BadReturnOracle badOracle = new BadReturnOracle();
+
+        (uint256 marketId,) = resolver.createNumericMarketSimple(
+            "preview bad return",
+            address(token),
+            address(badOracle),
+            bytes4(keccak256("getValue()")),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false
+        );
+
+        // Preview should revert when oracle returns short data
+        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        resolver.preview(marketId);
+    }
+
+    function test_Integration_Preview_RatioMarket_RevertingOracleB() public {
+        oracleA.setValue(100);
+        RevertingOracle badOracleB = new RevertingOracle();
+
+        (uint256 marketId,) = resolver.createRatioMarketSimple(
+            "ratio preview revert B",
+            address(token),
+            address(oracleA),
+            MockOracle.getValue.selector,
+            address(badOracleB),
+            RevertingOracle.getValue.selector,
+            Resolver.Op.GT,
+            1e18,
+            closeTime,
+            false
+        );
+
+        // Preview should revert when oracle B reverts
+        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        resolver.preview(marketId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    MULTICALL NON-PAYABLE PROTECTION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Verify multicall is non-payable to prevent msg.value reuse attacks
+    function test_Integration_Multicall_NonPayable_PreventsMsgValueReuse() public {
+        // Multicall should not accept ETH value
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeCall(Resolver.preview, (0));
+
+        // This should fail because multicall is not payable
+        (bool success,) = address(resolver).call{value: 1 ether}(
+            abi.encodeWithSelector(Resolver.multicall.selector, calls)
+        );
+        assertFalse(success, "Multicall should reject ETH");
+    }
+}
+
+/// @notice Contract that attempts reentrancy via receive() during claim
+contract ReentrantClaimAttacker_Integration {
+    PAMM public pamm;
+    Resolver public resolver;
+    uint256 public marketId;
+    bool public attacking;
+
+    constructor(PAMM _pamm, Resolver _resolver, uint256 _marketId) {
+        pamm = _pamm;
+        resolver = _resolver;
+        marketId = _marketId;
+    }
+
+    function buyShares() external payable {
+        pamm.split{value: msg.value}(marketId, 0, address(this));
+    }
+
+    function attackClaim() external {
+        pamm.claim(marketId, address(this));
+    }
+
+    receive() external payable {
+        if (!attacking) {
+            attacking = true;
+            // Try to reenter claim
+            pamm.claim(marketId, address(this));
+        }
+    }
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -5649,7 +5877,7 @@ contract Resolver_Permit_Test is Test {
     address internal BOB = vm.addr(bobPk);
 
     uint64 internal closeTime;
-    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    address payable constant PAMM_ADDRESS = payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     uint256 constant FEE_BPS = 30;
 
     function setUp() public {

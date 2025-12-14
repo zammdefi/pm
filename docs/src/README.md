@@ -13,11 +13,11 @@ Minimal onchain mechanisms for binary prediction markets:
 
 | Contract | Address |
 |----------|---------|
-| [PAMM](https://contractscan.xyz/contract/0x0000000000f8ba51d6e987660d3e455ac2c4be9d) | `0x0000000000f8ba51d6e987660d3e455ac2c4be9d` |
+| [PAMM](https://contractscan.xyz/contract/0x000000000044bfe6c2BBFeD8862973E0612f07C0) | `0x000000000044bfe6c2BBFeD8862973E0612f07C0` |
 | [PM](https://contractscan.xyz/contract/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e) | `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e` |
-| [Resolver](https://contractscan.xyz/contract/0x0000000000b0ba1b2bb3af96fbb893d835970ec4) | `0x0000000000b0ba1b2bb3af96fbb893d835970ec4` |
+| [Resolver](https://contractscan.xyz/contract/0x00000000002205020E387b6a378c05639047BcFB) | `0x00000000002205020E387b6a378c05639047BcFB` |
 | [ZAMM](https://contractscan.xyz/contract/0x000000000000040470635EB91b7CE4D132D616eD) | `0x000000000000040470635EB91b7CE4D132D616eD` |
-| [GasPM](https://contractscan.xyz/contract/0x0000000000667ecd419766a90fad86fae21547f1) | `0x0000000000667ecd419766a90fad86fae21547f1` |
+| [GasPM](https://contractscan.xyz/contract/0x0000000000ee3d4294438093EaA34308f47Bc0b4) | `0x0000000000ee3d4294438093EaA34308f47Bc0b4` |
 | wstETH | `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0` |
 | ZSTETH | `0x000000000077B216105413Dc45Dc6F6256577c7B` |
 
@@ -92,7 +92,7 @@ A simple vault that locks collateral and mints conditional tokens.
 | **Merge** | Burn `N` YES + `N` NO → unlock `N` collateral |
 | **Claim** | After resolution: burn `N` winning tokens → receive `N` collateral (minus resolver fee if set) |
 
-Shares are 1:1 with collateral (1 share = 1 wei of collateral). Any amount works, no dust.
+Shares are 1:1 with collateral (1 share = 1 wei of collateral). Any amount works, dust is refunded.
 
 ### Operation Flows
 
@@ -204,7 +204,7 @@ Shares are 1:1 with collateral (1 share = 1 wei of collateral). Any amount works
 
 ### Collateral
 
-Supports ETH (`address(0)`) or any ERC20. Decimals are read from the token at market creation.
+Supports ETH (`address(0)`) or any ERC20. Shares are 1:1 with collateral wei.
 
 ### Trading
 
@@ -483,7 +483,7 @@ buildDescription(...)     // Preview auto-generated description
 
 ```solidity
 struct SeedParams {
-    uint256 collateralIn;   // Any amount (1:1 shares, no dust)
+    uint256 collateralIn;   // Any amount (1:1 shares, dust refunded)
     uint256 feeOrHook;      // ZAMM fee tier or hook address
     uint256 amount0Min;     // Slippage protection
     uint256 amount1Min;
@@ -496,6 +496,7 @@ struct SwapParams {
     uint256 collateralForSwap;  // Amount for buyYes/buyNo
     uint256 minOut;             // Minimum tokens out
     bool yesForNo;              // true = buyNo, false = buyYes
+    address recipient;          // Recipient of swapped shares (address(0) = msg.sender)
 }
 ```
 
@@ -602,7 +603,8 @@ Resolver.SeedParams memory seed = Resolver.SeedParams({
 Resolver.SwapParams memory swap = Resolver.SwapParams({
     collateralForSwap: 2 ether,   // Buy tokens with 2 ETH
     minOut: 0,                    // Minimum tokens out (slippage)
-    yesForNo: false               // false = buyYes, true = buyNo
+    yesForNo: false,              // false = buyYes, true = buyNo
+    recipient: address(0)         // address(0) = msg.sender
 });
 
 // msg.value = seed.collateralIn + swap.collateralForSwap
@@ -918,7 +920,8 @@ GasPM.SeedParams memory seed = GasPM.SeedParams({
 GasPM.SwapParams memory swap = GasPM.SwapParams({
     collateralForSwap: 2 ether,   // Additional collateral to buy position
     minOut: 0,
-    yesForNo: false               // false = buyYes, true = buyNo
+    yesForNo: false,              // false = buyYes, true = buyNo
+    recipient: address(0)         // address(0) = msg.sender
 });
 
 // msg.value = seed.collateralIn + swap.collateralForSwap = 12 ether
@@ -1115,12 +1118,12 @@ oracle.createWindowMarket{value: 10 ether}(
 // Observable: "Avg gas during market >= 50 gwei"
 
 // Window Peak: "Will gas hit 100 gwei DURING THIS MARKET?"
-// Reverts if maxBaseFee >= 100 gwei (threshold already hit)
+// Reverts if current basefee >= 100 gwei (threshold already hit)
+// Always enables early close (resolves when spike occurs)
 oracle.createWindowPeakMarket{value: 10 ether}(
     100 gwei,
     address(0),
     uint64(block.timestamp + 7 days),
-    true,                         // instant payout on spike
     10 ether,
     30,
     0,
@@ -1129,12 +1132,12 @@ oracle.createWindowPeakMarket{value: 10 ether}(
 // Observable: "Gas spikes to 100 gwei during market"
 
 // Window Trough: "Will gas dip to 10 gwei DURING THIS MARKET?"
-// Reverts if minBaseFee <= 10 gwei (threshold already hit)
+// Reverts if current basefee <= 10 gwei (threshold already hit)
+// Always enables early close (resolves when dip occurs)
 oracle.createWindowTroughMarket{value: 10 ether}(
     10 gwei,
     address(0),
     uint64(block.timestamp + 7 days),
-    true,                         // instant payout on dip
     10 ether,
     30,
     0,
@@ -1145,11 +1148,11 @@ oracle.createWindowTroughMarket{value: 10 ether}(
 // Window Volatility: "Will gas spread exceed 30 gwei DURING THIS MARKET?"
 // Tracks absolute spread (max - min) during the market window
 // Call pokeWindowVolatility(marketId) periodically to capture extremes
+// Always enables early close (resolves when spread threshold hit)
 oracle.createWindowVolatilityMarket{value: 10 ether}(
     30 gwei,
     address(0),
     uint64(block.timestamp + 7 days),
-    true,                         // instant payout when spread hits threshold
     10 ether,
     30,
     0,
@@ -1202,6 +1205,8 @@ trackingDuration() → uint256      // Seconds since oracle deployed
 baseFeeAverageSince(marketId) → uint256    // TWAP since market creation (wei)
 baseFeeInRangeSince(marketId, lower, upper) → uint256     // Returns 1 if window TWAP in range
 baseFeeOutOfRangeSince(marketId, lower, upper) → uint256  // Returns 1 if window TWAP outside range
+baseFeeMaxSince(marketId) → uint256        // Max basefee during market window (wei)
+baseFeeMinSince(marketId) → uint256        // Min basefee during market window (wei)
 baseFeeSpreadSince(marketId) → uint256     // Absolute spread (max - min) during market window
 baseFeeHigherThanStart(marketId) → uint256 // Returns 1 if TWAP > start (comparison markets)
 pokeWindowVolatility(marketId)             // Update window market's max/min to current basefee
@@ -1242,12 +1247,12 @@ createWindowRangeMarketAndBuy(lower, upper, collateral, close, canClose,
                               SeedParams, SwapParams) → (marketId, swapOut)
 createWindowBreakoutMarket(lower, upper, collateral, close, canClose,
                            collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
-createWindowPeakMarket(threshold, collateral, close, canClose,
-                       collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
-createWindowTroughMarket(threshold, collateral, close, canClose,
-                         collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
-createWindowVolatilityMarket(threshold, collateral, close, canClose,
-                             collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
+createWindowPeakMarket(threshold, collateral, close,
+                       collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId  // always canClose=true
+createWindowTroughMarket(threshold, collateral, close,
+                         collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId  // always canClose=true
+createWindowVolatilityMarket(threshold, collateral, close,
+                             collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId  // always canClose=true
 createWindowStabilityMarket(threshold, collateral, close, canClose,
                             collateralIn, feeOrHook, minLiquidity, lpRecipient) → marketId
 
@@ -1314,6 +1319,7 @@ struct SwapParams {
     uint256 collateralForSwap;  // Additional collateral for position
     uint256 minOut;             // Minimum tokens out
     bool yesForNo;              // true = buyNo (swap yes for no), false = buyYes (swap no for yes)
+    address recipient;          // Recipient of swapped shares (address(0) = msg.sender)
 }
 ```
 
@@ -1438,7 +1444,7 @@ The system also supports non-standard ERC20s:
 | Error | Description |
 |-------|-------------|
 | `AmountZero` | Zero amount provided |
-| `FeeOverflow` | Resolver fee > 10000 bps (100%) |
+| `FeeOverflow` | Resolver fee > 1000 bps (10%) |
 | `NotClosable` | closeMarket called but canClose=false |
 | `InvalidClose` | Close time in the past |
 | `MarketClosed` | Trading attempted after close time or resolution |
@@ -1450,13 +1456,10 @@ The system also supports non-standard ERC20s:
 | `InvalidReceiver` | Receiver is address(0) |
 | `InvalidResolver` | Resolver address is zero |
 | `AlreadyResolved` | Market already resolved |
-| `InvalidDecimals` | Token has 0 or invalid decimals |
 | `MarketNotClosed` | Claim attempted before close/resolution |
 | `InvalidETHAmount` | msg.value doesn't match required amount |
-| `InvalidCollateral` | Invalid collateral address |
 | `InvalidSwapAmount` | Swap amount exceeds available |
 | `InsufficientOutput` | Slippage protection triggered |
-| `CollateralTooSmall` | Collateral doesn't convert to at least 1 share |
 | `WrongCollateralType` | ETH sent for ERC20 market or vice versa |
 
 ### Resolver Errors
@@ -1478,14 +1481,20 @@ The system also supports non-standard ERC20s:
 | Error | Description |
 |-------|-------------|
 | `InvalidOp` | Operator not 2 (LTE) or 3 (GTE) |
-| `AlreadyBelowThreshold` | Window trough market: threshold already reached |
+| `Reentrancy` | Reentrant call detected |
 | `InvalidClose` | Close timestamp in the past |
 | `Unauthorized` | Caller is not owner (or not allowed for public creation) |
+| `ApproveFailed` | ERC20 approval failed |
 | `AlreadyExceeded` | Window peak market: threshold already reached |
+| `TransferFailed` | ERC20 transfer failed |
 | `InvalidCooldown` | Reward set with zero cooldown |
 | `InvalidThreshold` | Threshold is zero (or lower >= upper for range) |
 | `InvalidETHAmount` | msg.value doesn't match collateral amount |
+| `MarketIdMismatch` | Returned marketId from Resolver doesn't match expected |
+| `ETHTransferFailed` | ETH transfer failed |
 | `ResolverCallFailed` | Call to Resolver contract failed or returned empty |
+| `TransferFromFailed` | ERC20 transferFrom failed |
+| `AlreadyBelowThreshold` | Window trough market: threshold already reached |
 
 ---
 

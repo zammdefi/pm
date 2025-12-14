@@ -35,8 +35,8 @@ contract GasPMTest is Test {
     }
 
     function test_Constants() public view {
-        assertEq(oracle.RESOLVER(), 0x0000000000b0ba1b2bb3AF96FbB893d835970ec4);
-        assertEq(oracle.PAMM(), 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+        assertEq(oracle.RESOLVER(), 0x00000000002205020E387b6a378c05639047BcFB);
+        assertEq(oracle.PAMM(), 0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -45,11 +45,11 @@ contract GasPMTest is Test {
 
     function test_BaseFeeCurrent() public {
         assertEq(oracle.baseFeeCurrent(), 50 gwei);
-        assertEq(oracle.baseFeeCurrentGwei(), 50);
+        assertEq(oracle.baseFeeCurrent() / 1 gwei, 50);
 
         vm.fee(100 gwei);
         assertEq(oracle.baseFeeCurrent(), 100 gwei);
-        assertEq(oracle.baseFeeCurrentGwei(), 100);
+        assertEq(oracle.baseFeeCurrent() / 1 gwei, 100);
     }
 
     function test_Update_SameBlock_Skips() public {
@@ -82,7 +82,7 @@ contract GasPMTest is Test {
 
     function test_BaseFeeAverage_ImmediatelyAfterDeploy() public view {
         assertEq(oracle.baseFeeAverage(), 50 gwei);
-        assertEq(oracle.baseFeeAverageGwei(), 50);
+        assertEq(oracle.baseFeeAverage() / 1 gwei, 50);
     }
 
     function test_BaseFeeAverage_ConstantFee() public {
@@ -90,7 +90,7 @@ contract GasPMTest is Test {
         oracle.update();
 
         assertEq(oracle.baseFeeAverage(), 50 gwei);
-        assertEq(oracle.baseFeeAverageGwei(), 50);
+        assertEq(oracle.baseFeeAverage() / 1 gwei, 50);
     }
 
     function test_BaseFeeAverage_ChangingFee() public {
@@ -102,7 +102,7 @@ contract GasPMTest is Test {
         oracle.update();
 
         assertEq(oracle.baseFeeAverage(), 75 gwei);
-        assertEq(oracle.baseFeeAverageGwei(), 75);
+        assertEq(oracle.baseFeeAverage() / 1 gwei, 75);
     }
 
     function test_BaseFeeAverage_WithoutUpdate_StillWorks() public {
@@ -124,13 +124,13 @@ contract GasPMTest is Test {
     }
 
     function test_TrackingDuration() public {
-        assertEq(oracle.trackingDuration(), 0);
+        assertEq(block.timestamp - oracle.startTime(), 0);
 
         vm.warp(deployTime + 1 hours);
-        assertEq(oracle.trackingDuration(), 1 hours);
+        assertEq(block.timestamp - oracle.startTime(), 1 hours);
 
         vm.warp(deployTime + 24 hours);
-        assertEq(oracle.trackingDuration(), 24 hours);
+        assertEq(block.timestamp - oracle.startTime(), 24 hours);
     }
 
     function test_Update_EmitsEvent() public {
@@ -958,7 +958,7 @@ contract GasPMTest is Test {
         oracle.update();
 
         // TWAP should be 75 gwei (50*1h + 100*1h) / 2h
-        assertEq(oracle.baseFeeAverageGwei(), 75);
+        assertEq(oracle.baseFeeAverage() / 1 gwei, 75);
         assertEq(oracle.baseFeeInRange(70 gwei, 80 gwei), 1); // 75 is within 70-80
         assertEq(oracle.baseFeeInRange(76 gwei, 100 gwei), 0); // 75 < 76
     }
@@ -4020,8 +4020,8 @@ contract IntegrationMockERC20 {
 contract GasPMIntegrationTest is Test {
     // Hardcoded addresses from contracts
     address payable constant ZAMM_ADDRESS = payable(0x000000000000040470635EB91b7CE4D132D616eD);
-    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
-    address payable constant RESOLVER_ADDRESS = payable(0x0000000000b0ba1b2bb3AF96FbB893d835970ec4);
+    address payable constant PAMM_ADDRESS = payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
+    address payable constant RESOLVER_ADDRESS = payable(0x00000000002205020E387b6a378c05639047BcFB);
 
     ZAMM zamm;
     PAMM pm;
@@ -4575,5 +4575,276 @@ contract GasPMIntegrationTest is Test {
             escrowBefore - 0.01 ether,
             "Only reward should have been paid, escrow preserved"
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    GETMARKETINFOS COMPREHENSIVE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_GetMarketInfos_SingleMarket() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create a market
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createMarket{value: collateralIn}(
+            50 gwei,
+            address(0),
+            closeTime,
+            false,
+            3, // GTE
+            collateralIn,
+            FEE_BPS,
+            1,
+            ALICE
+        );
+
+        GasPM.MarketInfo[] memory infos = gasPM.getMarketInfos(0, 10);
+        assertEq(infos.length, 1, "Should have 1 market");
+        assertEq(infos[0].marketId, marketId, "Market ID should match");
+        assertEq(infos[0].close, closeTime, "Close time should match");
+        assertFalse(infos[0].resolved, "Should not be resolved");
+    }
+
+    function test_Integration_GetMarketInfos_MultipleMarkets() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create multiple markets
+        vm.startPrank(ALICE);
+        uint256 market1 = gasPM.createMarket{value: collateralIn}(
+            50 gwei, address(0), closeTime, false, 3, collateralIn, FEE_BPS, 1, ALICE
+        );
+        uint256 market2 = gasPM.createMarket{value: collateralIn}(
+            100 gwei,
+            address(0),
+            uint64(closeTime + 1 days),
+            false,
+            2, // LTE
+            collateralIn,
+            FEE_BPS,
+            1,
+            ALICE
+        );
+        uint256 market3 = gasPM.createRangeMarket{value: collateralIn}(
+            40 gwei,
+            60 gwei,
+            address(0),
+            uint64(closeTime + 2 days),
+            false,
+            collateralIn,
+            FEE_BPS,
+            1,
+            ALICE
+        );
+        vm.stopPrank();
+
+        GasPM.MarketInfo[] memory infos = gasPM.getMarketInfos(0, 10);
+        assertEq(infos.length, 3, "Should have 3 markets");
+        assertEq(infos[0].marketId, market1);
+        assertEq(infos[1].marketId, market2);
+        assertEq(infos[2].marketId, market3);
+    }
+
+    function test_Integration_GetMarketInfos_Pagination() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create 5 markets
+        vm.startPrank(ALICE);
+        for (uint256 i = 0; i < 5; i++) {
+            gasPM.createMarket{value: collateralIn}(
+                50 gwei + i * 10 gwei,
+                address(0),
+                uint64(closeTime + i * 1 days),
+                false,
+                3,
+                collateralIn,
+                FEE_BPS,
+                1,
+                ALICE
+            );
+        }
+        vm.stopPrank();
+
+        // Get first 2
+        GasPM.MarketInfo[] memory page1 = gasPM.getMarketInfos(0, 2);
+        assertEq(page1.length, 2, "First page should have 2");
+
+        // Get next 2
+        GasPM.MarketInfo[] memory page2 = gasPM.getMarketInfos(2, 2);
+        assertEq(page2.length, 2, "Second page should have 2");
+
+        // Get last 1
+        GasPM.MarketInfo[] memory page3 = gasPM.getMarketInfos(4, 2);
+        assertEq(page3.length, 1, "Third page should have 1");
+
+        // All market IDs should be different
+        assertTrue(page1[0].marketId != page2[0].marketId);
+        assertTrue(page2[1].marketId != page3[0].marketId);
+    }
+
+    function test_Integration_GetMarketInfos_MixedResolvedUnresolved() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create markets
+        vm.startPrank(ALICE);
+        gasPM.createMarket{value: collateralIn}(
+            50 gwei,
+            address(0),
+            uint64(block.timestamp + 1 hours),
+            true, // canClose
+            3,
+            collateralIn,
+            FEE_BPS,
+            1,
+            ALICE
+        );
+        gasPM.createMarket{value: collateralIn}(
+            100 gwei, address(0), closeTime, false, 3, collateralIn, FEE_BPS, 1, ALICE
+        );
+        vm.stopPrank();
+
+        GasPM.MarketInfo[] memory infos = gasPM.getMarketInfos(0, 10);
+        assertEq(infos.length, 2);
+
+        // Both should be unresolved initially
+        assertFalse(infos[0].resolved);
+        assertFalse(infos[1].resolved);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    POKEWINDOWVOLATILITY EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_PokeWindowVolatility_UpdatesMin() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create window volatility market
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createWindowVolatilityMarket{value: collateralIn}(
+            20 gwei, address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        // Initial min should be current basefee (50 gwei)
+        (uint128 windowMax, uint128 windowMin) = gasPM.windowSpreads(marketId);
+        assertEq(windowMax, 50 gwei, "Initial max should be 50 gwei");
+        assertEq(windowMin, 50 gwei, "Initial min should be 50 gwei");
+
+        // Lower the basefee
+        vm.fee(30 gwei);
+        vm.warp(block.timestamp + 1 hours);
+
+        // Poke to update
+        gasPM.pokeWindowVolatility(marketId);
+
+        (windowMax, windowMin) = gasPM.windowSpreads(marketId);
+        assertEq(windowMax, 50 gwei, "Max should stay at 50 gwei");
+        assertEq(windowMin, 30 gwei, "Min should update to 30 gwei");
+    }
+
+    function test_Integration_PokeWindowVolatility_NoChangeWhenBasefeeUnchanged() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create window volatility market
+        vm.prank(ALICE);
+        uint256 marketId = gasPM.createWindowVolatilityMarket{value: collateralIn}(
+            20 gwei, address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        (uint128 maxBefore, uint128 minBefore) = gasPM.windowSpreads(marketId);
+
+        // Poke without changing basefee
+        vm.warp(block.timestamp + 1 hours);
+        gasPM.pokeWindowVolatility(marketId);
+
+        (uint128 maxAfter, uint128 minAfter) = gasPM.windowSpreads(marketId);
+        assertEq(maxAfter, maxBefore, "Max should not change");
+        assertEq(minAfter, minBefore, "Min should not change");
+    }
+
+    function test_Integration_PokeWindowVolatilityBatch_MixedValidInvalid() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create one valid window market
+        vm.prank(ALICE);
+        uint256 validMarket = gasPM.createWindowVolatilityMarket{value: collateralIn}(
+            20 gwei, address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+
+        uint256[] memory marketIds = new uint256[](3);
+        marketIds[0] = validMarket;
+        marketIds[1] = 999999; // Non-existent
+        marketIds[2] = 888888; // Non-existent
+
+        // Should not revert - batch poke is permissive
+        gasPM.pokeWindowVolatilityBatch(marketIds);
+
+        // Valid market should still have its spreads
+        (uint128 windowMax, uint128 windowMin) = gasPM.windowSpreads(validMarket);
+        assertGt(windowMax, 0, "Valid market should have spreads");
+        assertGt(windowMin, 0, "Valid market should have spreads");
+    }
+
+    function test_Integration_PokeWindowVolatility_BatchUpdatesMultiple() public {
+        uint256 collateralIn = 10000 ether;
+
+        // Create multiple window volatility markets
+        vm.startPrank(ALICE);
+        uint256 market1 = gasPM.createWindowVolatilityMarket{value: collateralIn}(
+            30 gwei, address(0), closeTime, collateralIn, FEE_BPS, 1, ALICE
+        );
+        uint256 market2 = gasPM.createWindowVolatilityMarket{value: collateralIn}(
+            40 gwei, address(0), uint64(closeTime + 1 days), collateralIn, FEE_BPS, 1, ALICE
+        );
+        vm.stopPrank();
+
+        // Change basefee
+        vm.fee(100 gwei);
+        vm.warp(block.timestamp + 1 hours);
+
+        uint256[] memory marketIds = new uint256[](2);
+        marketIds[0] = market1;
+        marketIds[1] = market2;
+
+        gasPM.pokeWindowVolatilityBatch(marketIds);
+
+        // Both markets should have updated max
+        (uint128 max1,) = gasPM.windowSpreads(market1);
+        (uint128 max2,) = gasPM.windowSpreads(market2);
+        assertEq(max1, 100 gwei, "Market 1 max should update");
+        assertEq(max2, 100 gwei, "Market 2 max should update");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    FLUSHLEFTOVERSHARES EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test that leftover shares are flushed to msg.sender after market creation
+    function test_Integration_FlushLeftoverShares_AfterCreateMarketAndBuy() public {
+        uint256 seedAmount = 10000 ether;
+        uint256 swapAmount = 1000 ether;
+
+        vm.prank(ALICE);
+        gasPM.createMarketAndBuy{value: seedAmount + swapAmount}(
+            50 gwei,
+            address(0),
+            closeTime,
+            false,
+            3, // GTE - buy YES
+            GasPM.SeedParams(seedAmount, FEE_BPS, 0, 0, 1, ALICE, 0),
+            GasPM.SwapParams(swapAmount, 0, false, ALICE) // buyYes = yesForNo=false
+        );
+
+        // GasPM contract should have no leftover shares
+        uint256 marketId = gasPM.getMarkets(0, 1)[0];
+        uint256 noId = uint256(keccak256(abi.encodePacked("PMARKET:NO", marketId)));
+
+        uint256 gasPMYes = pm.balanceOf(address(gasPM), marketId);
+        uint256 gasPMNo = pm.balanceOf(address(gasPM), noId);
+
+        assertEq(gasPMYes, 0, "GasPM should have no YES shares");
+        assertEq(gasPMNo, 0, "GasPM should have no NO shares");
+
+        // ALICE should have received shares
+        uint256 aliceYes = pm.balanceOf(ALICE, marketId);
+        assertGt(aliceYes, 0, "ALICE should have YES shares");
     }
 }

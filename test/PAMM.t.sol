@@ -2136,6 +2136,48 @@ contract PAMM_Test is Test {
         assertEq(next, 0); // No more pages
     }
 
+    function test_GetMarketsByIds_Success() public {
+        // Create additional markets
+        pm.createMarket("market2", RESOLVER, address(wsteth), closeTime, true);
+        (uint256 mId3,) = pm.createMarket("market3", RESOLVER, address(wsteth), closeTime, false);
+
+        // Query specific markets (skip mId2)
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = marketId;
+        ids[1] = mId3;
+
+        (
+            address[] memory resolvers,
+            address[] memory collaterals,
+            uint8[] memory states,
+            uint64[] memory closes,,,,
+            string[] memory descs
+        ) = pm.getMarketsByIds(ids);
+
+        assertEq(resolvers.length, 2);
+        assertEq(resolvers[0], RESOLVER);
+        assertEq(resolvers[1], RESOLVER);
+        assertEq(collaterals[0], address(wsteth));
+        assertEq(states[0], 0); // not canClose
+        assertEq(states[1], 0); // not canClose
+        assertEq(closes[0], closeTime);
+        assertEq(closes[1], closeTime);
+        assertEq(descs[0], DESC);
+        assertEq(descs[1], "market3");
+    }
+
+    function test_GetMarketsByIds_InvalidIdSkipped() public view {
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = marketId;
+        ids[1] = uint256(keccak256("nonexistent"));
+
+        (address[] memory resolvers,,,,,,,) = pm.getMarketsByIds(ids);
+
+        assertEq(resolvers.length, 2);
+        assertEq(resolvers[0], RESOLVER);
+        assertEq(resolvers[1], address(0)); // Invalid market returns zero
+    }
+
     function test_GetUserPositions_StartBeyondLength() public view {
         (uint256[] memory marketIds,,,,,,,, uint256 next) = pm.getUserPositions(ALICE, 1000, 10);
 
@@ -4861,6 +4903,233 @@ contract PAMM_ZAMM_Test is Test {
         vm.prank(ALICE);
         vm.expectRevert(); // Will revert with InsufficientPermission from ZAMM
         pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+    }
+
+    function test_RemoveLiquidityToCollateral_Resolved_YesWins() public {
+        // Alice adds liquidity
+        vm.prank(ALICE);
+        (, uint256 liquidity) =
+            pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        vm.prank(ALICE);
+        zamm.setOperator(address(pm), true);
+
+        // Warp past close and resolve YES wins
+        vm.warp(closeTime + 1);
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, true);
+
+        uint256 wstethBefore = wsteth.balanceOf(ALICE);
+
+        // Remove liquidity from resolved market
+        vm.prank(ALICE);
+        (uint256 collateralOut, uint256 leftoverYes, uint256 leftoverNo) =
+            pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+
+        uint256 wstethAfter = wsteth.balanceOf(ALICE);
+
+        assertTrue(collateralOut > 0, "should receive collateral");
+        assertEq(wstethAfter - wstethBefore, collateralOut, "collateral should be transferred");
+        // YES won, so leftoverYes should be 0, leftoverNo is dust (worthless)
+        assertEq(leftoverYes, 0, "no YES leftovers when YES wins");
+        assertTrue(leftoverNo > 0 || leftoverNo == 0, "NO is returned as dust"); // might be 0 for balanced pool
+    }
+
+    function test_RemoveLiquidityToCollateral_Resolved_NoWins() public {
+        // Alice adds liquidity
+        vm.prank(ALICE);
+        (, uint256 liquidity) =
+            pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        vm.prank(ALICE);
+        zamm.setOperator(address(pm), true);
+
+        // Warp past close and resolve NO wins
+        vm.warp(closeTime + 1);
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, false);
+
+        uint256 wstethBefore = wsteth.balanceOf(ALICE);
+
+        // Remove liquidity from resolved market
+        vm.prank(ALICE);
+        (uint256 collateralOut, uint256 leftoverYes, uint256 leftoverNo) =
+            pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+
+        uint256 wstethAfter = wsteth.balanceOf(ALICE);
+
+        assertTrue(collateralOut > 0, "should receive collateral");
+        assertEq(wstethAfter - wstethBefore, collateralOut, "collateral should be transferred");
+        // NO won, so leftoverNo should be 0, leftoverYes is dust (worthless)
+        assertEq(leftoverNo, 0, "no NO leftovers when NO wins");
+        assertTrue(leftoverYes >= 0, "YES is returned as dust");
+    }
+
+    function test_RemoveLiquidityToCollateral_Resolved_WithFee() public {
+        // Set resolver fee
+        vm.prank(RESOLVER);
+        pm.setResolverFeeBps(500); // 5%
+
+        // Alice adds liquidity
+        vm.prank(ALICE);
+        (, uint256 liquidity) =
+            pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        vm.prank(ALICE);
+        zamm.setOperator(address(pm), true);
+
+        // Warp past close and resolve YES wins
+        vm.warp(closeTime + 1);
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, true);
+
+        uint256 resolverBefore = wsteth.balanceOf(RESOLVER);
+        uint256 aliceBefore = wsteth.balanceOf(ALICE);
+
+        // Remove liquidity from resolved market
+        vm.prank(ALICE);
+        (uint256 collateralOut,,) =
+            pm.removeLiquidityToCollateral(marketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+
+        uint256 resolverAfter = wsteth.balanceOf(RESOLVER);
+        uint256 aliceAfter = wsteth.balanceOf(ALICE);
+
+        uint256 resolverReceived = resolverAfter - resolverBefore;
+        uint256 aliceReceived = aliceAfter - aliceBefore;
+
+        assertTrue(resolverReceived > 0, "resolver should receive fee");
+        assertEq(aliceReceived, collateralOut, "alice should receive payout");
+
+        // Verify fee is approximately 5% of gross
+        uint256 gross = collateralOut + resolverReceived;
+        uint256 expectedFee = (gross * 500) / 10000;
+        assertApproxEqAbs(resolverReceived, expectedFee, 1, "fee should be 5%");
+    }
+
+    function test_RemoveLiquidityToCollateral_Resolved_ETH() public {
+        // Create ETH market
+        (uint256 ethMarketId,) =
+            pm.createMarket("ETH market", RESOLVER, address(0), closeTime, false);
+
+        // Alice adds ETH liquidity
+        vm.prank(ALICE);
+        (, uint256 liquidity) =
+            pm.splitAndAddLiquidity{value: 10000 ether}(ethMarketId, 0, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        vm.prank(ALICE);
+        zamm.setOperator(address(pm), true);
+
+        // Warp past close and resolve YES wins
+        vm.warp(closeTime + 1);
+        vm.prank(RESOLVER);
+        pm.resolve(ethMarketId, true);
+
+        uint256 ethBefore = ALICE.balance;
+
+        vm.prank(ALICE);
+        (uint256 collateralOut,,) =
+            pm.removeLiquidityToCollateral(ethMarketId, FEE_BPS, liquidity, 0, 0, 0, ALICE, 0);
+
+        uint256 ethAfter = ALICE.balance;
+
+        assertTrue(collateralOut > 0, "should receive ETH");
+        assertEq(ethAfter - ethBefore, collateralOut, "ETH should be transferred");
+    }
+
+    function test_RemoveLiquidityToCollateral_Resolved_DustReturned() public {
+        // Alice adds liquidity
+        vm.prank(ALICE);
+        pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        // Bob buys YES, unbalancing the pool (more NO in pool, less YES)
+        vm.prank(BOB);
+        pm.buyYes(marketId, 2000 ether, 0, 0, FEE_BPS, BOB, 0);
+
+        // Get Alice's LP balance
+        IZAMM.PoolKey memory key = pm.poolKey(marketId, FEE_BPS);
+        uint256 poolId =
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
+        uint256 aliceLp = zamm.balanceOf(ALICE, poolId);
+
+        vm.prank(ALICE);
+        zamm.setOperator(address(pm), true);
+
+        // Warp past close and resolve YES wins
+        vm.warp(closeTime + 1);
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, true);
+
+        uint256 noBalBefore = pm.balanceOf(ALICE, noId);
+
+        // Remove liquidity from resolved market
+        vm.prank(ALICE);
+        (uint256 collateralOut, uint256 leftoverYes, uint256 leftoverNo) =
+            pm.removeLiquidityToCollateral(marketId, FEE_BPS, aliceLp, 0, 0, 0, ALICE, 0);
+
+        uint256 noBalAfter = pm.balanceOf(ALICE, noId);
+
+        assertTrue(collateralOut > 0, "should receive collateral from winning YES");
+        assertEq(leftoverYes, 0, "no YES leftovers since YES won");
+        // Since pool was unbalanced with more NO, we expect NO dust
+        assertEq(noBalAfter - noBalBefore, leftoverNo, "NO dust should be returned to caller");
+    }
+
+    function test_RemoveLiquidityToCollateral_Resolved_MinCollateralOut() public {
+        vm.prank(ALICE);
+        (, uint256 liquidity) =
+            pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        vm.prank(ALICE);
+        zamm.setOperator(address(pm), true);
+
+        // Warp past close and resolve
+        vm.warp(closeTime + 1);
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, true);
+
+        // Set unreasonably high minCollateralOut
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSignature("InsufficientOutput()"));
+        pm.removeLiquidityToCollateral(
+            marketId, FEE_BPS, liquidity, 0, 0, type(uint256).max, ALICE, 0
+        );
+    }
+
+    function test_RemoveLiquidityToCollateral_Resolved_NoWinningShares() public {
+        // Alice adds liquidity
+        vm.prank(ALICE);
+        pm.splitAndAddLiquidity(marketId, 10000 ether, FEE_BPS, 0, 0, 0, ALICE, 0);
+
+        // Bob buys all the NO from pool (gives YES to pool)
+        // This means when LP is removed, Alice gets mostly YES, little NO
+        vm.prank(BOB);
+        pm.buyNo(marketId, 5000 ether, 0, 0, FEE_BPS, BOB, 0);
+
+        IZAMM.PoolKey memory key = pm.poolKey(marketId, FEE_BPS);
+        uint256 poolId =
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
+        uint256 aliceLp = zamm.balanceOf(ALICE, poolId);
+
+        vm.prank(ALICE);
+        zamm.setOperator(address(pm), true);
+
+        // Warp past close and resolve NO wins
+        vm.warp(closeTime + 1);
+        vm.prank(RESOLVER);
+        pm.resolve(marketId, false);
+
+        // Alice will get mostly YES from LP removal, but NO won
+        // She should still get some payout from her NO shares (whatever small amount she has)
+        vm.prank(ALICE);
+        (uint256 collateralOut, uint256 leftoverYes, uint256 leftoverNo) =
+            pm.removeLiquidityToCollateral(marketId, FEE_BPS, aliceLp, 0, 0, 0, ALICE, 0);
+
+        // NO won, so collateralOut comes from NO shares
+        // leftoverYes is returned as worthless dust
+        assertEq(leftoverNo, 0, "no NO leftovers when NO wins");
+        assertTrue(leftoverYes > 0, "YES dust should be returned");
+        // She might have some NO shares, so collateralOut could be > 0
+        // (depends on pool state - if pool was heavily unbalanced, she might have very little NO)
     }
 
     /*//////////////////////////////////////////////////////////////

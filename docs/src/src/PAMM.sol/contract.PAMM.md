@@ -1,5 +1,5 @@
 # PAMM
-[Git Source](https://github.com/zammdefi/pm/blob/006ba95d7cfd5dfbd631c3f6ce5b2bedefc25ed2/src/PAMM.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/6409aa225054aeb8e5eb04dafccaae59a1d0f4cc/src/PAMM.sol)
 
 **Inherits:**
 [ERC6909Minimal](/src/PAMM.sol/abstract.ERC6909Minimal.md)
@@ -10,7 +10,7 @@ PAMM V1
 Prediction-market collateral vault with per-market collateral:
 - Supports ETH (address(0)) and any ERC20 with varying decimals
 - Fully-collateralised YES/NO shares (ERC6909)
-- 1 winning share redeems for 10^decimals collateral units
+- Shares are 1:1 with collateral wei (1 share = 1 wei of collateral)
 
 Trading/LP happens on a separate AMM (e.g. ZAMM).
 
@@ -363,9 +363,9 @@ function setResolverFeeBps(uint16 bps) public;
 
 ### split
 
-Lock collateral -> mint YES+NO pair.
+Lock collateral -> mint YES+NO pair (1:1).
 
-For ETH markets, send ETH with the call. Dust refunded.
+For ETH markets, send ETH with the call.
 
 
 ```solidity
@@ -380,7 +380,7 @@ function split(uint256 marketId, uint256 collateralIn, address to)
 
 Burn YES+NO pair -> unlock collateral.
 
-Only while market is open. Merges min(shares, yesBalance, noBalance).
+Allowed until market is resolved (not just until close). Merges min(shares, yesBalance, noBalance).
 
 
 ```solidity
@@ -534,7 +534,8 @@ function _splitInternal(Market storage m, uint256 marketId, uint256 collateralIn
 Remove LP position and convert to collateral in one tx.
 
 User must approve PAMM on ZAMM to pull LP tokens (via ZAMM.setOperator or approve).
-Burns balanced YES/NO pairs, refunds any leftover shares to msg.sender.
+- Unresolved markets: Burns balanced YES/NO pairs, refunds leftover shares.
+- Resolved markets: Claims winning shares, refunds losing shares as dust.
 
 
 ```solidity
@@ -558,7 +559,7 @@ function removeLiquidityToCollateral(
 |`liquidity`|`uint256`|Amount of LP tokens to burn|
 |`amount0Min`|`uint256`|Minimum amount of token0 from LP removal (slippage protection)|
 |`amount1Min`|`uint256`|Minimum amount of token1 from LP removal (slippage protection)|
-|`minCollateralOut`|`uint256`|Minimum collateral to receive after merging|
+|`minCollateralOut`|`uint256`|Minimum collateral to receive (merged amount or claim payout)|
 |`to`|`address`|Recipient of collateral|
 |`deadline`|`uint256`|Timestamp after which the tx reverts (0 = current block)|
 
@@ -704,7 +705,7 @@ function sellYesForExactCollateral(
 |Name|Type|Description|
 |----|----|-----------|
 |`marketId`|`uint256`|The market to sell YES from|
-|`collateralOut`|`uint256`|Target collateral (floored to whole shares)|
+|`collateralOut`|`uint256`|Exact collateral amount to receive|
 |`maxYesIn`|`uint256`|Maximum YES shares willing to spend|
 |`maxSwapIn`|`uint256`|Maximum YES to swap (slippage protection on swap leg)|
 |`feeOrHook`|`uint256`|Pool fee tier (bps) or hook address|
@@ -733,7 +734,7 @@ function sellNoForExactCollateral(
 |Name|Type|Description|
 |----|----|-----------|
 |`marketId`|`uint256`|The market to sell NO from|
-|`collateralOut`|`uint256`|Target collateral (floored to whole shares)|
+|`collateralOut`|`uint256`|Exact collateral amount to receive|
 |`maxNoIn`|`uint256`|Maximum NO shares willing to spend|
 |`maxSwapIn`|`uint256`|Maximum NO to swap (slippage protection on swap leg)|
 |`feeOrHook`|`uint256`|Pool fee tier (bps) or hook address|
@@ -750,18 +751,11 @@ Number of markets.
 function marketCount() public view returns (uint256);
 ```
 
-### collateralPerShare
-
-Collateral per share for a market (10^decimals).
-
-
-```solidity
-function collateralPerShare(uint256 marketId) public view returns (uint256);
-```
-
 ### tradingOpen
 
-Check if market is open (split/merge allowed).
+Check if market is open for trading (split/buy/sell allowed).
+
+Merge is allowed until resolved, not just until close.
 
 
 ```solidity
@@ -789,7 +783,6 @@ function getMarket(uint256 marketId)
     returns (
         address resolver,
         address collateral,
-        uint8 decimals,
         bool resolved,
         bool outcome,
         bool canClose,
@@ -826,7 +819,6 @@ function getMarkets(uint256 start, uint256 count)
         uint256[] memory marketIds,
         address[] memory resolvers,
         address[] memory collaterals,
-        uint8[] memory decimalsList,
         uint8[] memory states,
         uint64[] memory closes,
         uint256[] memory collateralAmounts,
@@ -834,6 +826,29 @@ function getMarkets(uint256 start, uint256 count)
         uint256[] memory noSupplies,
         string[] memory descs,
         uint256 next
+    );
+```
+
+### getMarketsByIds
+
+Batch read specific markets by ID.
+
+Skips invalid market IDs (resolver == address(0)).
+
+
+```solidity
+function getMarketsByIds(uint256[] calldata ids)
+    public
+    view
+    returns (
+        address[] memory resolvers,
+        address[] memory collaterals,
+        uint8[] memory states,
+        uint64[] memory closes,
+        uint256[] memory collateralAmounts,
+        uint256[] memory yesSupplies,
+        uint256[] memory noSupplies,
+        string[] memory descs
     );
 ```
 
@@ -869,7 +884,6 @@ event Created(
     string description,
     address resolver,
     address collateral,
-    uint8 decimals,
     uint64 close,
     bool canClose
 );
@@ -916,6 +930,12 @@ event ResolverFeeSet(address indexed resolver, uint16 bps);
 ```
 
 ## Errors
+### Reentrancy
+
+```solidity
+error Reentrancy();
+```
+
 ### AmountZero
 
 ```solidity
@@ -958,6 +978,12 @@ error MarketExists();
 error OnlyResolver();
 ```
 
+### TransferFailed
+
+```solidity
+error TransferFailed();
+```
+
 ### ExcessiveInput
 
 ```solidity
@@ -994,12 +1020,6 @@ error InvalidResolver();
 error AlreadyResolved();
 ```
 
-### InvalidDecimals
-
-```solidity
-error InvalidDecimals();
-```
-
 ### MarketNotClosed
 
 ```solidity
@@ -1012,10 +1032,10 @@ error MarketNotClosed();
 error InvalidETHAmount();
 ```
 
-### InvalidCollateral
+### ETHTransferFailed
 
 ```solidity
-error InvalidCollateral();
+error ETHTransferFailed();
 ```
 
 ### InvalidSwapAmount
@@ -1030,10 +1050,10 @@ error InvalidSwapAmount();
 error InsufficientOutput();
 ```
 
-### CollateralTooSmall
+### TransferFromFailed
 
 ```solidity
-error CollateralTooSmall();
+error TransferFromFailed();
 ```
 
 ### WrongCollateralType
@@ -1048,11 +1068,10 @@ error WrongCollateralType();
 ```solidity
 struct Market {
     address resolver; // who can resolve (20 bytes)
-    uint8 decimals; // collateral decimals (1 byte)
     bool resolved; // outcome set? (1 byte)
     bool outcome; // YES wins if true (1 byte)
     bool canClose; // resolver can early-close (1 byte)
-    uint64 close; // resolve allowed after (8 bytes) -- slot 1: 32 bytes
+    uint64 close; // resolve allowed after (8 bytes) -- slot 1: 31 bytes
     address collateral; // collateral token (address(0) = ETH) -- slot 2
     uint256 collateralLocked; // collateral locked for market -- slot 3
 }

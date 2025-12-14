@@ -439,6 +439,28 @@
             line-height: 1.3;
         }
 
+        .market-position {
+            display: flex;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+            font-size: var(--font-small);
+            font-weight: 600;
+        }
+
+        .market-position .pos-yes {
+            color: var(--green);
+            background: rgba(0, 255, 136, 0.1);
+            padding: 0.2rem 0.5rem;
+            border-radius: 2px;
+        }
+
+        .market-position .pos-no {
+            color: var(--red);
+            background: rgba(255, 68, 68, 0.1);
+            padding: 0.2rem 0.5rem;
+            border-radius: 2px;
+        }
+
         .market-meta {
             display: flex;
             justify-content: space-between;
@@ -1546,7 +1568,7 @@
     <footer class="footer">
         <div class="footer-links">
             <a href="https://github.com/z0r0z/pm" target="_blank" class="footer-link">GitHub</a>
-            <a href="https://etherscan.io/address/0x0000000000667ecd419766a90fad86fae21547f1" target="_blank" class="footer-link">Contract</a>
+            <a href="https://etherscan.io/address/0x0000000000ee3d4294438093EaA34308f47Bc0b4" target="_blank" class="footer-link">Contract</a>
         </div>
         <div class="footer-text">Ethereum Gas Prediction Markets</div>
     </footer>
@@ -1621,8 +1643,8 @@
 
     <script>
         // ======================== CONFIG ========================
-        const GASPM_ADDRESS = '0x0000000000667ecd419766a90fad86fae21547f1';
-        const PAMM_ADDRESS = '0x0000000000f8ba51d6e987660d3e455ac2c4be9d';
+        const GASPM_ADDRESS = '0x0000000000ee3d4294438093EaA34308f47Bc0b4';
+        const PAMM_ADDRESS = '0x000000000044bfe6c2BBFeD8862973E0612f07C0';
         const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
         const MULTICALL3_ABI = [
@@ -1632,15 +1654,12 @@
         const GASPM_ABI = [
             'function update() public',
             'function baseFeeAverage() public view returns (uint256)',
-            'function baseFeeAverageGwei() public view returns (uint256)',
             'function baseFeeCurrent() public view returns (uint256)',
-            'function baseFeeCurrentGwei() public view returns (uint256)',
             'function baseFeeMax() public view returns (uint256)',
             'function baseFeeMin() public view returns (uint256)',
             'function baseFeeSpread() public view returns (uint256)',
             'function lastUpdateTime() public view returns (uint64)',
             'function startTime() public view returns (uint64)',
-            'function trackingDuration() public view returns (uint256)',
             'function cumulativeBaseFee() public view returns (uint256)',
             'function lastBaseFee() public view returns (uint256)',
             'function marketCount() public view returns (uint256)',
@@ -1655,7 +1674,9 @@
             'function createTroughMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
             'function createVolatilityMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
             'function createSpotMarket(uint256 threshold, address collateral, uint64 close, bool canClose, uint256 collateralIn, uint256 feeOrHook, uint256 minLiquidity, address lpRecipient) public payable returns (uint256 marketId)',
-            'event Updated(uint256 baseFee, uint256 cumulativeBaseFee, address indexed updater, uint256 reward)',
+            'function observationCount() public view returns (uint256)',
+            'function getObservations(uint256 start, uint256 count) public view returns (tuple(uint64 timestamp, uint64 baseFee, uint128 cumulativeBaseFee)[])',
+            'event Updated(uint64 indexed timestamp, uint256 baseFee, uint256 cumulativeBaseFee, address indexed updater, uint256 reward)',
             'event MarketCreated(uint256 indexed marketId, uint256 threshold, uint256 threshold2, uint64 close, bool canClose, uint8 op)'
         ];
 
@@ -1680,7 +1701,7 @@
         ];
 
         // Contract addresses
-        const RESOLVER_ADDRESS = '0x0000000000b0ba1b2bb3AF96FbB893d835970ec4'; // Must match GasPM.RESOLVER
+        const RESOLVER_ADDRESS = '0x00000000002205020E387b6a378c05639047BcFB'; // Must match GasPM.RESOLVER
         const ZAMM_ADDRESS = '0x000000000000040470635EB91b7CE4D132D616eD'; // From PAMM constant
         const FEE_TIER = 30n; // 0.3% fee for all GasPM markets
 
@@ -2083,13 +2104,15 @@
                 // Run in parallel with multicall for efficiency
                 const blockPromise = rpcProvider.getBlock('latest');
 
-                // CALL 1: Gas oracle data + market infos in single batch
+                // CALL 1: Gas oracle data + market infos + observation count in single batch
                 const call1 = [
-                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeAverageGwei') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeAverage') },
                     { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeMax') },
                     { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeMin') },
                     { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeSpread') },
                     { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('lastUpdateTime') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('startTime') },
+                    { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('observationCount') },
                     { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('getMarketInfos', [0, MAX_MARKETS]) }
                 ];
 
@@ -2101,12 +2124,15 @@
                 // Get live base fee from block (baseFeePerGas is in wei)
                 const liveGwei = latestBlock.baseFeePerGas ? Number(latestBlock.baseFeePerGas) / 1e9 : 0;
 
-                // Decode oracle data (may be 0 if not updated yet)
-                const twapGwei = results1[0].success ? Number(gasPmInterface.decodeFunctionResult('baseFeeAverageGwei', results1[0].returnData)[0]) : 0;
+                // Decode oracle data (baseFeeAverage returns wei, convert to gwei)
+                const twapWei = results1[0].success ? gasPmInterface.decodeFunctionResult('baseFeeAverage', results1[0].returnData)[0] : 0n;
+                const twapGwei = Number(twapWei) / 1e9;
                 const maxFee = results1[1].success ? gasPmInterface.decodeFunctionResult('baseFeeMax', results1[1].returnData)[0] : 0n;
                 const minFee = results1[2].success ? gasPmInterface.decodeFunctionResult('baseFeeMin', results1[2].returnData)[0] : 0n;
                 const spread = results1[3].success ? gasPmInterface.decodeFunctionResult('baseFeeSpread', results1[3].returnData)[0] : 0n;
                 const lastUpdate = results1[4].success ? gasPmInterface.decodeFunctionResult('lastUpdateTime', results1[4].returnData)[0] : 0n;
+                const startTime = results1[5].success ? gasPmInterface.decodeFunctionResult('startTime', results1[5].returnData)[0] : 0n;
+                const obsCount = results1[6].success ? Number(gasPmInterface.decodeFunctionResult('observationCount', results1[6].returnData)[0]) : 0;
 
                 // Use live base fee as current, oracle TWAP for average
                 const currentGwei = liveGwei.toFixed(2);
@@ -2116,12 +2142,13 @@
                     twap: twapGwei || liveGwei,  // Fallback to live if no TWAP yet
                     current: liveGwei,
                     max: Number(maxFee) / 1e9 || liveGwei,
-                    min: Number(minFee) / 1e9 || liveGwei
+                    min: Number(minFee) / 1e9 || liveGwei,
+                    startTime: Number(startTime)
                 };
 
                 // Update gas display
                 document.getElementById('currentGas').innerHTML = `${currentGwei}<span class="gas-unit">gwei</span>`;
-                document.getElementById('twapGas').innerHTML = `${twapGwei || '--'}<span class="gas-unit">gwei</span>`;
+                document.getElementById('twapGas').innerHTML = `${twapGwei.toFixed(2) || '--'}<span class="gas-unit">gwei</span>`;
                 document.getElementById('maxGas').textContent = maxFee ? formatGwei(maxFee) : '--';
                 document.getElementById('minGas').textContent = minFee ? formatGwei(minFee) : '--';
                 document.getElementById('spreadGas').textContent = spread ? formatGwei(spread) : '--';
@@ -2129,16 +2156,42 @@
 
                 // Update create section gas values
                 document.getElementById('createCurrentGas').textContent = currentGwei;
-                document.getElementById('createTwapGas').textContent = twapGwei || currentGwei;
+                document.getElementById('createTwapGas').textContent = twapGwei.toFixed(2) || currentGwei;
+
+                // Fetch observations for chart (batch via multicall if possible)
+                if (obsCount > 0) {
+                    const batchSize = 500;
+                    const obsCalls = [];
+                    for (let start = 0; start < obsCount; start += batchSize) {
+                        obsCalls.push({
+                            target: GASPM_ADDRESS,
+                            allowFailure: true,
+                            callData: gasPmInterface.encodeFunctionData('getObservations', [start, Math.min(batchSize, obsCount - start)])
+                        });
+                    }
+                    const obsResults = await multicall.aggregate3(obsCalls);
+                    const observations = [];
+                    for (const res of obsResults) {
+                        if (res.success) {
+                            const batch = gasPmInterface.decodeFunctionResult('getObservations', res.returnData)[0];
+                            observations.push(...batch);
+                        }
+                    }
+                    // Store observations: timestamp, baseFee (gwei), cumulativeBaseFee
+                    chartDataPoints = observations.map(o => Number(o.baseFee) / 1e9);
+                    chartTimestamps = observations.map(o => Number(o.timestamp));
+                    chartCumulatives = observations.map(o => Number(o.cumulativeBaseFee));
+                    console.log(`Loaded ${chartDataPoints.length} observations for chart`);
+                }
 
                 // Draw chart with actual on-chain data
                 drawChart(cachedGasData);
 
                 // Decode market infos (may be empty or fail if no markets)
                 let marketInfos = [];
-                if (results1[5].success) {
+                if (results1[7].success) {
                     try {
-                        marketInfos = gasPmInterface.decodeFunctionResult('getMarketInfos', results1[5].returnData)[0];
+                        marketInfos = gasPmInterface.decodeFunctionResult('getMarketInfos', results1[7].returnData)[0];
                     } catch (e) {
                         console.warn('No markets or failed to decode:', e);
                     }
@@ -2178,10 +2231,63 @@
                                 ready: info.ready,
                                 observable: marketData[10], // description
                                 yesSupply: marketData[8],
-                                noSupply: marketData[9]
+                                noSupply: marketData[9],
+                                userYes: 0n,
+                                userNo: 0n
                             });
                         } catch (e) {
                             console.warn('Failed to decode market', info.marketId, e);
+                        }
+                    }
+                }
+
+                // CALL 3: Fetch user positions if connected
+                if (connectedAddress && markets.length > 0) {
+                    const balanceCalls = [];
+                    for (const m of markets) {
+                        // YES balance (token id = marketId)
+                        balanceCalls.push({
+                            target: PAMM_ADDRESS,
+                            allowFailure: true,
+                            callData: pammInterface.encodeFunctionData('balanceOf', [connectedAddress, m.id])
+                        });
+                        // NO balance (token id = getNoId(marketId))
+                        balanceCalls.push({
+                            target: PAMM_ADDRESS,
+                            allowFailure: true,
+                            callData: pammInterface.encodeFunctionData('getNoId', [m.id])
+                        });
+                    }
+                    const balanceResults = await multicall.aggregate3(balanceCalls);
+
+                    // First pass: get NO token IDs
+                    const noIds = [];
+                    for (let i = 0; i < markets.length; i++) {
+                        const noIdResult = balanceResults[i * 2 + 1];
+                        if (noIdResult.success) {
+                            noIds.push(pammInterface.decodeFunctionResult('getNoId', noIdResult.returnData)[0]);
+                        } else {
+                            noIds.push(null);
+                        }
+                    }
+
+                    // Second batch: get NO balances
+                    const noBalanceCalls = noIds.map((noId, i) => ({
+                        target: PAMM_ADDRESS,
+                        allowFailure: true,
+                        callData: noId ? pammInterface.encodeFunctionData('balanceOf', [connectedAddress, noId]) : '0x'
+                    }));
+                    const noBalanceResults = await multicall.aggregate3(noBalanceCalls);
+
+                    // Apply balances to markets
+                    for (let i = 0; i < markets.length; i++) {
+                        const yesResult = balanceResults[i * 2];
+                        if (yesResult.success) {
+                            markets[i].userYes = pammInterface.decodeFunctionResult('balanceOf', yesResult.returnData)[0];
+                        }
+                        const noResult = noBalanceResults[i];
+                        if (noResult.success && noIds[i]) {
+                            markets[i].userNo = pammInterface.decodeFunctionResult('balanceOf', noResult.returnData)[0];
                         }
                     }
                 }
@@ -2200,6 +2306,19 @@
             return gwei.toFixed(2);
         }
 
+        // Check if error is a user rejection (wallet popup cancelled)
+        function isUserRejection(error) {
+            const msg = (error.message || '').toLowerCase();
+            const reason = (error.reason || '').toLowerCase();
+            const code = error.code;
+            return msg.includes('user rejected') ||
+                   msg.includes('user denied') ||
+                   msg.includes('rejected the request') ||
+                   reason.includes('rejected') ||
+                   code === 'ACTION_REJECTED' ||
+                   code === 4001;
+        }
+
         async function updateOracle() {
             if (!signer) {
                 showStatus('Connect wallet to update oracle', 'error');
@@ -2209,44 +2328,43 @@
             try {
                 const contract = new ethers.Contract(GASPM_ADDRESS, GASPM_ABI, signer);
                 const tx = await contract.update();
-                showStatus('Updating oracle...', 'info');
+                showStatus(`Updating oracle... ${txLink(tx.hash)}`, 'info', true);
                 await tx.wait();
-                showStatus('Oracle updated!', 'success');
+                showStatus(`Oracle updated! ${txLink(tx.hash)}`, 'success', true);
                 loadAllData();
             } catch (error) {
                 console.error('Update failed:', error);
-                showStatus('Update failed: ' + error.message, 'error');
+                if (isUserRejection(error)) {
+                    showStatus('Transaction cancelled', 'info');
+                } else {
+                    showStatus('Update failed: ' + error.message, 'error');
+                }
             }
         }
 
         // ======================== CHART ========================
-        let chartDataPoints = []; // Store historical data points from events
+        let chartDataPoints = []; // Store historical data points from observations (gwei)
+        let chartTimestamps = []; // Store timestamps for tooltip display
+        let chartCumulatives = []; // Store cumulative base fee for rolling TWAP calculation
 
-        async function loadChartData() {
-            try {
-                const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
-                const gaspm = new ethers.Contract(GASPM_ADDRESS, [
-                    'event Updated(uint256 baseFee, uint256 cumulativeBaseFee, address indexed updater, uint256 reward)'
-                ], rpcProvider);
-
-                // Query Updated events (last 10000 blocks or so)
-                const currentBlock = await rpcProvider.getBlockNumber();
-                const fromBlock = Math.max(0, currentBlock - 10000);
-
-                const events = await gaspm.queryFilter('Updated', fromBlock, currentBlock);
-
-                // Convert events to data points (gwei values)
-                chartDataPoints = events.map(e => Number(e.args.baseFee) / 1e9);
-
-                console.log(`Loaded ${chartDataPoints.length} chart data points`);
-            } catch (err) {
-                console.warn('Failed to load chart events:', err);
-                chartDataPoints = [];
+        // Compute rolling TWAP from observations (cumulative / elapsed since start)
+        function computeRollingTwap(startTime) {
+            if (chartCumulatives.length < 2 || !startTime) return [];
+            const twapLine = [];
+            for (let i = 0; i < chartCumulatives.length; i++) {
+                const elapsed = chartTimestamps[i] - startTime;
+                if (elapsed > 0) {
+                    // TWAP = cumulative / elapsed, convert to gwei
+                    twapLine.push(chartCumulatives[i] / elapsed / 1e9);
+                } else {
+                    twapLine.push(chartDataPoints[i]); // Fallback to spot
+                }
             }
+            return twapLine;
         }
 
         function drawChart(gasData) {
-            const { twap, current } = gasData;
+            const { twap, current, startTime } = gasData;
 
             const canvas = document.getElementById('gasChart');
             const ctx = canvas.getContext('2d');
@@ -2272,6 +2390,13 @@
                 data.push(current);
             }
 
+            // Compute rolling TWAP from cumulative observations
+            const rollingTwap = computeRollingTwap(startTime);
+            // Add current TWAP as final point if we added current to data
+            if (rollingTwap.length > 0 && rollingTwap.length < data.length) {
+                rollingTwap.push(twap);
+            }
+
             // Parse market thresholds for overlays
             const now = Date.now() / 1000;
             const activeMarkets = markets.filter(m => !m.resolved && m.close > now);
@@ -2280,9 +2405,11 @@
                 return parsed ? { ...parsed, market: m } : null;
             }).filter(Boolean);
 
-            // Calculate Y range
-            let max = Math.max(...data, twap) * 1.1;
-            let min = Math.min(...data, twap) * 0.9;
+            // Calculate Y range (include rolling TWAP in range calculation)
+            const allValues = [...data, twap];
+            if (rollingTwap.length > 0) allValues.push(...rollingTwap);
+            let max = Math.max(...allValues) * 1.1;
+            let min = Math.min(...allValues) * 0.9;
 
             marketOverlays.forEach(overlay => {
                 if (overlay.threshold) {
@@ -2337,7 +2464,58 @@
                 ctx.fillText((max - range * i / 4).toFixed(1), padding - 5, y + 4);
             }
 
-            // Draw TWAP reference line
+            // Draw time axis labels (X-axis)
+            if (chartTimestamps.length > 1) {
+                const timestamps = [...chartTimestamps];
+                // Add current time as last timestamp if we appended current price
+                if (timestamps.length < data.length) {
+                    timestamps.push(Math.floor(Date.now() / 1000));
+                }
+                const firstTime = timestamps[0];
+                const lastTime = timestamps[timestamps.length - 1];
+                const timeSpan = lastTime - firstTime;
+
+                // Determine time format based on span
+                const formatTime = (ts) => {
+                    const d = new Date(ts * 1000);
+                    if (timeSpan < 86400) { // < 1 day: show hours
+                        return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                    } else if (timeSpan < 604800) { // < 1 week: show day + hour
+                        return d.toLocaleDateString(undefined, { weekday: 'short', hour: '2-digit' });
+                    } else { // >= 1 week: show date
+                        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                    }
+                };
+
+                // Draw 3-5 time labels evenly spaced
+                const numLabels = Math.min(5, data.length);
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.font = '9px Helvetica';
+                ctx.textAlign = 'center';
+                for (let i = 0; i < numLabels; i++) {
+                    const idx = Math.floor(i * (timestamps.length - 1) / (numLabels - 1));
+                    const x = padding + (width - padding * 2) * idx / Math.max(1, data.length - 1);
+                    const label = formatTime(timestamps[idx]);
+                    ctx.fillText(label, x, height - padding + 28);
+                }
+            }
+
+            // Draw rolling TWAP line (cyan, behind spot line)
+            if (rollingTwap.length > 1) {
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                for (let i = 0; i < rollingTwap.length; i++) {
+                    const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                    const y = gweiToY(rollingTwap[i]);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
+            // Draw current TWAP reference (final value as horizontal dashed line)
             const twapY = gweiToY(twap);
             ctx.strokeStyle = '#00ffff';
             ctx.lineWidth = 1;
@@ -2350,9 +2528,9 @@
             ctx.fillStyle = '#00ffff';
             ctx.font = '10px Helvetica';
             ctx.textAlign = 'left';
-            ctx.fillText('TWAP ' + twap.toFixed(1), width - padding + 5, twapY + 4);
+            ctx.fillText('TWAP ' + twap.toFixed(2), width - padding + 5, twapY + 4);
 
-            // Draw line chart connecting data points
+            // Draw line chart connecting data points (spot prices)
             if (data.length > 0) {
                 ctx.strokeStyle = '#00ff88';
                 ctx.lineWidth = 2;
@@ -2365,9 +2543,9 @@
                 }
                 ctx.stroke();
 
-                // Draw gradient fill under line
+                // Draw gradient fill under spot line
                 const gradient = ctx.createLinearGradient(0, padding, 0, height - padding);
-                gradient.addColorStop(0, 'rgba(0, 255, 136, 0.2)');
+                gradient.addColorStop(0, 'rgba(0, 255, 136, 0.15)');
                 gradient.addColorStop(1, 'rgba(0, 255, 136, 0)');
                 ctx.fillStyle = gradient;
                 ctx.beginPath();
@@ -2381,13 +2559,14 @@
                 ctx.closePath();
                 ctx.fill();
 
-                // Draw data points
+                // Draw data points (smaller for many observations)
+                const pointSize = data.length > 50 ? 2 : (data.length > 20 ? 3 : 4);
                 ctx.fillStyle = '#00ff88';
                 for (let i = 0; i < data.length; i++) {
                     const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
                     const y = gweiToY(data[i]);
                     ctx.beginPath();
-                    ctx.arc(x, y, i === data.length - 1 ? 6 : 4, 0, Math.PI * 2);
+                    ctx.arc(x, y, i === data.length - 1 ? 6 : pointSize, 0, Math.PI * 2);
                     ctx.fill();
                 }
 
@@ -2400,14 +2579,20 @@
                 ctx.fill();
             }
 
-            // Point count label
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            // Legend (top-right corner)
             ctx.font = '9px Helvetica';
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#00ff88';
+            ctx.fillText('● Spot', width - padding - 45, padding - 8);
+            ctx.fillStyle = '#00ffff';
+            ctx.fillText('― TWAP', width - padding, padding - 8);
+            // Observation count (bottom-left, above time axis)
             ctx.textAlign = 'left';
-            ctx.fillText(`${data.length} observation${data.length !== 1 ? 's' : ''}`, padding, height - padding + 15);
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillText(`${data.length} obs`, padding, height - padding + 12);
 
-            // Store state for tooltips
-            chartState = { data, padding, min, max, width, height, twap, current };
+            // Store state for tooltips (include rolling TWAP for tooltip display)
+            chartState = { data, rollingTwap, padding, min, max, width, height, twap, current, timestamps: chartTimestamps };
         }
 
         // ======================== MARKETS ========================
@@ -2489,10 +2674,21 @@
                 `;
             }
 
+            // User position display
+            const hasYes = market.userYes && market.userYes > 0n;
+            const hasNo = market.userNo && market.userNo > 0n;
+            const positionHtml = (hasYes || hasNo) ? `
+                <div class="market-position">
+                    ${hasYes ? `<span class="pos-yes">${formatShares(market.userYes)} YES</span>` : ''}
+                    ${hasNo ? `<span class="pos-no">${formatShares(market.userNo)} NO</span>` : ''}
+                </div>
+            ` : '';
+
             return `
                 <div class="market-card">
                     <div class="market-type">${marketType}</div>
                     <div class="market-question">${escapeHtml(observable)}</div>
+                    ${positionHtml}
                     <div class="market-meta">
                         <div class="market-meta-item">
                             <div class="market-meta-value yes">${yesPrice}%</div>
@@ -2509,6 +2705,13 @@
                     ${actionsHtml}
                 </div>
             `;
+        }
+
+        function formatShares(wei) {
+            const val = parseFloat(ethers.formatEther(wei));
+            if (val >= 1000) return val.toFixed(0);
+            if (val >= 1) return val.toFixed(2);
+            return val.toFixed(4);
         }
 
         function formatTimeLeft(seconds) {
@@ -2650,16 +2853,17 @@
                 }
 
                 // Check GasPM oracle state before creating
-                const [baseFeeAvg, lastUpdate, trackingDuration] = await Promise.all([
+                const [baseFeeAvg, lastUpdate, startTime] = await Promise.all([
                     contract.baseFeeAverage(),
                     contract.lastUpdateTime(),
-                    contract.trackingDuration()
+                    contract.startTime()
                 ]);
+                const trackingDuration = Math.floor(Date.now() / 1000) - Number(startTime);
                 console.log('GasPM Oracle State:', {
                     baseFeeAverage: baseFeeAvg.toString(),
                     baseFeeAverageGwei: Number(baseFeeAvg) / 1e9,
                     lastUpdateTime: lastUpdate.toString(),
-                    trackingDuration: trackingDuration.toString()
+                    trackingDuration: trackingDuration
                 });
 
                 if (baseFeeAvg === 0n) {
@@ -2737,15 +2941,19 @@
                         return;
                 }
 
-                showStatus('Confirming...', 'info');
+                showStatus(`Confirming... ${txLink(tx.hash)}`, 'info', true);
                 await tx.wait();
-                showStatus('Market created!', 'success');
+                showStatus(`Market created! ${txLink(tx.hash)}`, 'success', true);
 
                 // Reload all data
                 loadAllData();
 
             } catch (error) {
                 console.error('Create failed:', error);
+                if (isUserRejection(error)) {
+                    showStatus('Transaction cancelled', 'info');
+                    return;
+                }
                 let msg = error.reason || error.message;
                 // Parse common contract errors
                 if (msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
@@ -3061,9 +3269,10 @@
                     }
                 }
 
-                showTradeStatus('Confirming...', 'info');
+                showTradeStatus(`Confirming... ${txLink(tx.hash)}`, 'info', true);
                 await tx.wait();
-                showTradeStatus(currentTradeMode === 'buy' ? 'Purchase complete!' : 'Sale complete!', 'success');
+                const doneMsg = currentTradeMode === 'buy' ? 'Purchase complete!' : 'Sale complete!';
+                showTradeStatus(`${doneMsg} ${txLink(tx.hash)}`, 'success', true);
 
                 setTimeout(() => {
                     closeTradeModal();
@@ -3072,13 +3281,21 @@
 
             } catch (error) {
                 console.error('Trade failed:', error);
-                showTradeStatus('Trade failed: ' + (error.reason || error.message), 'error');
+                if (isUserRejection(error)) {
+                    showTradeStatus('Transaction cancelled', 'info');
+                } else {
+                    showTradeStatus('Trade failed: ' + (error.reason || error.message), 'error');
+                }
             }
         }
 
-        function showTradeStatus(msg, type) {
+        function showTradeStatus(msg, type, isHtml = false) {
             const el = document.getElementById('tradeStatus');
-            el.textContent = msg;
+            if (isHtml) {
+                el.innerHTML = msg;
+            } else {
+                el.textContent = msg;
+            }
             el.className = `status-message show ${type}`;
         }
 
@@ -3094,16 +3311,20 @@
                 const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, signer);
 
                 const tx = await resolver.resolveMarket(marketId);
-                showStatus('Confirming...', 'info');
+                showStatus(`Confirming... ${txLink(tx.hash)}`, 'info', true);
                 await tx.wait();
-                showStatus('Market resolved!', 'success');
+                showStatus(`Market resolved! ${txLink(tx.hash)}`, 'success', true);
 
                 // Reload data
                 loadAllData();
 
             } catch (error) {
                 console.error('Resolve failed:', error);
-                showStatus('Resolve failed: ' + (error.reason || error.message), 'error');
+                if (isUserRejection(error)) {
+                    showStatus('Transaction cancelled', 'info');
+                } else {
+                    showStatus('Resolve failed: ' + (error.reason || error.message), 'error');
+                }
             }
         }
 
@@ -3130,24 +3351,37 @@
 
                 // claim() uses msg.sender's full balance automatically
                 const tx = await pamm.claim(marketId, connectedAddress);
-                showStatus('Confirming...', 'info');
+                showStatus(`Confirming... ${txLink(tx.hash)}`, 'info', true);
                 await tx.wait();
-                showStatus('Claimed successfully!', 'success');
+                showStatus(`Claimed successfully! ${txLink(tx.hash)}`, 'success', true);
 
                 // Reload data
                 loadAllData();
 
             } catch (error) {
                 console.error('Redeem failed:', error);
-                showStatus('Redeem failed: ' + (error.reason || error.message), 'error');
+                if (isUserRejection(error)) {
+                    showStatus('Transaction cancelled', 'info');
+                } else {
+                    showStatus('Redeem failed: ' + (error.reason || error.message), 'error');
+                }
             }
         }
 
         // ======================== UTILS ========================
-        function showStatus(msg, type) {
+        function showStatus(msg, type, isHtml = false) {
             const el = document.getElementById('statusMessage');
-            el.textContent = msg;
+            if (isHtml) {
+                el.innerHTML = msg;
+            } else {
+                el.textContent = msg;
+            }
             el.className = `status-message show ${type}`;
+        }
+
+        // Generate Etherscan link for transaction
+        function txLink(hash, text = 'View on Etherscan') {
+            return `<a href="https://etherscan.io/tx/${hash}" target="_blank" rel="noopener" style="color: inherit; text-decoration: underline;">${text}</a>`;
         }
 
         function hideStatus() {
@@ -3172,10 +3406,7 @@
         async function init() {
             initEIP6963();
 
-            // Load chart historical data from events
-            await loadChartData();
-
-            // Load all data in single optimized call
+            // Load all data including observations (single optimized multicall)
             await loadAllData();
 
             // Chart tooltip interaction
@@ -3190,7 +3421,7 @@
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
 
-                const { data, padding, min, max, width, height, twap } = chartState;
+                const { data, rollingTwap, padding, min, max, width, height, twap } = chartState;
                 const range = max - min;
                 const chartWidth = width - padding * 2;
 
@@ -3204,22 +3435,30 @@
                 const relX = x - padding;
                 const idx = Math.round(relX / chartWidth * Math.max(1, data.length - 1));
                 const clampedIdx = Math.max(0, Math.min(data.length - 1, idx));
-                const value = data[clampedIdx];
+                const spotValue = data[clampedIdx];
+                const twapValue = rollingTwap && rollingTwap[clampedIdx] ? rollingTwap[clampedIdx] : twap;
 
                 const pointX = padding + chartWidth * clampedIdx / Math.max(1, data.length - 1);
-                const pointY = padding + (height - padding * 2) * (1 - (value - min) / range);
+                const pointY = padding + (height - padding * 2) * (1 - (spotValue - min) / range);
 
                 // Position tooltip
-                tooltip.style.left = (pointX - 40) + 'px';
-                tooltip.style.top = (pointY - 55) + 'px';
+                tooltip.style.left = (pointX - 50) + 'px';
+                tooltip.style.top = (pointY - 65) + 'px';
 
-                // Format value
-                tooltipValue.textContent = value.toFixed(2) + ' gwei';
-                tooltipValue.style.color = '#00ff88';
-                const diffFromTwap = ((value - twap) / twap * 100).toFixed(1);
-                const sign = diffFromTwap >= 0 ? '+' : '';
-                const label = clampedIdx === data.length - 1 ? 'Current' : `#${clampedIdx + 1}`;
-                tooltipLabel.textContent = `${label} (${sign}${diffFromTwap}% vs TWAP)`;
+                // Format values: show both spot and TWAP at this point
+                tooltipValue.innerHTML = `<span style="color:#00ff88">${spotValue.toFixed(2)}</span> / <span style="color:#00ffff">${twapValue.toFixed(2)}</span> gwei`;
+
+                // Show timestamp if available, otherwise show index
+                let label;
+                if (clampedIdx === data.length - 1) {
+                    label = 'Current';
+                } else if (chartState.timestamps && chartState.timestamps[clampedIdx]) {
+                    const date = new Date(chartState.timestamps[clampedIdx] * 1000);
+                    label = date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                } else {
+                    label = `#${clampedIdx + 1}`;
+                }
+                tooltipLabel.textContent = `${label} (Spot / TWAP)`;
 
                 tooltip.classList.add('visible');
             });

@@ -1,5 +1,5 @@
 # mulDiv
-[Git Source](https://github.com/zammdefi/pm/blob/006ba95d7cfd5dfbd631c3f6ce5b2bedefc25ed2/src/Resolver.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/6409aa225054aeb8e5eb04dafccaae59a1d0f4cc/src/Resolver.sol)
 
 Returns `floor(x * y / d)`. Reverts if `x * y` overflows, or `d` is zero.
 

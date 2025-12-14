@@ -13,11 +13,11 @@ Minimal onchain mechanisms for binary prediction markets:
 
 | Contract | Address |
 |----------|---------|
-| [PAMM](https://contractscan.xyz/contract/0x0000000000f8ba51d6e987660d3e455ac2c4be9d) | `0x0000000000f8ba51d6e987660d3e455ac2c4be9d` |
+| [PAMM](https://contractscan.xyz/contract/0x000000000044bfe6c2BBFeD8862973E0612f07C0) | `0x000000000044bfe6c2BBFeD8862973E0612f07C0` |
 | [PM](https://contractscan.xyz/contract/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e) | `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e` |
-| [Resolver](https://contractscan.xyz/contract/0x0000000000b0ba1b2bb3af96fbb893d835970ec4) | `0x0000000000b0ba1b2bb3af96fbb893d835970ec4` |
+| [Resolver](https://contractscan.xyz/contract/0x00000000002205020E387b6a378c05639047BcFB) | `0x00000000002205020E387b6a378c05639047BcFB` |
 | [ZAMM](https://contractscan.xyz/contract/0x000000000000040470635EB91b7CE4D132D616eD) | `0x000000000000040470635EB91b7CE4D132D616eD` |
-| [GasPM](https://contractscan.xyz/contract/0x0000000000667ecd419766a90fad86fae21547f1) | `0x0000000000667ecd419766a90fad86fae21547f1` |
+| [GasPM](https://contractscan.xyz/contract/0x0000000000ee3d4294438093EaA34308f47Bc0b4) | `0x0000000000ee3d4294438093EaA34308f47Bc0b4` |
 | wstETH | `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0` |
 | ZSTETH | `0x000000000077B216105413Dc45Dc6F6256577c7B` |
 
@@ -92,7 +92,7 @@ A simple vault that locks collateral and mints conditional tokens.
 | **Merge** | Burn `N` YES + `N` NO → unlock `N` collateral |
 | **Claim** | After resolution: burn `N` winning tokens → receive `N` collateral (minus resolver fee if set) |
 
-Shares are 1:1 with collateral (1 share = 1 wei of collateral). Any amount works, no dust.
+Shares are 1:1 with collateral (1 share = 1 wei of collateral). Any amount works, dust is refunded.
 
 ### Operation Flows
 
@@ -483,7 +483,7 @@ buildDescription(...)     // Preview auto-generated description
 
 ```solidity
 struct SeedParams {
-    uint256 collateralIn;   // Any amount (1:1 shares, no dust)
+    uint256 collateralIn;   // Any amount (1:1 shares, dust refunded)
     uint256 feeOrHook;      // ZAMM fee tier or hook address
     uint256 amount0Min;     // Slippage protection
     uint256 amount1Min;
@@ -1481,15 +1481,20 @@ The system also supports non-standard ERC20s:
 | Error | Description |
 |-------|-------------|
 | `InvalidOp` | Operator not 2 (LTE) or 3 (GTE) |
-| `AlreadyBelowThreshold` | Window trough market: threshold already reached |
+| `Reentrancy` | Reentrant call detected |
 | `InvalidClose` | Close timestamp in the past |
 | `Unauthorized` | Caller is not owner (or not allowed for public creation) |
+| `ApproveFailed` | ERC20 approval failed |
 | `AlreadyExceeded` | Window peak market: threshold already reached |
+| `TransferFailed` | ERC20 transfer failed |
 | `InvalidCooldown` | Reward set with zero cooldown |
 | `InvalidThreshold` | Threshold is zero (or lower >= upper for range) |
 | `InvalidETHAmount` | msg.value doesn't match collateral amount |
-| `ResolverCallFailed` | Call to Resolver contract failed or returned empty |
 | `MarketIdMismatch` | Returned marketId from Resolver doesn't match expected |
+| `ETHTransferFailed` | ETH transfer failed |
+| `ResolverCallFailed` | Call to Resolver contract failed or returned empty |
+| `TransferFromFailed` | ERC20 transferFrom failed |
+| `AlreadyBelowThreshold` | Window trough market: threshold already reached |
 
 ---
 

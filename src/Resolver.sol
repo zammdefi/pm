@@ -131,8 +131,8 @@ contract Resolver {
     error InvalidTarget();
     error ApproveFailed();
     error MarketResolved();
-    error ConditionExists();
     error TransferFailed();
+    error ConditionExists();
     error InvalidDeadline();
     error InvalidETHAmount();
     error TargetCallFailed();
@@ -144,7 +144,7 @@ contract Resolver {
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    address public constant PAMM = 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d;
+    address public constant PAMM = 0x000000000044bfe6c2BBFeD8862973E0612f07C0;
 
     receive() external payable {}
 
@@ -369,6 +369,7 @@ contract Resolver {
         bool canClose
     ) internal returns (uint256 marketId, uint256 noId) {
         if (target == address(0)) revert InvalidTarget();
+        if (callData.length != 0 && target.code.length == 0) revert InvalidTarget();
         if (close <= block.timestamp) revert InvalidDeadline();
 
         string memory description = _buildDescription(observable, op, threshold, close, canClose);
@@ -505,6 +506,8 @@ contract Resolver {
         bool canClose
     ) internal returns (uint256 marketId, uint256 noId) {
         if (targetA == address(0) || targetB == address(0)) revert InvalidTarget();
+        if (callDataA.length != 0 && targetA.code.length == 0) revert InvalidTarget();
+        if (callDataB.length != 0 && targetB.code.length == 0) revert InvalidTarget();
         if (close <= block.timestamp) revert InvalidDeadline();
 
         string memory description = _buildDescription(observable, op, threshold, close, canClose);
@@ -709,6 +712,7 @@ contract Resolver {
         uint256 threshold
     ) internal {
         if (target == address(0)) revert InvalidTarget();
+        if (callData.length != 0 && target.code.length == 0) revert InvalidTarget();
         if (conditions[marketId].targetA != address(0)) revert ConditionExists();
 
         (address resolver,, bool resolved,, bool canClose, uint64 close,,,,) =
@@ -758,6 +762,8 @@ contract Resolver {
         if (targetA == address(0) || targetB == address(0)) {
             revert InvalidTarget();
         }
+        if (callDataA.length != 0 && targetA.code.length == 0) revert InvalidTarget();
+        if (callDataB.length != 0 && targetB.code.length == 0) revert InvalidTarget();
         if (conditions[marketId].targetA != address(0)) revert ConditionExists();
 
         (address resolver,, bool resolved,, bool canClose, uint64 close,,,,) =
@@ -774,7 +780,7 @@ contract Resolver {
                                RESOLUTION
     //////////////////////////////////////////////////////////////*/
 
-    function resolveMarket(uint256 marketId) public {
+    function resolveMarket(uint256 marketId) public nonReentrant {
         Condition storage c = conditions[marketId];
         if (c.targetA == address(0)) revert Unknown();
 

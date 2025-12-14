@@ -11,8 +11,8 @@ contract GasPM {
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    address public constant PAMM = 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d;
-    address payable public constant RESOLVER = payable(0x0000000000b0ba1b2bb3AF96FbB893d835970ec4);
+    address public constant PAMM = 0x000000000044bfe6c2BBFeD8862973E0612f07C0;
+    address payable public constant RESOLVER = payable(0x00000000002205020E387b6a378c05639047BcFB);
 
     // Resolver comparison operators
     uint8 internal constant OP_LTE = 2;
@@ -65,10 +65,11 @@ contract GasPM {
                          OBSERVATION STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Historical observation for time-series data. Stores cumulative for TWAP queries.
+    /// @dev Historical observation for time-series data. Stores spot + cumulative for charts & TWAP.
     struct Observation {
         uint64 timestamp;
-        uint192 cumulativeBaseFee;
+        uint64 baseFee;
+        uint128 cumulativeBaseFee;
     }
     Observation[] public observations;
 
@@ -95,8 +96,8 @@ contract GasPM {
     }
     mapping(uint256 => Snapshot) public marketSnapshots;
 
-    /// @dev Per-market max/min tracking for window volatility/stability markets.
-    ///      Updated via pokeWindowVolatility() to track spread during the market window.
+    /// @dev Per-market max/min tracking for window peak/trough/volatility/stability markets.
+    ///      Updated via pokeWindowVolatility() to track extremes during the market window.
     struct WindowSpread {
         uint128 windowMax;
         uint128 windowMin;
@@ -155,12 +156,12 @@ contract GasPM {
     //////////////////////////////////////////////////////////////*/
 
     error InvalidOp();
-    error InvalidClose();
     error Reentrancy();
+    error InvalidClose();
     error Unauthorized();
     error ApproveFailed();
-    error AlreadyExceeded();
     error TransferFailed();
+    error AlreadyExceeded();
     error InvalidCooldown();
     error InvalidThreshold();
     error InvalidETHAmount();
@@ -199,7 +200,7 @@ contract GasPM {
         maxBaseFee = uint128(block.basefee);
         minBaseFee = uint128(block.basefee);
         // Initial observation at deployment
-        observations.push(Observation(uint64(block.timestamp), 0));
+        observations.push(Observation(uint64(block.timestamp), uint64(block.basefee), 0));
     }
 
     receive() external payable {}
@@ -220,7 +221,9 @@ contract GasPM {
         lastUpdateTime = uint64(block.timestamp);
 
         // Store observation for time-series queries
-        observations.push(Observation(uint64(block.timestamp), uint192(cumulativeBaseFee)));
+        observations.push(
+            Observation(uint64(block.timestamp), uint64(basefee), uint128(cumulativeBaseFee))
+        );
 
         // Track peak/trough
         if (basefee > maxBaseFee) maxBaseFee = uint128(basefee);
@@ -244,24 +247,9 @@ contract GasPM {
         return cumulative / totalTime;
     }
 
-    /// @notice TWAP since deployment in gwei.
-    function baseFeeAverageGwei() public view returns (uint256) {
-        return baseFeeAverage() / 1 gwei;
-    }
-
     /// @notice Current spot base fee in wei.
     function baseFeeCurrent() public view returns (uint256) {
         return block.basefee;
-    }
-
-    /// @notice Current spot base fee in gwei.
-    function baseFeeCurrentGwei() public view returns (uint256) {
-        return block.basefee / 1 gwei;
-    }
-
-    /// @notice Seconds since oracle started.
-    function trackingDuration() public view returns (uint256) {
-        return block.timestamp - startTime;
     }
 
     /// @notice Returns 1 if TWAP is within [lower, upper], 0 otherwise.
@@ -269,7 +257,7 @@ contract GasPM {
     /// @param upper Upper bound in wei (inclusive)
     function baseFeeInRange(uint256 lower, uint256 upper) public view returns (uint256 r) {
         uint256 avg = baseFeeAverage();
-        assembly { r := and(iszero(lt(avg, lower)), iszero(gt(avg, upper))) }
+        assembly ("memory-safe") { r := and(iszero(lt(avg, lower)), iszero(gt(avg, upper))) }
     }
 
     /// @notice Returns 1 if TWAP is outside (lower, upper), 0 otherwise.
@@ -277,7 +265,7 @@ contract GasPM {
     /// @param upper Upper bound in wei
     function baseFeeOutOfRange(uint256 lower, uint256 upper) public view returns (uint256 r) {
         uint256 avg = baseFeeAverage();
-        assembly { r := or(lt(avg, lower), gt(avg, upper)) }
+        assembly ("memory-safe") { r := or(lt(avg, lower), gt(avg, upper)) }
     }
 
     /// @notice Highest base fee recorded since deployment (wei). Updated via update().
@@ -320,7 +308,7 @@ contract GasPM {
         returns (uint256 r)
     {
         uint256 avg = baseFeeAverageSince(marketId);
-        assembly { r := and(iszero(lt(avg, lower)), iszero(gt(avg, upper))) }
+        assembly ("memory-safe") { r := and(iszero(lt(avg, lower)), iszero(gt(avg, upper))) }
     }
 
     /// @notice Returns 1 if window TWAP is outside (lower, upper), 0 otherwise.
@@ -333,7 +321,7 @@ contract GasPM {
         returns (uint256 r)
     {
         uint256 avg = baseFeeAverageSince(marketId);
-        assembly { r := or(lt(avg, lower), gt(avg, upper)) }
+        assembly ("memory-safe") { r := or(lt(avg, lower), gt(avg, upper)) }
     }
 
     /// @notice Absolute spread (max - min) during the market window.

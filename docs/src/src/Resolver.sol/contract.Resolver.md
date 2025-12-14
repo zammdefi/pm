@@ -1,5 +1,5 @@
 # Resolver
-[Git Source](https://github.com/zammdefi/pm/blob/006ba95d7cfd5dfbd631c3f6ce5b2bedefc25ed2/src/Resolver.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/6409aa225054aeb8e5eb04dafccaae59a1d0f4cc/src/Resolver.sol)
 
 **Title:**
 Resolver
@@ -7,7 +7,7 @@ Resolver
 On-chain oracle for PAMM markets based on arbitrary staticcall reads.
 
 Scalar: value = staticcall(target, callData). Ratio: value = A * 1e18 / B.
-YES wins if condition true at resolution. NO wins if false at close time.
+Outcome determined by condition value when resolveMarket() is called.
 canClose=true allows early resolution when condition becomes true.
 
 
@@ -15,7 +15,14 @@ canClose=true allows early resolution when condition becomes true.
 ### PAMM
 
 ```solidity
-address public constant PAMM = 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d
+address public constant PAMM = 0x000000000044bfe6c2BBFeD8862973E0612f07C0
+```
+
+
+### REENTRANCY_SLOT
+
+```solidity
+uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21269
 ```
 
 
@@ -41,6 +48,13 @@ receive() external payable;
 constructor() payable;
 ```
 
+### nonReentrant
+
+
+```solidity
+modifier nonReentrant() ;
+```
+
 ### multicall
 
 
@@ -60,7 +74,7 @@ function permit(
     uint8 v,
     bytes32 r,
     bytes32 s
-) public;
+) public nonReentrant;
 ```
 
 ### permitDAI
@@ -76,7 +90,7 @@ function permitDAI(
     uint8 v,
     bytes32 r,
     bytes32 s
-) public;
+) public nonReentrant;
 ```
 
 ### createNumericMarketSimple
@@ -141,7 +155,11 @@ function createNumericMarketAndSeedSimple(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+)
+    public
+    payable
+    nonReentrant
+    returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createNumericMarketAndSeed
@@ -158,7 +176,11 @@ function createNumericMarketAndSeed(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+)
+    public
+    payable
+    nonReentrant
+    returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createRatioMarketSimple
@@ -231,7 +253,11 @@ function createRatioMarketAndSeedSimple(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+)
+    public
+    payable
+    nonReentrant
+    returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createRatioMarketAndSeed
@@ -250,7 +276,11 @@ function createRatioMarketAndSeed(
     uint64 close,
     bool canClose,
     SeedParams calldata seed
-) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
+)
+    public
+    payable
+    nonReentrant
+    returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity);
 ```
 
 ### createNumericMarketSeedAndBuy
@@ -277,6 +307,7 @@ function createNumericMarketSeedAndBuy(
 )
     public
     payable
+    nonReentrant
     returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut);
 ```
 
@@ -306,6 +337,7 @@ function createRatioMarketSeedAndBuy(
 )
     public
     payable
+    nonReentrant
     returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut);
 ```
 
@@ -397,7 +429,7 @@ function _registerRatioCondition(
 
 
 ```solidity
-function resolveMarket(uint256 marketId) public;
+function resolveMarket(uint256 marketId) public nonReentrant;
 ```
 
 ### preview
@@ -473,7 +505,7 @@ function _seedLiquidity(
     uint256 marketId,
     SeedParams calldata p,
     uint256 extraETH
-) internal returns (uint256 shares, uint256 liquidity, uint256 perShare);
+) internal returns (uint256 shares, uint256 liquidity);
 ```
 
 ### _flushLeftoverShares
@@ -481,6 +513,15 @@ function _seedLiquidity(
 
 ```solidity
 function _flushLeftoverShares(uint256 marketId) internal;
+```
+
+### _refundDust
+
+Refunds any dust collateral (ETH or ERC20) to msg.sender.
+
+
+```solidity
+function _refundDust(address collateral) internal;
 ```
 
 ### _buyToSkewOdds
@@ -492,7 +533,6 @@ Executes buyYes or buyNo to skew pool odds. Does NOT set a target probability.
 function _buyToSkewOdds(
     address collateral,
     uint256 marketId,
-    uint256 perShare,
     uint256 feeOrHook,
     uint256 deadline,
     SwapParams calldata s
@@ -562,16 +602,40 @@ error Unknown();
 error Pending();
 ```
 
+### Reentrancy
+
+```solidity
+error Reentrancy();
+```
+
+### MulDivFailed
+
+```solidity
+error MulDivFailed();
+```
+
 ### InvalidTarget
 
 ```solidity
 error InvalidTarget();
 ```
 
+### ApproveFailed
+
+```solidity
+error ApproveFailed();
+```
+
 ### MarketResolved
 
 ```solidity
 error MarketResolved();
+```
+
+### TransferFailed
+
+```solidity
+error TransferFailed();
 ```
 
 ### ConditionExists
@@ -598,16 +662,22 @@ error InvalidETHAmount();
 error TargetCallFailed();
 ```
 
+### ETHTransferFailed
+
+```solidity
+error ETHTransferFailed();
+```
+
 ### NotResolverMarket
 
 ```solidity
 error NotResolverMarket();
 ```
 
-### CollateralNotMultiple
+### TransferFromFailed
 
 ```solidity
-error CollateralNotMultiple();
+error TransferFromFailed();
 ```
 
 ## Structs
@@ -646,6 +716,7 @@ struct SwapParams {
     uint256 collateralForSwap;
     uint256 minOut;
     bool yesForNo; // true = buyNo, false = buyYes
+    address recipient; // recipient of swapped shares (use address(0) for msg.sender)
 }
 ```
 
