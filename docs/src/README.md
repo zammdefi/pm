@@ -3,6 +3,7 @@
 Minimal onchain mechanisms for binary prediction markets:
 
 - **PAMM** — Collateral vault minting fully-collateralized YES/NO conditional tokens (ERC6909). Prices via ZAMM.
+- **PMRouter** — Limit order router for PAMM markets. CEX-style orderbook trading via ZAMM + market orders via PAMM.
 - **PM** — Pure parimutuel: buy/sell at par (1 wstETH = 1 share), winners split the pot.
 - **Resolver** — On-chain oracle resolver for PAMM markets using arbitrary `staticcall` reads.
 - **GasPM** — Gas price TWAP oracle with prediction market factory for "will gas exceed X gwei?" markets.
@@ -269,6 +270,335 @@ tokenURI(id)                             // NFT-compatible metadata URI
 marketId (YES) = keccak256("PMARKET:YES", description, resolver, collateral)
 noId           = keccak256("PMARKET:NO", marketId)
 ```
+
+---
+
+## PMRouter — Limit Order & Trading Router
+
+A limit order router for PAMM prediction markets. Enables CEX-style orderbook trading via ZAMM, market orders via PAMM AMM, and convenient collateral operations.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            PMRouter SYSTEM                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────┐                                  ┌──────────────────┐
+  │     TRADERS      │                                  │    MARKET MAKERS │
+  │                  │                                  │                  │
+  │ • Market orders  │                                  │ • Place limits   │
+  │ • Fill limits    │                                  │ • Cancel orders  │
+  │ • Split/merge    │                                  │ • Provide depth  │
+  │ • Claim wins     │                                  │                  │
+  └────────┬─────────┘                                  └────────┬─────────┘
+           │                                                     │
+           │                                                     │
+           ▼                                                     ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                              PMRouter                                   │
+  │  ┌─────────────────────────────────────────────────────────────────┐    │
+  │  │                    ORDER MANAGEMENT                             │    │
+  │  │  • placeOrder() - create limit orders                           │    │
+  │  │  • cancelOrder() - reclaim escrowed tokens                      │    │
+  │  │  • fillOrder() - fill existing orders                           │    │
+  │  │  • fillOrdersThenSwap() - fill orders + route remainder to AMM  │    │
+  │  └─────────────────────────────────────────────────────────────────┘    │
+  │  ┌─────────────────────────────────────────────────────────────────┐    │
+  │  │                    MARKET OPERATIONS                            │    │
+  │  │  • buy() / sell() - market orders via PAMM AMM                  │    │
+  │  │  • swapShares() - swap YES<->NO via ZAMM                        │    │
+  │  │  • split() / merge() / claim() - collateral operations          │    │
+  │  └─────────────────────────────────────────────────────────────────┘    │
+  │  ┌─────────────────────────────────────────────────────────────────┐    │
+  │  │                    ORDERBOOK VIEWS                              │    │
+  │  │  • getOrderbook() - full bid/ask depth                          │    │
+  │  │  • getBidAsk() - best prices + order counts                     │    │
+  │  │  • getBestOrders() - sorted orders for filling                  │    │
+  │  └─────────────────────────────────────────────────────────────────┘    │
+  └───────────────────────────────┬─────────────────────────────────────────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+              ▼                   ▼                   ▼
+  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+  │       ZAMM        │  │       PAMM        │  │    COLLATERAL     │
+  │  • Order escrow   │  │  • Split/merge    │  │  • ETH            │
+  │  • Order fills    │  │  • YES/NO tokens  │  │  • ERC20          │
+  │  • AMM swaps      │  │  • Market orders  │  │  • Permits        │
+  └───────────────────┘  └───────────────────┘  └───────────────────┘
+```
+
+### Order Types
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| **Limit Buy** | Escrow collateral, receive shares when filled | "Buy YES at 0.60 or better" |
+| **Limit Sell** | Escrow shares, receive collateral when filled | "Sell NO at 0.45 or better" |
+| **Market Buy** | Instant buy via PAMM AMM | "Buy YES now at market price" |
+| **Market Sell** | Instant sell via PAMM AMM | "Sell NO now at market price" |
+
+### Order Lifecycle
+
+```
+    PLACE                        FILL                         SETTLE
+       │                           │                             │
+       ▼                           ▼                             ▼
+┌─────────────┐         ┌─────────────────────┐         ┌─────────────────┐
+│   Maker     │         │      Taker          │         │    ZAMM         │
+│   calls     │────────►│      calls          │────────►│    settles      │
+│   place     │         │      fillOrder()    │         │    atomically   │
+│   Order()   │         │                     │         │                 │
+└─────────────┘         │  OR fillOrders      │         │  maker gets     │
+      │                 │     ThenSwap()      │         │  counterparty   │
+      │  escrow         │                     │         │  taker gets     │
+      ▼                 └─────────────────────┘         │  their side     │
+┌─────────────┐                                         └─────────────────┘
+│   Tokens    │
+│   held in   │
+│   ZAMM      │
+└─────────────┘
+```
+
+### Limit Orders
+
+#### Place Order
+
+```solidity
+// Place a limit order to buy YES at 0.60 collateral per share
+router.placeOrder{value: 6 ether}(
+    marketId,         // PAMM market ID
+    true,             // isYes: YES shares
+    true,             // isBuy: buying (escrowing collateral)
+    10 ether,         // shares: want 10 shares
+    6 ether,          // collateral: paying 6 ETH (0.60 per share)
+    uint56(block.timestamp + 1 days),  // deadline
+    true              // partialFill: allow partial fills
+);
+
+// Place a limit order to sell NO at 0.45 collateral per share
+router.placeOrder(
+    marketId,
+    false,            // isYes: NO shares
+    false,            // isBuy: selling (escrowing shares)
+    10 ether,         // shares: selling 10 shares
+    4.5 ether,        // collateral: want 4.5 ETH (0.45 per share)
+    uint56(block.timestamp + 1 days),
+    true
+);
+```
+
+#### Fill Order
+
+```solidity
+// Fill an existing sell order (buy from maker)
+router.fillOrder{value: expectedCollateral}(
+    orderHash,        // Order to fill
+    5 ether,          // sharesToFill (0 = fill all)
+    recipient         // Who receives the shares
+);
+
+// Fill then route remainder to AMM
+router.fillOrdersThenSwap{value: 10 ether}(
+    marketId,
+    true,             // isYes
+    true,             // isBuy
+    10 ether,         // totalCollateral
+    9 ether,          // minSharesOut (slippage)
+    orderHashes,      // Orders to try first
+    30,               // feeOrHook for AMM remainder
+    recipient
+);
+```
+
+#### Cancel Order
+
+```solidity
+// Cancel and reclaim escrowed tokens
+router.cancelOrder(orderHash);
+
+// Batch cancel multiple orders
+router.batchCancelOrders(orderHashes);
+```
+
+### Market Orders
+
+```solidity
+// Buy YES shares via PAMM AMM
+router.buy{value: 1 ether}(
+    marketId,
+    true,             // isYes
+    1 ether,          // collateralIn
+    0.9 ether,        // minSharesOut (slippage)
+    30,               // feeOrHook
+    recipient
+);
+
+// Sell NO shares via PAMM AMM
+router.sell(
+    marketId,
+    false,            // isYes (NO)
+    1 ether,          // sharesIn
+    0.4 ether,        // minCollateralOut
+    30,               // feeOrHook
+    recipient
+);
+```
+
+### Share Swaps (via ZAMM)
+
+```solidity
+// Swap YES -> NO directly via ZAMM pool
+router.swapShares(
+    marketId,
+    true,             // yesForNo: YES -> NO
+    1 ether,          // amountIn
+    0.9 ether,        // minOut
+    30,               // feeOrHook
+    recipient
+);
+
+// Swap shares directly to collateral (if ZAMM pool exists)
+router.swapSharesToCollateral(marketId, true, 1 ether, 0.5 ether, 30, recipient);
+
+// Swap collateral directly to shares (if ZAMM pool exists)
+router.swapCollateralToShares{value: 1 ether}(marketId, true, 1 ether, 1.5 ether, 30, recipient);
+```
+
+### Collateral Operations
+
+```solidity
+// Split collateral into YES + NO shares
+router.split{value: 1 ether}(marketId, 1 ether, recipient);
+
+// Merge YES + NO shares back into collateral
+router.merge(marketId, 1 ether, recipient);
+
+// Claim winnings from resolved market
+router.claim(marketId, recipient);
+```
+
+### Functions
+
+```solidity
+// Limit Orders
+placeOrder(marketId, isYes, isBuy, shares, collateral, deadline, partialFill) → orderHash
+cancelOrder(orderHash)
+fillOrder(orderHash, sharesToFill, to) → (sharesFilled, collateralFilled)
+fillOrdersThenSwap(marketId, isYes, isBuy, totalAmount, minOutput,
+                   orderHashes[], feeOrHook, to) → totalOutput
+batchCancelOrders(orderHashes[]) → cancelled
+
+// Market Orders (via PAMM AMM)
+buy(marketId, isYes, collateralIn, minSharesOut, feeOrHook, to) → sharesOut
+sell(marketId, isYes, sharesIn, minCollateralOut, feeOrHook, to) → collateralOut
+
+// Share Swaps (via ZAMM)
+swapShares(marketId, yesForNo, amountIn, minOut, feeOrHook, to) → amountOut
+swapSharesToCollateral(marketId, isYes, sharesIn, minCollateralOut, feeOrHook, to) → collateralOut
+swapCollateralToShares(marketId, isYes, collateralIn, minSharesOut, feeOrHook, to) → sharesOut
+
+// Collateral Operations
+split(marketId, amount, to)
+merge(marketId, amount, to)
+claim(marketId, to) → payout
+
+// Order Views
+getOrder(orderHash) → (order, sharesFilled, sharesRemaining, collateralFilled, collateralRemaining, active)
+isOrderActive(orderHash) → bool
+getMarketOrderCount(marketId) → count
+getUserOrderCount(user) → count
+getMarketOrderHashes(marketId, offset, limit) → orderHashes[]
+getUserOrderHashes(user, offset, limit) → orderHashes[]
+getActiveOrders(marketId, isYes, isBuy, limit) → (orderHashes[], orderDetails[])
+getBestOrders(marketId, isYes, isBuy, limit) → orderHashes[]
+
+// UX Helpers
+getBidAsk(marketId, isYes) → (bidPrice, askPrice, bidCount, askCount)
+getOrderbook(marketId, isYes, depth) → (bidHashes[], bidPrices[], bidSizes[],
+                                        askHashes[], askPrices[], askSizes[])
+getUserPositions(user, marketIds[]) → (yesBalances[], noBalances[])
+getUserActiveOrders(user, marketId, limit) → (orderHashes[], orderDetails[])
+
+// Utility
+multicall(bytes[] data) → results[]
+permit(token, owner, value, deadline, v, r, s)
+```
+
+### Order Struct
+
+```solidity
+struct Order {
+    address owner;      // Order creator
+    uint56 deadline;    // Expiration timestamp
+    bool isYes;         // YES or NO shares
+    bool isBuy;         // Buying or selling shares
+    bool partialFill;   // Allow partial fills
+    uint96 shares;      // Share amount
+    uint96 collateral;  // Collateral amount
+    uint256 marketId;   // PAMM market ID
+}
+```
+
+### Price Calculation
+
+Prices are represented as 18-decimal fixed-point numbers:
+- `price = collateral * 1e18 / shares`
+- Example: 0.60 price = 6e17 (0.6 * 1e18)
+
+For a buy order at 0.60:
+- `shares = 10 ether`, `collateral = 6 ether`
+- `price = 6e18 * 1e18 / 10e18 = 6e17` (0.60)
+
+### Orderbook Example
+
+```solidity
+// Get full orderbook for YES shares
+(
+    bytes32[] memory bidHashes,
+    uint256[] memory bidPrices,
+    uint256[] memory bidSizes,
+    bytes32[] memory askHashes,
+    uint256[] memory askPrices,
+    uint256[] memory askSizes
+) = router.getOrderbook(marketId, true, 10);
+
+// Result (example):
+// Bids (buy orders, highest first):
+//   0.65 - 5 shares
+//   0.60 - 10 shares
+//   0.55 - 3 shares
+//
+// Asks (sell orders, lowest first):
+//   0.70 - 8 shares
+//   0.75 - 4 shares
+//   0.80 - 12 shares
+```
+
+### User Stories
+
+| Role | Goal | Action |
+|------|------|--------|
+| **Limit Buyer** | Buy YES at specific price | `placeOrder(isYes=true, isBuy=true)` |
+| **Limit Seller** | Sell NO at specific price | `placeOrder(isYes=false, isBuy=false)` |
+| **Market Buyer** | Buy instantly at market | `buy(isYes, collateralIn, minOut)` |
+| **Market Seller** | Sell instantly at market | `sell(isYes, sharesIn, minOut)` |
+| **Arbitrageur** | Fill orders + AMM in one tx | `fillOrdersThenSwap()` |
+| **Market Maker** | Provide liquidity on both sides | Multiple `placeOrder()` calls |
+| **Dapp** | Display orderbook | `getOrderbook()` + `getBidAsk()` |
+| **Portfolio View** | Show user positions | `getUserPositions()` + `getUserActiveOrders()` |
+
+### Notes
+
+- Orders are escrowed in ZAMM (not the router) for trustless settlement
+- Partial fills are optional per order (set `partialFill=true` to allow)
+- Order deadlines are capped to market close time
+- Prices are always `collateral/shares` (18 decimals)
+- `getBestOrders` returns orders sorted by price (best first)
+- `getOrderbook` returns remaining sizes (after partial fills), not original sizes
+- Supports ETH and ERC20 collateral
+- Permits available for gasless ERC20 approvals
+- Multicall for batching multiple operations
 
 ---
 
@@ -1476,6 +1806,23 @@ The system also supports non-standard ERC20s:
 | `TargetCallFailed` | staticcall to oracle failed |
 | `NotResolverMarket` | Market's resolver is not this contract |
 
+### PMRouter Errors
+
+| Error | Description |
+|-------|-------------|
+| `Reentrancy` | Reentrant call detected |
+| `AmountZero` | Zero shares or collateral provided |
+| `MustFillAll` | Partial fill not allowed for this order |
+| `MarketClosed` | Market close time has passed |
+| `OrderInactive` | Order expired or fully filled |
+| `NotOrderOwner` | Caller is not the order owner |
+| `OrderNotFound` | Order hash not found |
+| `MarketNotFound` | Invalid marketId |
+| `TradingNotOpen` | Market not open for trading |
+| `DeadlineExpired` | Order deadline in the past |
+| `SlippageExceeded` | Output below minimum specified |
+| `InvalidETHAmount` | msg.value doesn't match required amount |
+
 ### GasPM Errors
 
 | Error | Description |
@@ -1550,6 +1897,234 @@ Solidity `^0.8.30`. Mainnet addresses are hardcoded; fork mainnet for testing.
 - **Decimal handling:** Always verify collateral decimals. Mismatched decimals can cause loss of funds.
 - **Reentrancy:** All state-changing functions use `nonReentrant` guards.
 - **Permit support:** Both EIP-2612 and DAI-style permits are supported for gasless approvals.
+
+---
+
+## GasPM Dapp
+
+A single-page web application for trading Ethereum gas price prediction markets. Located at `dapp/GasPM.html`.
+
+### Features
+
+#### Real-Time Gas Oracle Dashboard
+- **Live TWAP** — Time-weighted average gas price since oracle deployment
+- **Current Gas** — Real-time `block.basefee` display
+- **Min/Max Tracking** — Historical extremes with spread calculation
+- **Visual Chart** — 24-hour gas price history with threshold overlays
+
+#### Market Discovery
+- **Active Markets Grid** — Browse all GasPM markets with live prices
+- **Market Types** — Support for all GasPM market types:
+  - Below/Above (directional bets)
+  - Range/Breakout (bounded bets)
+  - Peak/Trough (extreme value bets)
+  - Volatility/Stability (spread bets)
+  - Spot/Comparison (point-in-time bets)
+- **Resolution Status** — Visual indicators for resolved vs active markets
+- **Win Probability** — Implied odds from AMM pool reserves
+
+#### Trading Interface
+
+**Instant (AMM) Trading:**
+- Buy/Sell YES or NO shares via PAMM AMM
+- Real-time price impact preview
+- Position display with current holdings
+- Max button for full balance trades
+
+**Limit Orders (via PMRouter):**
+- Place limit orders at specific prices
+- Partial fill support
+- 7-day default expiration
+- Order management (view/cancel)
+
+**Smart Trade (Hybrid Routing):**
+- Automatically fills best orderbook prices first
+- Routes remainder through AMM
+- Single transaction for optimal execution
+- Visual liquidity breakdown showing orderbook vs AMM fill
+
+#### Orderbook Display
+- **Depth Visualization** — Color-coded bars showing order sizes
+- **Bid/Ask Spread** — Real-time spread calculation
+- **Take Buttons** — One-click order filling
+- **Price Levels** — Sorted by best price (bids high→low, asks low→high)
+
+#### Wallet Integration
+- MetaMask, Coinbase, Rabby, Rainbow support
+- EIP-6963 wallet detection
+- Network validation (Ethereum mainnet only)
+- Balance display for ETH and tokens
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           GasPM.html                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐  │
+│  │   Header    │   │  Gas Stats  │   │   Markets   │   │ Trade Modal │  │
+│  │  + Wallet   │   │  + Chart    │   │    Grid     │   │  + Orders   │  │
+│  └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘  │
+│         │                 │                 │                 │         │
+│         └─────────────────┴─────────────────┴─────────────────┘         │
+│                                   │                                     │
+│                    ┌──────────────┴──────────────┐                      │
+│                    │       ethers.js v6          │                      │
+│                    └──────────────┬──────────────┘                      │
+│                                   │                                     │
+└───────────────────────────────────┼─────────────────────────────────────┘
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+        ▼                           ▼                           ▼
+┌───────────────┐         ┌───────────────┐         ┌───────────────┐
+│    GasPM      │         │     PAMM      │         │   PMRouter    │
+│   (Oracle)    │         │  (Markets)    │         │ (Orderbook)   │
+│               │         │               │         │               │
+│ • TWAP data   │         │ • Buy/Sell    │         │ • Limit orders│
+│ • Market list │         │ • Positions   │         │ • Fill orders │
+│ • Resolution  │         │ • Pool state  │         │ • Smart route │
+└───────────────┘         └───────────────┘         └───────────────┘
+        │                           │                           │
+        └───────────────────────────┼───────────────────────────┘
+                                    │
+                                    ▼
+                            ┌───────────────┐
+                            │     ZAMM      │
+                            │   (Liquidity) │
+                            │               │
+                            │ • AMM pools   │
+                            │ • Order escrow│
+                            └───────────────┘
+```
+
+### User Flows
+
+#### View Markets
+```
+1. Page loads → Fetches GasPM.getMarketInfos()
+2. For each market → Fetches PAMM pool state (prices)
+3. Displays market cards with:
+   - Threshold and market type
+   - Current YES/NO prices
+   - Resolution status
+   - Time remaining
+```
+
+#### AMM Trade (Instant)
+```
+1. Click market card → Opens trade modal
+2. Select Buy/Sell and YES/NO
+3. Enter amount → See price impact preview
+4. Click Confirm → Signs transaction
+5. Receives shares (or ETH if selling)
+```
+
+#### Limit Order
+```
+1. Click "Limit Orders" tab in trade modal
+2. Select Buy/Sell and YES/NO token
+3. Enter price (0.01-0.99) and shares
+4. View liquidity breakdown preview
+5. Click "Place Order" → Escrows funds in ZAMM
+6. Order appears in "Your Orders" section
+```
+
+#### Smart Trade (Best Execution)
+```
+1. Enter shares amount in limit order form
+2. Optional: Set max price
+3. View liquidity breakdown:
+   - Green bar = fills from orderbook
+   - Cyan bar = routes to AMM
+4. Click "Smart Trade"
+5. Single transaction:
+   a. Fills best orderbook orders
+   b. Swaps remainder via AMM
+   c. Receives all shares
+```
+
+#### Take Order (Direct Fill)
+```
+1. View orderbook in trade modal
+2. Click "Buy" on ask row (to buy shares)
+   or "Sell" on bid row (to sell shares)
+3. Transaction fills that specific order
+4. Counterparty receives their side
+```
+
+### Contract Addresses
+
+| Contract | Address | Status |
+|----------|---------|--------|
+| GasPM | `0x0000000000ee3d4294438093EaA34308f47Bc0b4` | Deployed |
+| PAMM | `0x000000000044bfe6c2BBFeD8862973E0612f07C0` | Deployed |
+| ZAMM | `0x000000000000040470635EB91b7CE4D132D616eD` | Deployed |
+| Resolver | `0x00000000002205020E387b6a378c05639047BcFB` | Deployed |
+| PMRouter | `0x0000000000000000000000000000000000000001` | **Placeholder** |
+
+> **Note:** Deploy PMRouter.sol and update `PMROUTER_ADDRESS` in GasPM.html to enable orderbook functionality.
+
+### Deployment
+
+#### Deploy PMRouter
+```bash
+forge create src/PMRouter.sol:PMRouter \
+  --rpc-url $RPC_URL \
+  --private-key $PRIVATE_KEY
+```
+
+#### Update Dapp
+Edit `dapp/GasPM.html` line ~2202:
+```javascript
+const PMROUTER_ADDRESS = '0x<deployed_address>';
+```
+
+### Mobile Support
+
+The dapp is fully responsive:
+
+| Breakpoint | Optimizations |
+|------------|---------------|
+| **768px** | Stacked inputs, smaller fonts, condensed orderbook |
+| **400px** | Hidden total column, ultra-compact buttons, simplified layout |
+
+Touch-friendly with appropriate tap targets and no hover-dependent interactions.
+
+### Technical Details
+
+#### Dependencies
+- **ethers.js v6** — Loaded from CDN (unpkg.com)
+- **No build step** — Single HTML file, runs directly in browser
+
+#### RPC Fallback
+```javascript
+// Uses wallet provider if connected, otherwise public RPC
+const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+```
+
+#### Multicall Optimization
+Batches multiple contract reads into single RPC call using Multicall3:
+```javascript
+const results = await multicall.aggregate3([
+  { target: GASPM_ADDRESS, callData: gaspmIface.encodeFunctionData('baseFeeAverage') },
+  { target: GASPM_ADDRESS, callData: gaspmIface.encodeFunctionData('baseFeeCurrent') },
+  // ... more calls
+]);
+```
+
+#### Gas Price Chart
+- Queries last 100 blocks for `block.basefee`
+- Renders SVG with price line and threshold overlays
+- Updates on new block headers
+
+### Security Notes
+
+- **Client-side only** — No backend, all interactions directly with contracts
+- **Wallet signing** — All transactions require explicit user approval
+- **Slippage protection** — AMM trades use `minOut` parameter (currently set to 0, can be improved)
+- **No token approvals stored** — PMRouter uses `setOperator` pattern from ERC6909
 
 ---
 

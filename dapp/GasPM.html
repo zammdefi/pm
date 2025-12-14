@@ -1047,6 +1047,521 @@
             font-weight: 700;
         }
 
+        /* ORDERBOOK STYLES */
+        .orderbook-toggle {
+            display: flex;
+            gap: 0;
+            margin-bottom: var(--spacing-sm);
+            border: 1px solid var(--light-gray);
+        }
+
+        .orderbook-toggle-btn {
+            flex: 1;
+            padding: 0.5rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.5);
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .orderbook-toggle-btn:hover {
+            color: var(--white);
+            background: var(--gray);
+        }
+
+        .orderbook-toggle-btn.active {
+            background: var(--light-gray);
+            color: var(--white);
+        }
+
+        .orderbook-section {
+            display: none;
+        }
+
+        .orderbook-section.active {
+            display: block;
+        }
+
+        .orderbook-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-xs) 0;
+            border-bottom: 1px solid var(--light-gray);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .orderbook-title {
+            font-size: var(--font-small);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--cyan);
+        }
+
+        .orderbook-spread {
+            font-size: var(--font-small);
+            color: rgba(255, 255, 255, 0.6);
+            background: var(--gray);
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+        }
+
+        .orderbook-table {
+            width: 100%;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .orderbook-mid-price {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-xs) 0;
+            margin: var(--spacing-xs) 0;
+            background: linear-gradient(90deg, transparent, var(--gray), transparent);
+            border-top: 1px solid var(--light-gray);
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .mid-price-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .mid-price-value {
+            font-size: var(--font-small);
+            font-weight: 700;
+            color: var(--cyan);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .orderbook-table-header {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: var(--spacing-xs);
+            padding: var(--spacing-xs) 0.5rem;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .orderbook-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: var(--spacing-xs);
+            padding: var(--spacing-xs) 0.5rem;
+            font-size: var(--font-small);
+            font-variant-numeric: tabular-nums;
+            cursor: pointer;
+            transition: background 0.1s ease;
+            position: relative;
+            align-items: center;
+        }
+
+        .orderbook-row::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            right: 0;
+            width: var(--depth-width, 0%);
+            opacity: 0.15;
+            pointer-events: none;
+            transition: width 0.2s ease;
+        }
+
+        .orderbook-row:hover {
+            background: var(--gray);
+        }
+
+        .orderbook-row.bid {
+            color: var(--green);
+        }
+
+        .orderbook-row.bid::before {
+            background: var(--green);
+        }
+
+        .orderbook-row.ask {
+            color: var(--red);
+        }
+
+        .orderbook-row.ask::before {
+            background: var(--red);
+        }
+
+        .orderbook-row .price {
+            font-weight: 700;
+            position: relative;
+            z-index: 1;
+        }
+
+        .orderbook-row .size {
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .orderbook-row .total {
+            text-align: right;
+            color: rgba(255, 255, 255, 0.6);
+            position: relative;
+            z-index: 1;
+        }
+
+        .orderbook-loading {
+            text-align: center;
+            padding: var(--spacing-md);
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .orderbook-loading::after {
+            content: '';
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--light-gray);
+            border-top-color: var(--green);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Liquidity breakdown */
+        .liquidity-breakdown {
+            background: linear-gradient(135deg, var(--gray) 0%, rgba(0, 255, 136, 0.05) 100%);
+            padding: var(--spacing-sm);
+            margin-top: var(--spacing-sm);
+            border-left: 3px solid var(--cyan);
+            border-radius: 0 4px 4px 0;
+        }
+
+        .liquidity-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--cyan);
+            margin-bottom: var(--spacing-xs);
+            font-weight: 700;
+        }
+
+        .liquidity-bar {
+            height: 10px;
+            background: var(--dark);
+            display: flex;
+            overflow: hidden;
+            margin-bottom: var(--spacing-xs);
+            border-radius: 5px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .liquidity-bar-orderbook {
+            background: linear-gradient(90deg, var(--green), #00cc6a);
+            transition: width 0.3s ease;
+            border-radius: 5px 0 0 5px;
+        }
+
+        .liquidity-bar-amm {
+            background: linear-gradient(90deg, var(--cyan), #00a8cc);
+            transition: width 0.3s ease;
+        }
+
+        .liquidity-bar-orderbook:last-child {
+            border-radius: 5px;
+        }
+
+        .liquidity-bar-amm:last-child {
+            border-radius: 0 5px 5px 0;
+        }
+
+        .liquidity-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: var(--font-small);
+        }
+
+        .liquidity-source {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .liquidity-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            box-shadow: 0 0 4px currentColor;
+        }
+
+        .liquidity-dot.orderbook {
+            background: var(--green);
+            color: var(--green);
+        }
+
+        .liquidity-dot.amm {
+            background: var(--cyan);
+            color: var(--cyan);
+        }
+
+        .take-order-btn {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 0.2rem 0.5rem;
+            background: transparent;
+            border: 1px solid currentColor;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.15s ease;
+            margin-left: auto;
+            white-space: nowrap;
+        }
+
+        .orderbook-row.ask .take-order-btn {
+            color: var(--green);
+            border-color: var(--green);
+        }
+
+        .orderbook-row.ask .take-order-btn:hover {
+            background: var(--green);
+            color: var(--black);
+        }
+
+        .orderbook-row.bid .take-order-btn {
+            color: var(--red);
+            border-color: var(--red);
+        }
+
+        .orderbook-row.bid .take-order-btn:hover {
+            background: var(--red);
+            color: var(--white);
+        }
+
+        .orderbook-empty {
+            text-align: center;
+            padding: var(--spacing-sm);
+            color: rgba(255, 255, 255, 0.3);
+            font-size: var(--font-small);
+        }
+
+        /* Place Order Form */
+        .place-order-form {
+            background: var(--gray);
+            padding: var(--spacing-sm);
+            margin-top: var(--spacing-sm);
+        }
+
+        .order-type-toggle {
+            display: flex;
+            gap: 0;
+            margin-bottom: var(--spacing-sm);
+            border: 1px solid var(--light-gray);
+        }
+
+        .order-type-btn {
+            flex: 1;
+            padding: 0.5rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            font-weight: 700;
+            text-transform: uppercase;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.5);
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .order-type-btn:hover {
+            color: var(--white);
+        }
+
+        .order-type-btn.active.buy {
+            background: var(--green);
+            color: var(--black);
+        }
+
+        .order-type-btn.active.sell {
+            background: var(--red);
+            color: var(--white);
+        }
+
+        .order-input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .order-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .order-input-label {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .order-input {
+            width: 100%;
+            padding: 0.5rem;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: var(--font-small);
+            background: var(--dark);
+            color: var(--white);
+            border: 1px solid var(--light-gray);
+        }
+
+        .order-input:focus {
+            outline: none;
+            border-color: var(--green);
+        }
+
+        .order-total {
+            display: flex;
+            justify-content: space-between;
+            padding: var(--spacing-xs) 0;
+            font-size: var(--font-small);
+            border-top: 1px solid var(--light-gray);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .order-total-label {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .order-total-value {
+            font-weight: 700;
+        }
+
+        .order-options {
+            display: flex;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+            font-size: var(--font-small);
+        }
+
+        .order-option {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: rgba(255, 255, 255, 0.6);
+            cursor: pointer;
+        }
+
+        .order-option input[type="checkbox"] {
+            accent-color: var(--green);
+        }
+
+        /* User Orders */
+        .user-orders {
+            margin-top: var(--spacing-md);
+        }
+
+        .user-orders-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .user-orders-title {
+            font-size: var(--font-small);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .cancel-all-btn {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.25rem 0.5rem;
+            background: transparent;
+            color: var(--red);
+            border: 1px solid var(--red);
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.15s ease;
+        }
+
+        .cancel-all-btn:hover {
+            background: var(--red);
+            color: var(--white);
+        }
+
+        .user-order {
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            gap: var(--spacing-sm);
+            align-items: center;
+            padding: var(--spacing-xs);
+            background: var(--gray);
+            margin-bottom: var(--spacing-xs);
+            font-size: var(--font-small);
+        }
+
+        .user-order-type {
+            font-weight: 700;
+            padding: 0.25rem 0.5rem;
+        }
+
+        .user-order-type.buy {
+            background: rgba(0, 255, 136, 0.2);
+            color: var(--green);
+        }
+
+        .user-order-type.sell {
+            background: rgba(255, 68, 68, 0.2);
+            color: var(--red);
+        }
+
+        .user-order-details {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .user-order-status {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .user-order-cancel {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.25rem 0.5rem;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .user-order-cancel:hover {
+            background: var(--red);
+            color: var(--white);
+            border-color: var(--red);
+        }
+
         /* EMPTY STATE */
         .empty-state {
             text-align: center;
@@ -1292,6 +1807,88 @@
                 font-size: 0.85rem;
             }
 
+            /* Orderbook mobile */
+            .orderbook-toggle {
+                margin-bottom: var(--spacing-xs);
+            }
+
+            .orderbook-toggle-btn {
+                padding: 0.4rem;
+                font-size: 0.75rem;
+            }
+
+            .orderbook-row {
+                font-size: 0.75rem;
+                padding: var(--spacing-xs) 0.25rem;
+                grid-template-columns: 1fr 1fr 1fr 2.5rem;
+            }
+
+            .orderbook-table-header {
+                font-size: 0.6rem;
+                grid-template-columns: 1fr 1fr 1fr 2.5rem;
+                padding: var(--spacing-xs) 0.25rem;
+            }
+
+            .take-order-btn {
+                font-size: 0.55rem;
+                padding: 0.15rem 0.3rem;
+            }
+
+            .order-input-row {
+                grid-template-columns: 1fr;
+                gap: var(--spacing-xs);
+            }
+
+            .order-type-toggle {
+                margin-bottom: var(--spacing-xs);
+            }
+
+            .order-type-btn {
+                padding: 0.4rem;
+                font-size: 0.75rem;
+            }
+
+            .place-order-form {
+                padding: var(--spacing-xs);
+            }
+
+            .liquidity-breakdown {
+                padding: var(--spacing-xs);
+                margin-top: var(--spacing-xs);
+            }
+
+            .liquidity-details {
+                flex-direction: column;
+                gap: 0.25rem;
+                font-size: 0.75rem;
+            }
+
+            .order-options {
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+
+            .user-order {
+                grid-template-columns: auto 1fr auto;
+                gap: var(--spacing-xs);
+                padding: var(--spacing-xs);
+                font-size: 0.75rem;
+            }
+
+            .user-order-status {
+                display: none;
+            }
+
+            .user-order-type {
+                font-size: 0.65rem;
+                padding: 0.15rem 0.3rem;
+            }
+
+            #smartTradeBtn, #placeLimitOrderBtn {
+                font-size: 0.75rem;
+                padding: 0.5rem;
+            }
+
             .wallet-options {
                 max-height: 50vh;
             }
@@ -1331,6 +1928,38 @@
             .market-actions {
                 grid-template-columns: 1fr;
                 gap: 0.5rem;
+            }
+
+            /* Orderbook very small screens */
+            .orderbook-row {
+                grid-template-columns: 1fr 1fr 2rem;
+                font-size: 0.7rem;
+            }
+
+            .orderbook-row .total {
+                display: none;
+            }
+
+            .orderbook-table-header {
+                grid-template-columns: 1fr 1fr 2rem;
+            }
+
+            .orderbook-table-header span:nth-child(3) {
+                display: none;
+            }
+
+            .take-order-btn {
+                font-size: 0.5rem;
+                padding: 0.1rem 0.2rem;
+            }
+
+            .order-options {
+                font-size: 0.7rem;
+            }
+
+            .orderbook-spread {
+                font-size: 0.7rem;
+                padding: 0.15rem 0.3rem;
             }
         }
 
@@ -1567,7 +2196,7 @@
     <!-- FOOTER -->
     <footer class="footer">
         <div class="footer-links">
-            <a href="https://github.com/z0r0z/pm" target="_blank" class="footer-link">GitHub</a>
+            <a href="https://github.com/zammdefi/pm" target="_blank" class="footer-link">GitHub</a>
             <a href="https://etherscan.io/address/0x0000000000ee3d4294438093EaA34308f47Bc0b4" target="_blank" class="footer-link">Contract</a>
         </div>
         <div class="footer-text">Ethereum Gas Prediction Markets</div>
@@ -1594,49 +2223,180 @@
             <div class="modal-body">
                 <div id="tradeStatus" class="status-message"></div>
 
-                <!-- Buy/Sell Toggle -->
-                <div class="trade-mode-toggle">
-                    <button class="trade-mode-btn active" id="buyModeBtn" onclick="setTradeMode('buy')">Buy</button>
-                    <button class="trade-mode-btn" id="sellModeBtn" onclick="setTradeMode('sell')">Sell</button>
+                <!-- AMM/Limit Toggle - Primary Navigation -->
+                <div class="orderbook-toggle" style="margin-bottom: var(--spacing-md);">
+                    <button class="orderbook-toggle-btn active" id="ammToggleBtn" onclick="setOrderbookView('amm')">Instant</button>
+                    <button class="orderbook-toggle-btn" id="orderbookToggleBtn" onclick="setOrderbookView('orderbook')">Limit Orders</button>
                 </div>
 
-                <!-- Position Display -->
-                <div class="trade-position" id="tradePosition">
-                    <div class="trade-position-label">Your Position</div>
-                    <div class="trade-position-values">
-                        <span class="trade-pos yes"><span id="posYes">0</span> YES</span>
-                        <span class="trade-pos no"><span id="posNo">0</span> NO</span>
+                <!-- AMM Section -->
+                <div id="ammSection">
+                    <!-- Buy/Sell Toggle -->
+                    <div class="trade-mode-toggle">
+                        <button class="trade-mode-btn active" id="buyModeBtn" onclick="setTradeMode('buy')">Buy</button>
+                        <button class="trade-mode-btn" id="sellModeBtn" onclick="setTradeMode('sell')">Sell</button>
                     </div>
+
+                    <!-- Position Display -->
+                    <div class="trade-position" id="tradePosition">
+                        <div class="trade-position-label">Your Position</div>
+                        <div class="trade-position-values">
+                            <span class="trade-pos yes"><span id="posYes">0</span> YES</span>
+                            <span class="trade-pos no"><span id="posNo">0</span> NO</span>
+                        </div>
+                    </div>
+
+                    <div class="trade-input-group">
+                        <div class="trade-input-label">
+                            <span class="form-label" id="tradeInputLabel">Amount (ETH)</span>
+                            <span class="trade-balance" id="tradeBalanceDisplay">Balance: <span id="tradeBalance">--</span> <span id="tradeBalanceUnit">ETH</span></span>
+                        </div>
+                        <div class="trade-input-wrapper">
+                            <input type="number" id="tradeAmount" class="trade-input" placeholder="0.0" oninput="updateTradePreview()">
+                            <button class="trade-max-btn" onclick="setMaxTrade()">Max</button>
+                            <div class="trade-token" id="tradeTokenLabel">ETH</div>
+                        </div>
+                    </div>
+
+                    <div class="trade-preview">
+                        <div class="trade-preview-row">
+                            <span class="trade-preview-label" id="tradeReceiveLabel">You receive (est.)</span>
+                            <span class="trade-preview-value" id="tradeReceive">-- tokens</span>
+                        </div>
+                        <div class="trade-preview-row" id="leftoverRow" style="display: none;">
+                            <span class="trade-preview-label">Leftover tokens</span>
+                            <span class="trade-preview-value" id="tradeLeftover">--</span>
+                        </div>
+                        <div class="trade-preview-row">
+                            <span class="trade-preview-label">Price impact</span>
+                            <span class="trade-preview-value" id="tradePriceImpact">--%</span>
+                        </div>
+                    </div>
+
+                    <button class="btn primary" style="width: 100%;" onclick="executeTrade()" id="tradeSubmitBtn">Confirm Trade</button>
                 </div>
 
-                <div class="trade-input-group">
-                    <div class="trade-input-label">
-                        <span class="form-label" id="tradeInputLabel">Amount (ETH)</span>
-                        <span class="trade-balance" id="tradeBalanceDisplay">Balance: <span id="tradeBalance">--</span> <span id="tradeBalanceUnit">ETH</span></span>
+                <!-- Orderbook Section (hidden by default) -->
+                <div id="orderbookSection" class="orderbook-section">
+                    <!-- Position Display for Orderbook -->
+                    <div class="trade-position" id="orderbookPosition">
+                        <div class="trade-position-label">Your Position</div>
+                        <div class="trade-position-values">
+                            <span class="trade-pos yes"><span id="obPosYes">0</span> YES</span>
+                            <span class="trade-pos no"><span id="obPosNo">0</span> NO</span>
+                        </div>
                     </div>
-                    <div class="trade-input-wrapper">
-                        <input type="number" id="tradeAmount" class="trade-input" placeholder="0.0" oninput="updateTradePreview()">
-                        <button class="trade-max-btn" onclick="setMaxTrade()">Max</button>
-                        <div class="trade-token" id="tradeTokenLabel">ETH</div>
+
+                    <!-- YES/NO Toggle for Orderbook -->
+                    <div class="orderbook-toggle" style="margin-bottom: var(--spacing-sm);">
+                        <button class="orderbook-toggle-btn active" id="yesOrderbookBtn" onclick="setOrderbookToken('yes')">YES Orders</button>
+                        <button class="orderbook-toggle-btn" id="noOrderbookBtn" onclick="setOrderbookToken('no')">NO Orders</button>
+                    </div>
+
+                    <!-- Bid/Ask Spread -->
+                    <div class="orderbook-header">
+                        <span class="orderbook-title" id="orderbookTokenTitle">YES Orderbook</span>
+                        <span class="orderbook-spread" id="orderbookSpread">Spread: --</span>
+                    </div>
+
+                    <!-- Asks (Sell Orders) -->
+                    <div class="orderbook-table">
+                        <div class="orderbook-table-header">
+                            <span>Price (ETH)</span>
+                            <span style="text-align: center;">Size</span>
+                            <span style="text-align: right;">Total</span>
+                            <span></span>
+                        </div>
+                        <div id="orderbookAsks"><div class="orderbook-loading">Loading</div></div>
+                    </div>
+
+                    <!-- Current Price Divider -->
+                    <div class="orderbook-mid-price">
+                        <span class="mid-price-label">Mid</span>
+                        <span class="mid-price-value" id="orderbookMidPrice">--</span>
+                    </div>
+
+                    <!-- Bids (Buy Orders) -->
+                    <div class="orderbook-table">
+                        <div id="orderbookBids"><div class="orderbook-loading">Loading</div></div>
+                    </div>
+
+                    <!-- Place Limit Order Form -->
+                    <div class="place-order-form">
+                        <div class="order-type-toggle">
+                            <button class="order-type-btn active buy" id="limitBuyBtn" onclick="setLimitOrderType('buy')">Buy</button>
+                            <button class="order-type-btn sell" id="limitSellBtn" onclick="setLimitOrderType('sell')">Sell</button>
+                        </div>
+
+                        <!-- Balance Display -->
+                        <div style="display: flex; justify-content: space-between; font-size: var(--font-small); color: rgba(255,255,255,0.5); margin-bottom: var(--spacing-sm);">
+                            <span>ETH: <span id="limitEthBalance">--</span></span>
+                            <span><span id="limitTokenLabel">YES</span>: <span id="limitTokenBalance">--</span></span>
+                        </div>
+
+                        <div class="order-input-row">
+                            <div class="order-input-group">
+                                <span class="order-input-label">Price (ETH)</span>
+                                <input type="number" class="order-input" id="limitPrice" placeholder="0.50" step="0.01" min="0.01" max="0.99" oninput="updateLimitOrderPreview()">
+                            </div>
+                            <div class="order-input-group">
+                                <span class="order-input-label">Shares</span>
+                                <input type="number" class="order-input" id="limitShares" placeholder="100" step="1" min="1" oninput="updateLimitOrderPreview()">
+                            </div>
+                        </div>
+
+                        <div class="order-total">
+                            <span class="order-total-label" id="limitTotalLabel">Total Cost</span>
+                            <span class="order-total-value" id="limitTotalValue">-- ETH</span>
+                        </div>
+
+                        <!-- Liquidity Breakdown Preview -->
+                        <div class="liquidity-breakdown" id="liquidityBreakdown" style="display: none;">
+                            <div class="liquidity-title">Execution Preview</div>
+                            <div class="liquidity-bar">
+                                <div class="liquidity-bar-orderbook" id="liquidityBarOrderbook" style="width: 0%;"></div>
+                                <div class="liquidity-bar-amm" id="liquidityBarAmm" style="width: 0%;"></div>
+                            </div>
+                            <div class="liquidity-details">
+                                <span class="liquidity-source">
+                                    <span class="liquidity-dot orderbook"></span>
+                                    <span>Orderbook: <span id="liquidityOrderbookAmt">0</span></span>
+                                </span>
+                                <span class="liquidity-source">
+                                    <span class="liquidity-dot amm"></span>
+                                    <span>AMM: <span id="liquidityAmmAmt">0</span></span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="order-options">
+                            <label class="order-option">
+                                <input type="checkbox" id="partialFillCheck" checked>
+                                <span>Allow Partial Fill</span>
+                            </label>
+                            <label class="order-option">
+                                <input type="checkbox" id="smartRouteCheck" checked>
+                                <span>Smart Route</span>
+                            </label>
+                        </div>
+
+                        <div style="display: flex; gap: var(--spacing-xs);">
+                            <button class="btn primary" style="flex: 1;" onclick="placeLimitOrder()" id="placeLimitOrderBtn">Place Order</button>
+                            <button class="btn" style="flex: 1; background: var(--cyan); color: var(--black);" onclick="executeSmartTrade()" id="smartTradeBtn">Smart Trade</button>
+                        </div>
+                    </div>
+
+                    <!-- User's Active Orders -->
+                    <div class="user-orders" id="userOrdersSection">
+                        <div class="user-orders-header">
+                            <span class="user-orders-title">Your Orders</span>
+                            <button class="cancel-all-btn" onclick="cancelAllOrders()" id="cancelAllBtn" style="display: none;">Cancel All</button>
+                        </div>
+                        <div id="userOrdersList">
+                            <div class="orderbook-empty">No active orders</div>
+                        </div>
                     </div>
                 </div>
-
-                <div class="trade-preview">
-                    <div class="trade-preview-row">
-                        <span class="trade-preview-label" id="tradeReceiveLabel">You receive (est.)</span>
-                        <span class="trade-preview-value" id="tradeReceive">-- tokens</span>
-                    </div>
-                    <div class="trade-preview-row" id="leftoverRow" style="display: none;">
-                        <span class="trade-preview-label">Leftover tokens</span>
-                        <span class="trade-preview-value" id="tradeLeftover">--</span>
-                    </div>
-                    <div class="trade-preview-row">
-                        <span class="trade-preview-label">Price impact</span>
-                        <span class="trade-preview-value" id="tradePriceImpact">--%</span>
-                    </div>
-                </div>
-
-                <button class="btn primary" style="width: 100%;" onclick="executeTrade()" id="tradeSubmitBtn">Confirm</button>
             </div>
         </div>
     </div>
@@ -1703,7 +2463,48 @@
         // Contract addresses
         const RESOLVER_ADDRESS = '0x00000000002205020E387b6a378c05639047BcFB'; // Must match GasPM.RESOLVER
         const ZAMM_ADDRESS = '0x000000000000040470635EB91b7CE4D132D616eD'; // From PAMM constant
+        const PMROUTER_ADDRESS = '0x0000000000000000000000000000000000000001'; // PLACEHOLDER - deploy PMRouter and update
         const FEE_TIER = 30n; // 0.3% fee for all GasPM markets
+
+        // PMRouter ABI for limit orders
+        const PMROUTER_ABI = [
+            // Limit orders
+            'function placeOrder(uint256 marketId, bool isYes, bool isBuy, uint96 shares, uint96 collateral, uint56 deadline, bool partialFill) public payable returns (bytes32 orderHash)',
+            'function cancelOrder(bytes32 orderHash) public',
+            'function fillOrder(bytes32 orderHash, uint96 sharesToFill, address to) public payable returns (uint96 sharesFilled, uint96 collateralFilled)',
+            // Market orders (through router)
+            'function buy(uint256 marketId, bool isYes, uint256 collateralIn, uint256 minSharesOut, uint256 feeOrHook, address to) public payable returns (uint256 sharesOut)',
+            'function sell(uint256 marketId, bool isYes, uint256 sharesIn, uint256 minCollateralOut, uint256 feeOrHook, address to) public returns (uint256 collateralOut)',
+            // Hybrid routing (orderbook + AMM)
+            'function fillOrdersThenSwap(uint256 marketId, bool isYes, bool isBuy, uint256 totalAmount, uint256 minOutput, bytes32[] orderHashes, uint256 feeOrHook, address to) public payable returns (uint256 totalOutput)',
+            // ZAMM swaps
+            'function swapShares(uint256 marketId, bool yesForNo, uint256 amountIn, uint256 minOut, uint256 feeOrHook, address to) public returns (uint256 amountOut)',
+            'function swapSharesToCollateral(uint256 marketId, bool isYes, uint256 sharesIn, uint256 minCollateralOut, uint256 feeOrHook, address to) public returns (uint256 collateralOut)',
+            'function swapCollateralToShares(uint256 marketId, bool isYes, uint256 collateralIn, uint256 minSharesOut, uint256 feeOrHook, address to) public payable returns (uint256 sharesOut)',
+            // Collateral ops
+            'function split(uint256 marketId, uint256 amount, address to) public payable',
+            'function merge(uint256 marketId, uint256 amount, address to) public',
+            'function claim(uint256 marketId, address to) public returns (uint256 payout)',
+            // Views
+            'function orders(bytes32 orderHash) public view returns (address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)',
+            'function getOrder(bytes32 orderHash) public view returns (tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId) order, uint96 sharesFilled, uint96 sharesRemaining, uint96 collateralFilled, uint96 collateralRemaining, bool active)',
+            'function isOrderActive(bytes32 orderHash) public view returns (bool)',
+            'function getMarketOrderCount(uint256 marketId) public view returns (uint256)',
+            'function getUserOrderCount(address user) public view returns (uint256)',
+            'function getMarketOrderHashes(uint256 marketId, uint256 offset, uint256 limit) public view returns (bytes32[])',
+            'function getUserOrderHashes(address user, uint256 offset, uint256 limit) public view returns (bytes32[])',
+            'function getActiveOrders(uint256 marketId, bool isYes, bool isBuy, uint256 limit) public view returns (bytes32[] orderHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] orderDetails)',
+            'function getBestOrders(uint256 marketId, bool isYes, bool isBuy, uint256 limit) public view returns (bytes32[])',
+            'function getBidAsk(uint256 marketId, bool isYes) public view returns (uint256 bidPrice, uint256 askPrice, uint256 bidCount, uint256 askCount)',
+            'function getOrderbook(uint256 marketId, bool isYes, uint256 depth) public view returns (bytes32[] bidHashes, uint256[] bidPrices, uint256[] bidSizes, bytes32[] askHashes, uint256[] askPrices, uint256[] askSizes)',
+            'function getUserActiveOrders(address user, uint256 marketId, uint256 limit) public view returns (bytes32[] orderHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] orderDetails)',
+            'function getUserPositions(address user, uint256[] marketIds) public view returns (uint256[] yesBalances, uint256[] noBalances)',
+            'function batchCancelOrders(bytes32[] orderHashesToCancel) public returns (uint256 cancelled)',
+            // Events
+            'event OrderPlaced(bytes32 indexed orderHash, uint256 indexed marketId, address indexed owner, bool isYes, bool isBuy, uint96 shares, uint96 collateral, uint56 deadline, bool partialFill)',
+            'event OrderCancelled(bytes32 indexed orderHash)',
+            'event OrderFilled(bytes32 indexed orderHash, address indexed taker, uint96 sharesFilled, uint96 collateralFilled)'
+        ];
 
         // Market type constants
         const MARKET_TYPES = {
@@ -1737,6 +2538,13 @@
         // Cached gas data for chart redraws and tooltips
         let cachedGasData = { twap: 0, current: 0, max: 0, min: 0 };
         let chartState = { data: [], padding: 40, min: 0, max: 0, width: 0, height: 0 };
+
+        // Orderbook state
+        let orderbookView = 'amm'; // 'amm' or 'orderbook'
+        let orderbookToken = 'yes'; // 'yes' or 'no'
+        let limitOrderType = 'buy'; // 'buy' or 'sell'
+        let currentOrderbook = { bids: [], asks: [] };
+        let userOrders = [];
 
         // Parse threshold values from observable strings for chart overlay
         function parseMarketThresholds(observable) {
@@ -1912,6 +2720,658 @@
             ]);
 
             return { yesBalance, noBalance, noId };
+        }
+
+        // ======================== ORDERBOOK ========================
+
+        // Toggle between AMM and Orderbook views
+        function setOrderbookView(view) {
+            orderbookView = view;
+
+            // Update toggle buttons
+            document.getElementById('ammToggleBtn').classList.toggle('active', view === 'amm');
+            document.getElementById('orderbookToggleBtn').classList.toggle('active', view === 'orderbook');
+
+            // Toggle sections
+            const ammSection = document.getElementById('ammSection');
+            const orderbookSection = document.getElementById('orderbookSection');
+
+            if (view === 'orderbook') {
+                if (ammSection) ammSection.style.display = 'none';
+                orderbookSection.classList.add('active');
+                loadOrderbook();
+            } else {
+                if (ammSection) ammSection.style.display = '';
+                orderbookSection.classList.remove('active');
+            }
+        }
+
+        // Toggle between YES and NO orderbooks
+        function setOrderbookToken(token) {
+            orderbookToken = token;
+
+            document.getElementById('yesOrderbookBtn').classList.toggle('active', token === 'yes');
+            document.getElementById('noOrderbookBtn').classList.toggle('active', token === 'no');
+            document.getElementById('orderbookTokenTitle').textContent = `${token.toUpperCase()} Orderbook`;
+
+            loadOrderbook();
+        }
+
+        // Toggle between buy and sell limit orders
+        function setLimitOrderType(type) {
+            limitOrderType = type;
+
+            const buyBtn = document.getElementById('limitBuyBtn');
+            const sellBtn = document.getElementById('limitSellBtn');
+
+            buyBtn.classList.toggle('active', type === 'buy');
+            buyBtn.classList.toggle('buy', type === 'buy');
+            sellBtn.classList.toggle('active', type === 'sell');
+            sellBtn.classList.toggle('sell', type === 'sell');
+
+            // Update total label
+            document.getElementById('limitTotalLabel').textContent = type === 'buy' ? 'Total Cost' : 'You Receive';
+
+            updateLimitOrderPreview();
+        }
+
+        // Load orderbook data from PMRouter
+        async function loadOrderbook() {
+            if (!currentTradeMarket) return;
+
+            const isYes = orderbookToken === 'yes';
+            const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+
+            // Show loading state
+            document.getElementById('orderbookAsks').innerHTML = '<div class="orderbook-loading">Loading</div>';
+            document.getElementById('orderbookBids').innerHTML = '<div class="orderbook-loading">Loading</div>';
+
+            // Update position display
+            document.getElementById('obPosYes').textContent = parseFloat(ethers.formatEther(currentUserPosition.yesBalance)).toFixed(4);
+            document.getElementById('obPosNo').textContent = parseFloat(ethers.formatEther(currentUserPosition.noBalance)).toFixed(4);
+
+            // Update balance displays
+            const tokenBalance = isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+            document.getElementById('limitTokenLabel').textContent = isYes ? 'YES' : 'NO';
+            document.getElementById('limitTokenBalance').textContent = parseFloat(ethers.formatEther(tokenBalance)).toFixed(4);
+
+            // Get ETH balance if connected
+            if (provider && connectedAddress) {
+                try {
+                    const ethBalance = await provider.getBalance(connectedAddress);
+                    document.getElementById('limitEthBalance').textContent = parseFloat(ethers.formatEther(ethBalance)).toFixed(4);
+                } catch (e) {
+                    document.getElementById('limitEthBalance').textContent = '--';
+                }
+            }
+
+            try {
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpcProvider);
+
+                // Get orderbook (depth of 10 for each side)
+                const [bidHashes, bidPrices, bidSizes, askHashes, askPrices, askSizes] =
+                    await pmRouter.getOrderbook(currentTradeMarket.marketId, isYes, 10);
+
+                // Format bids
+                currentOrderbook.bids = bidHashes.map((hash, i) => ({
+                    hash,
+                    price: Number(bidPrices[i]) / 1e18,
+                    size: Number(bidSizes[i]) / 1e18,
+                    total: (Number(bidPrices[i]) / 1e18) * (Number(bidSizes[i]) / 1e18)
+                }));
+
+                // Format asks
+                currentOrderbook.asks = askHashes.map((hash, i) => ({
+                    hash,
+                    price: Number(askPrices[i]) / 1e18,
+                    size: Number(askSizes[i]) / 1e18,
+                    total: (Number(askPrices[i]) / 1e18) * (Number(askSizes[i]) / 1e18)
+                }));
+
+                // Get bid/ask spread
+                const [bidPrice, askPrice] = await pmRouter.getBidAsk(currentTradeMarket.marketId, isYes);
+                const spread = askPrice > 0n && bidPrice > 0n ?
+                    ((Number(askPrice) - Number(bidPrice)) / 1e18).toFixed(4) : '--';
+
+                renderOrderbook();
+                document.getElementById('orderbookSpread').textContent = `Spread: ${spread} ETH`;
+
+                // Calculate mid price
+                if (bidPrice > 0n && askPrice > 0n) {
+                    const mid = ((Number(bidPrice) + Number(askPrice)) / 2 / 1e18).toFixed(4);
+                    document.getElementById('orderbookMidPrice').textContent = `${mid} ETH`;
+                } else if (bidPrice > 0n) {
+                    document.getElementById('orderbookMidPrice').textContent = `Bid: ${(Number(bidPrice) / 1e18).toFixed(4)} ETH`;
+                } else if (askPrice > 0n) {
+                    document.getElementById('orderbookMidPrice').textContent = `Ask: ${(Number(askPrice) / 1e18).toFixed(4)} ETH`;
+                } else {
+                    document.getElementById('orderbookMidPrice').textContent = 'No orders';
+                }
+
+                // Load user orders if connected
+                if (connectedAddress) {
+                    await loadUserOrders();
+                }
+            } catch (e) {
+                console.error('Failed to load orderbook:', e);
+                document.getElementById('orderbookAsks').innerHTML = '<div class="orderbook-empty">Failed to load orderbook</div>';
+                document.getElementById('orderbookBids').innerHTML = '';
+                document.getElementById('orderbookSpread').textContent = 'Spread: --';
+                document.getElementById('orderbookMidPrice').textContent = 'Error loading';
+            }
+        }
+
+        // Render orderbook rows
+        function renderOrderbook() {
+            const asksContainer = document.getElementById('orderbookAsks');
+            const bidsContainer = document.getElementById('orderbookBids');
+
+            // Calculate max size for depth visualization
+            const allSizes = [...currentOrderbook.bids.map(o => o.size), ...currentOrderbook.asks.map(o => o.size)];
+            const maxSize = Math.max(...allSizes, 1);
+
+            // Render asks (sell orders) - show in reverse order (lowest first at bottom)
+            if (currentOrderbook.asks.length === 0) {
+                asksContainer.innerHTML = '<div class="orderbook-empty">No sell orders</div>';
+            } else {
+                asksContainer.innerHTML = currentOrderbook.asks.slice().reverse().map(order => {
+                    const depthWidth = Math.min(100, (order.size / maxSize) * 100);
+                    return `
+                    <div class="orderbook-row ask" style="--depth-width: ${depthWidth}%;">
+                        <span class="price" onclick="fillFromOrderbook('${order.hash}', ${order.price}, ${order.size}, 'ask')">${order.price.toFixed(4)}</span>
+                        <span class="size">${order.size.toFixed(2)}</span>
+                        <span class="total">${order.total.toFixed(4)}</span>
+                        <button class="take-order-btn" onclick="event.stopPropagation(); takeOrder('${order.hash}', ${order.size}, 'ask')">Buy</button>
+                    </div>`;
+                }).join('');
+            }
+
+            // Render bids (buy orders) - highest first
+            if (currentOrderbook.bids.length === 0) {
+                bidsContainer.innerHTML = '<div class="orderbook-empty">No buy orders</div>';
+            } else {
+                bidsContainer.innerHTML = currentOrderbook.bids.map(order => {
+                    const depthWidth = Math.min(100, (order.size / maxSize) * 100);
+                    return `
+                    <div class="orderbook-row bid" style="--depth-width: ${depthWidth}%;">
+                        <span class="price" onclick="fillFromOrderbook('${order.hash}', ${order.price}, ${order.size}, 'bid')">${order.price.toFixed(4)}</span>
+                        <span class="size">${order.size.toFixed(2)}</span>
+                        <span class="total">${order.total.toFixed(4)}</span>
+                        <button class="take-order-btn" onclick="event.stopPropagation(); takeOrder('${order.hash}', ${order.size}, 'bid')">Sell</button>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        // Fill order from clicking orderbook row
+        function fillFromOrderbook(hash, price, size, side) {
+            // Set the opposite side for the limit order (to take the order)
+            setLimitOrderType(side === 'bid' ? 'sell' : 'buy');
+            document.getElementById('limitPrice').value = price.toFixed(4);
+            document.getElementById('limitShares').value = Math.floor(size);
+            updateLimitOrderPreview();
+        }
+
+        // Load user's active orders
+        async function loadUserOrders() {
+            if (!connectedAddress || !currentTradeMarket) return;
+
+            const rpcProvider = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+
+            try {
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpcProvider);
+
+                // Get user's active orders for this market
+                const [orderHashes, orderDetails] = await pmRouter.getUserActiveOrders(
+                    connectedAddress,
+                    currentTradeMarket.marketId,
+                    50
+                );
+
+                userOrders = orderHashes.map((hash, i) => ({
+                    hash,
+                    ...orderDetails[i]
+                }));
+
+                renderUserOrders();
+            } catch (e) {
+                console.error('Failed to load user orders:', e);
+                document.getElementById('userOrdersList').innerHTML = '<div class="orderbook-empty">Failed to load orders</div>';
+            }
+        }
+
+        // Render user's orders
+        function renderUserOrders() {
+            const container = document.getElementById('userOrdersList');
+            const cancelAllBtn = document.getElementById('cancelAllBtn');
+
+            if (userOrders.length === 0) {
+                container.innerHTML = '<div class="orderbook-empty">No active orders</div>';
+                cancelAllBtn.style.display = 'none';
+                return;
+            }
+
+            cancelAllBtn.style.display = '';
+
+            container.innerHTML = userOrders.map(order => {
+                const typeLabel = order.isBuy ? 'BUY' : 'SELL';
+                const tokenLabel = order.isYes ? 'YES' : 'NO';
+                const sharesNum = Number(order.shares);
+                const price = sharesNum > 0 ? (Number(order.collateral) / sharesNum).toFixed(4) : '0.0000';
+                const shares = (sharesNum / 1e18).toFixed(2);
+
+                return `
+                    <div class="user-order">
+                        <span class="user-order-type ${order.isBuy ? 'buy' : 'sell'}">${typeLabel}</span>
+                        <span class="user-order-details">${shares} ${tokenLabel} @ ${price} ETH</span>
+                        <span class="user-order-status">Active</span>
+                        <button class="user-order-cancel" onclick="cancelOrder('${order.hash}')">Cancel</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Update limit order preview with liquidity breakdown
+        function updateLimitOrderPreview() {
+            const price = parseFloat(document.getElementById('limitPrice').value) || 0;
+            const shares = parseFloat(document.getElementById('limitShares').value) || 0;
+            const total = price * shares;
+            const isBuy = limitOrderType === 'buy';
+
+            document.getElementById('limitTotalValue').textContent = total > 0 ? `${total.toFixed(4)} ETH` : '-- ETH';
+
+            // Calculate liquidity breakdown
+            const liquidityBreakdown = document.getElementById('liquidityBreakdown');
+            if (shares > 0) {
+                // For buying: check sell orders (asks) - sorted by price ascending (best first)
+                // For selling: check buy orders (bids) - sorted by price descending (best first)
+                let matchingOrders;
+                if (isBuy) {
+                    // Sort asks by price ascending, filter by max price if set
+                    matchingOrders = [...currentOrderbook.asks]
+                        .sort((a, b) => a.price - b.price)
+                        .filter(o => price <= 0 || o.price <= price);
+                } else {
+                    // Sort bids by price descending, filter by min price if set
+                    matchingOrders = [...currentOrderbook.bids]
+                        .sort((a, b) => b.price - a.price)
+                        .filter(o => price <= 0 || o.price >= price);
+                }
+
+                let orderbookFill = 0;
+                for (const order of matchingOrders) {
+                    orderbookFill += order.size;
+                    if (orderbookFill >= shares) {
+                        orderbookFill = shares;
+                        break;
+                    }
+                }
+
+                const ammFill = Math.max(0, shares - orderbookFill);
+                const totalFill = orderbookFill + ammFill;
+
+                if (totalFill > 0) {
+                    const orderbookPct = (orderbookFill / totalFill) * 100;
+                    const ammPct = (ammFill / totalFill) * 100;
+
+                    document.getElementById('liquidityBarOrderbook').style.width = `${orderbookPct}%`;
+                    document.getElementById('liquidityBarAmm').style.width = `${ammPct}%`;
+                    document.getElementById('liquidityOrderbookAmt').textContent = `${orderbookFill.toFixed(2)} (${orderbookPct.toFixed(0)}%)`;
+                    document.getElementById('liquidityAmmAmt').textContent = `${ammFill.toFixed(2)} (${ammPct.toFixed(0)}%)`;
+                    liquidityBreakdown.style.display = '';
+                } else {
+                    liquidityBreakdown.style.display = 'none';
+                }
+            } else {
+                liquidityBreakdown.style.display = 'none';
+            }
+        }
+
+        // Place a limit order
+        async function placeLimitOrder() {
+            if (!signer || !currentTradeMarket) {
+                showStatus('tradeStatus', 'Please connect wallet first', 'error');
+                return;
+            }
+
+            const price = parseFloat(document.getElementById('limitPrice').value);
+            const shares = parseFloat(document.getElementById('limitShares').value);
+            const partialFill = document.getElementById('partialFillCheck').checked;
+
+            if (!price || price <= 0 || price >= 1) {
+                showStatus('tradeStatus', 'Price must be between 0 and 1 ETH', 'error');
+                return;
+            }
+
+            if (!shares || shares <= 0) {
+                showStatus('tradeStatus', 'Please enter a valid number of shares', 'error');
+                return;
+            }
+
+            const isYes = orderbookToken === 'yes';
+            const isBuy = limitOrderType === 'buy';
+
+            // Convert to wei (96-bit values for shares and collateral)
+            const sharesWei = ethers.parseEther(shares.toString());
+            const collateralWei = ethers.parseEther((price * shares).toString());
+
+            // Default deadline: 7 days from now
+            const deadline = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+
+            try {
+                showStatus('tradeStatus', 'Placing limit order...', 'pending');
+
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+
+                let tx;
+                if (isBuy) {
+                    // Buying shares: send collateral as ETH
+                    tx = await pmRouter.placeOrder(
+                        currentTradeMarket.marketId,
+                        isYes,
+                        true, // isBuy
+                        sharesWei,
+                        collateralWei,
+                        deadline,
+                        partialFill,
+                        { value: collateralWei }
+                    );
+                } else {
+                    // Selling shares: need to approve PMRouter first
+                    const pamm = new ethers.Contract(PAMM_ADDRESS, [
+                        'function setOperator(address operator, bool approved) public returns (bool)',
+                        'function isOperator(address owner, address operator) public view returns (bool)'
+                    ], signer);
+
+                    // Check if PMRouter is approved
+                    const isApproved = await pamm.isOperator(connectedAddress, PMROUTER_ADDRESS);
+                    if (!isApproved) {
+                        showStatus('tradeStatus', 'Approving PMRouter...', 'pending');
+                        const approveTx = await pamm.setOperator(PMROUTER_ADDRESS, true);
+                        await approveTx.wait();
+                    }
+
+                    showStatus('tradeStatus', 'Placing limit order...', 'pending');
+                    tx = await pmRouter.placeOrder(
+                        currentTradeMarket.marketId,
+                        isYes,
+                        false, // isBuy (selling)
+                        sharesWei,
+                        collateralWei,
+                        deadline,
+                        partialFill
+                    );
+                }
+
+                await tx.wait();
+                showStatus('tradeStatus', 'Order placed successfully!', 'success');
+
+                // Refresh orderbook and user orders
+                await loadOrderbook();
+
+                // Clear inputs
+                document.getElementById('limitPrice').value = '';
+                document.getElementById('limitShares').value = '';
+                updateLimitOrderPreview();
+
+            } catch (e) {
+                console.error('Failed to place order:', e);
+                showStatus('tradeStatus', e.reason || e.message || 'Failed to place order', 'error');
+            }
+        }
+
+        // Cancel a single order
+        async function cancelOrder(orderHash) {
+            if (!signer) {
+                showStatus('tradeStatus', 'Please connect wallet first', 'error');
+                return;
+            }
+
+            try {
+                showStatus('tradeStatus', 'Cancelling order...', 'pending');
+
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+                const tx = await pmRouter.cancelOrder(orderHash);
+                await tx.wait();
+
+                showStatus('tradeStatus', 'Order cancelled!', 'success');
+                await loadOrderbook();
+
+            } catch (e) {
+                console.error('Failed to cancel order:', e);
+                showStatus('tradeStatus', e.reason || e.message || 'Failed to cancel order', 'error');
+            }
+        }
+
+        // Cancel all user orders for current market
+        async function cancelAllOrders() {
+            if (!signer || userOrders.length === 0) return;
+
+            try {
+                showStatus('tradeStatus', 'Cancelling all orders...', 'pending');
+
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+                const hashes = userOrders.map(o => o.hash);
+
+                const tx = await pmRouter.batchCancelOrders(hashes);
+                await tx.wait();
+
+                showStatus('tradeStatus', `Cancelled ${hashes.length} orders!`, 'success');
+                await loadOrderbook();
+
+            } catch (e) {
+                console.error('Failed to cancel orders:', e);
+                showStatus('tradeStatus', e.reason || e.message || 'Failed to cancel orders', 'error');
+            }
+        }
+
+        // Take (fill) a specific order from the orderbook
+        async function takeOrder(orderHash, maxShares, side) {
+            if (!signer || !currentTradeMarket) {
+                showStatus('tradeStatus', 'Please connect wallet first', 'error');
+                return;
+            }
+
+            const isYes = orderbookToken === 'yes';
+
+            try {
+                showStatus('tradeStatus', 'Getting order details...', 'pending');
+
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+
+                // Get order details to calculate required ETH
+                const [order, , sharesRemaining, , collateralRemaining, active] = await pmRouter.getOrder(orderHash);
+                if (!active) {
+                    showStatus('tradeStatus', 'Order is no longer active', 'error');
+                    await loadOrderbook();
+                    return;
+                }
+
+                const sharesToFill = ethers.parseEther(Math.min(maxShares, Number(sharesRemaining) / 1e18).toString());
+
+                if (side === 'ask') {
+                    // Taking an ask (sell order) = we are buying shares
+                    // Calculate collateral needed
+                    const collateralNeeded = (BigInt(order.collateral) * sharesToFill) / BigInt(order.shares);
+
+                    showStatus('tradeStatus', `Buying ${(Number(sharesToFill) / 1e18).toFixed(2)} shares...`, 'pending');
+
+                    const tx = await pmRouter.fillOrder(orderHash, sharesToFill, connectedAddress, { value: collateralNeeded });
+                    await tx.wait();
+
+                    showStatus('tradeStatus', 'Order filled successfully!', 'success');
+                } else {
+                    // Taking a bid (buy order) = we are selling shares
+                    // Need to approve PMRouter first
+                    const pamm = new ethers.Contract(PAMM_ADDRESS, [
+                        'function setOperator(address operator, bool approved) public returns (bool)',
+                        'function isOperator(address owner, address operator) public view returns (bool)'
+                    ], signer);
+
+                    const isApproved = await pamm.isOperator(connectedAddress, PMROUTER_ADDRESS);
+                    if (!isApproved) {
+                        showStatus('tradeStatus', 'Approving PMRouter...', 'pending');
+                        const approveTx = await pamm.setOperator(PMROUTER_ADDRESS, true);
+                        await approveTx.wait();
+                    }
+
+                    showStatus('tradeStatus', `Selling ${(Number(sharesToFill) / 1e18).toFixed(2)} shares...`, 'pending');
+
+                    const tx = await pmRouter.fillOrder(orderHash, sharesToFill, connectedAddress);
+                    await tx.wait();
+
+                    showStatus('tradeStatus', 'Order filled successfully!', 'success');
+                }
+
+                // Refresh orderbook and positions
+                await loadOrderbook();
+                currentUserPosition = await getUserPosition(currentTradeMarket.marketId);
+                document.getElementById('obPosYes').textContent = parseFloat(ethers.formatEther(currentUserPosition.yesBalance)).toFixed(4);
+                document.getElementById('obPosNo').textContent = parseFloat(ethers.formatEther(currentUserPosition.noBalance)).toFixed(4);
+
+            } catch (e) {
+                console.error('Failed to fill order:', e);
+                showStatus('tradeStatus', e.reason || e.message || 'Failed to fill order', 'error');
+            }
+        }
+
+        // Execute smart trade: fill orderbook then route to AMM
+        async function executeSmartTrade() {
+            if (!signer || !currentTradeMarket) {
+                showStatus('tradeStatus', 'Please connect wallet first', 'error');
+                return;
+            }
+
+            const price = parseFloat(document.getElementById('limitPrice').value);
+            const shares = parseFloat(document.getElementById('limitShares').value);
+            const smartRoute = document.getElementById('smartRouteCheck').checked;
+
+            if (!shares || shares <= 0) {
+                showStatus('tradeStatus', 'Please enter a valid number of shares', 'error');
+                return;
+            }
+
+            const isYes = orderbookToken === 'yes';
+            const isBuy = limitOrderType === 'buy';
+            const sharesWei = ethers.parseEther(shares.toString());
+
+            try {
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+
+                if (isBuy) {
+                    // Calculate max collateral to spend (use price as max, or market price estimate)
+                    const maxPrice = price > 0 ? price : 0.99;
+                    const maxCollateral = ethers.parseEther((maxPrice * shares).toString());
+
+                    if (smartRoute) {
+                        // Get best sell orders to fill first
+                        const bestAsks = currentOrderbook.asks
+                            .filter(o => price <= 0 || o.price <= price)
+                            .map(o => o.hash);
+
+                        showStatus('tradeStatus', `Smart routing: filling ${bestAsks.length} orders then AMM...`, 'pending');
+
+                        // Approve if needed for receiving shares
+                        const tx = await pmRouter.fillOrdersThenSwap(
+                            currentTradeMarket.marketId,
+                            isYes,
+                            true, // isBuy
+                            maxCollateral,
+                            0, // minOutput (0 for now, could add slippage)
+                            bestAsks,
+                            FEE_TIER,
+                            connectedAddress,
+                            { value: maxCollateral }
+                        );
+
+                        await tx.wait();
+                        showStatus('tradeStatus', 'Smart trade completed!', 'success');
+                    } else {
+                        // Simple AMM buy through router
+                        showStatus('tradeStatus', 'Buying via AMM...', 'pending');
+
+                        const tx = await pmRouter.buy(
+                            currentTradeMarket.marketId,
+                            isYes,
+                            maxCollateral,
+                            0, // minSharesOut
+                            FEE_TIER,
+                            connectedAddress,
+                            { value: maxCollateral }
+                        );
+
+                        await tx.wait();
+                        showStatus('tradeStatus', 'Trade completed!', 'success');
+                    }
+                } else {
+                    // Selling shares
+                    // Approve PMRouter first
+                    const pamm = new ethers.Contract(PAMM_ADDRESS, [
+                        'function setOperator(address operator, bool approved) public returns (bool)',
+                        'function isOperator(address owner, address operator) public view returns (bool)'
+                    ], signer);
+
+                    const isApproved = await pamm.isOperator(connectedAddress, PMROUTER_ADDRESS);
+                    if (!isApproved) {
+                        showStatus('tradeStatus', 'Approving PMRouter...', 'pending');
+                        const approveTx = await pamm.setOperator(PMROUTER_ADDRESS, true);
+                        await approveTx.wait();
+                    }
+
+                    if (smartRoute) {
+                        // Get best buy orders to fill first
+                        const bestBids = currentOrderbook.bids
+                            .filter(o => price <= 0 || o.price >= price)
+                            .map(o => o.hash);
+
+                        showStatus('tradeStatus', `Smart routing: filling ${bestBids.length} orders then AMM...`, 'pending');
+
+                        const tx = await pmRouter.fillOrdersThenSwap(
+                            currentTradeMarket.marketId,
+                            isYes,
+                            false, // isBuy (selling)
+                            sharesWei,
+                            0, // minOutput
+                            bestBids,
+                            FEE_TIER,
+                            connectedAddress
+                        );
+
+                        await tx.wait();
+                        showStatus('tradeStatus', 'Smart trade completed!', 'success');
+                    } else {
+                        // Simple AMM sell through router
+                        showStatus('tradeStatus', 'Selling via AMM...', 'pending');
+
+                        const tx = await pmRouter.sell(
+                            currentTradeMarket.marketId,
+                            isYes,
+                            sharesWei,
+                            0, // minCollateralOut
+                            FEE_TIER,
+                            connectedAddress
+                        );
+
+                        await tx.wait();
+                        showStatus('tradeStatus', 'Trade completed!', 'success');
+                    }
+                }
+
+                // Refresh everything
+                await loadOrderbook();
+                currentUserPosition = await getUserPosition(currentTradeMarket.marketId);
+                document.getElementById('obPosYes').textContent = parseFloat(ethers.formatEther(currentUserPosition.yesBalance)).toFixed(4);
+                document.getElementById('obPosNo').textContent = parseFloat(ethers.formatEther(currentUserPosition.noBalance)).toFixed(4);
+
+                // Clear inputs
+                document.getElementById('limitPrice').value = '';
+                document.getElementById('limitShares').value = '';
+                updateLimitOrderPreview();
+
+            } catch (e) {
+                console.error('Failed to execute smart trade:', e);
+                showStatus('tradeStatus', e.reason || e.message || 'Failed to execute trade', 'error');
+            }
         }
 
         // ======================== WALLET ========================
@@ -3004,6 +4464,20 @@
 
             // Get ETH balance
             await updateTradeBalance();
+
+            // Reset orderbook view to AMM by default
+            orderbookView = 'amm';
+            orderbookToken = 'yes';
+            limitOrderType = 'buy';
+            document.getElementById('ammToggleBtn').classList.add('active');
+            document.getElementById('orderbookToggleBtn').classList.remove('active');
+            document.getElementById('orderbookSection').classList.remove('active');
+            document.getElementById('yesOrderbookBtn').classList.add('active');
+            document.getElementById('noOrderbookBtn').classList.remove('active');
+
+            // Show AMM section
+            const ammSection = document.getElementById('ammSection');
+            if (ammSection) ammSection.style.display = '';
 
             document.getElementById('tradeModal').classList.add('show');
         }
