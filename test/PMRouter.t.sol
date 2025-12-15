@@ -2204,7 +2204,13 @@ contract PMRouterTest is Test {
         pamm.setOperator(address(router), true);
 
         bytes32 orderHash = router.placeOrder(
-            marketId, true, false, totalShares, totalCollateral, uint56(block.timestamp + 1 days), true
+            marketId,
+            true,
+            false,
+            totalShares,
+            totalCollateral,
+            uint56(block.timestamp + 1 days),
+            true
         );
         vm.stopPrank();
 
@@ -2236,9 +2242,8 @@ contract PMRouterTest is Test {
         // Calculate dust: difference between expected and actual collateral paid
         // Due to floor division, taker may pay slightly less than pro-rata
         uint256 expectedCollateral = totalCollateral;
-        uint256 dust = expectedCollateral > totalCollateralPaid
-            ? expectedCollateral - totalCollateralPaid
-            : 0;
+        uint256 dust =
+            expectedCollateral > totalCollateralPaid ? expectedCollateral - totalCollateralPaid : 0;
 
         // Dust should be bounded by numFills (each fill loses at most 1 wei)
         assertLe(dust, numFills, "Dust should be bounded by number of fills");
@@ -2260,7 +2265,13 @@ contract PMRouterTest is Test {
         collateral.approve(address(router), type(uint256).max);
 
         bytes32 orderHash = router.placeOrder(
-            marketId, true, true, totalShares, totalCollateral, uint56(block.timestamp + 1 days), true
+            marketId,
+            true,
+            true,
+            totalShares,
+            totalCollateral,
+            uint56(block.timestamp + 1 days),
+            true
         );
         vm.stopPrank();
 
@@ -2319,7 +2330,11 @@ contract PMRouterTest is Test {
         uint256 payout = router.claim(marketId, ALICE);
 
         assertEq(payout, 100 ether, "Should receive full payout");
-        assertEq(collateral.balanceOf(ALICE), balanceBefore + 100 ether, "Alice should receive collateral");
+        assertEq(
+            collateral.balanceOf(ALICE),
+            balanceBefore + 100 ether,
+            "Alice should receive collateral"
+        );
         assertEq(pamm.balanceOf(ALICE, marketId), 0, "Alice YES shares should be burned");
     }
 
@@ -2356,5 +2371,34 @@ contract PMRouterTest is Test {
         vm.prank(ALICE);
         vm.expectRevert();
         router.sell(marketId, true, 50 ether, 0, FEE_BPS, ALICE, block.timestamp + 1);
+    }
+
+    /// @notice Verify fillOrder reverts after market resolution
+    /// @dev Prevents exploitation of stale limit orders at known-wrong prices
+    function test_FillOrderRevertsAfterResolution() public {
+        // Alice places a BUY order
+        vm.startPrank(ALICE);
+        collateral.approve(address(router), type(uint256).max);
+        bytes32 orderHash = router.placeOrder(
+            marketId, true, true, 100 ether, 50 ether, uint56(block.timestamp + 1 days), true
+        );
+        vm.stopPrank();
+
+        // Bob gets shares to fill
+        vm.startPrank(BOB);
+        collateral.approve(address(pamm), type(uint256).max);
+        pamm.split(marketId, 100 ether, BOB);
+        pamm.setOperator(address(router), true);
+        vm.stopPrank();
+
+        // Market resolves (warp past close, then resolve)
+        vm.warp(block.timestamp + 8 days);
+        vm.prank(RESOLVER);
+        pamm.resolve(marketId, true);
+
+        // Bob tries to fill Alice's order after resolution - should revert
+        vm.prank(BOB);
+        vm.expectRevert(PMRouter.TradingNotOpen.selector);
+        router.fillOrder(orderHash, 50 ether, BOB);
     }
 }

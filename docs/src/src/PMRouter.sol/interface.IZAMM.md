@@ -1,5 +1,5 @@
 # IZAMM
-[Git Source](https://github.com/zammdefi/pm/blob/d39f4d0711d78f2e49cc15977d08b491f84e0abe/src/PMRouter.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/fd85de4cbb2d992be3173c764eca542e83197ee2/src/PMRouter.sol)
 
 ZAMM orderbook + AMM interface.
 
@@ -52,7 +52,7 @@ function fillOrder(
     uint56 deadline,
     bool partialFill,
     uint96 amountToFill
-) external payable returns (uint96 filled);
+) external payable;
 ```
 
 ### orders
@@ -65,20 +65,46 @@ function orders(bytes32 orderHash)
     returns (bool partialFill, uint56 deadline, uint96 inDone, uint96 outDone);
 ```
 
-### swap
+### swapExactIn
 
 
 ```solidity
-function swap(
-    address tokenIn,
-    uint256 idIn,
-    address tokenOut,
-    uint256 idOut,
+function swapExactIn(
+    PoolKey calldata poolKey,
     uint256 amountIn,
-    uint256 minOut,
-    uint256 feeOrHook,
+    uint256 amountOutMin,
+    bool zeroForOne,
     address to,
     uint256 deadline
 ) external payable returns (uint256 amountOut);
+```
+
+### deposit
+
+
+```solidity
+function deposit(address token, uint256 id, uint256 amount) external payable;
+```
+
+### recoverTransientBalance
+
+
+```solidity
+function recoverTransientBalance(address token, uint256 id, address to)
+    external
+    returns (uint256 amount);
+```
+
+## Structs
+### PoolKey
+
+```solidity
+struct PoolKey {
+    uint256 id0;
+    uint256 id1;
+    address token0;
+    address token1;
+    uint256 feeOrHook;
+}
 ```
 

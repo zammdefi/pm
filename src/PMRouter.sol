@@ -148,6 +148,17 @@ interface IPAMM {
 /// @notice Limit order and trading router for PAMM prediction markets.
 /// @dev Handles YES/NO share limit orders via ZAMM, market orders via PAMM, and collateral ops.
 ///
+/// Operational Requirements (not enforced on-chain):
+/// - Collateral tokens must have >= 6 decimals (ETH, USDC, DAI, etc.)
+/// - Fee-on-transfer and rebasing tokens are not supported
+/// - Tokens requiring approve(0) before approve(n) (e.g., USDT) are not supported as collateral
+/// - Markets with unsupported collateral should be marked unsafe in UIs/indexers
+///
+/// Trust Model:
+/// - ZAMM is trusted infrastructure with operator privileges over router-held PAMM shares
+/// - Orders can be filled directly on ZAMM (bypassing router); makers should cancel promptly
+///   on market resolution to avoid stale order exploitation
+///
 /// Behavioral Notes:
 /// - Deadline semantics: Swap functions (swapShares, swapSharesToCollateral, swapCollateralToShares,
 ///   fillOrdersThenSwap) treat `deadline == 0` as `block.timestamp` (execute now). Market order
@@ -155,12 +166,12 @@ interface IPAMM {
 ///   are capped to the market's close time.
 /// - Expired orders: Orders that have expired (deadline passed) can still be cancelled to
 ///   reclaim escrowed funds. Users should call `cancelOrder` to recover collateral/shares.
-/// - ERC20 compatibility: The safe transfer functions support non-standard ERC20s (like USDT)
-///   that don't return a boolean value. Standard ERC20s returning false will revert.
+/// - ERC20 compatibility: The safe transfer functions support non-standard ERC20s that don't
+///   return a boolean value. Standard ERC20s returning false will revert.
 /// - Partial fill rounding: ZAMM uses floor division for partial fills, which can result in
-///   negligible dust (at most 1 wei per fill). For orders filled in N fragments, maximum dust
-///   is N wei - effectively zero for 18-decimal tokens. This is protocol-acceptable precision
-///   loss, not a loss of funds.
+///   negligible dust (at most 1 smallest unit per fill). For orders filled in N fragments,
+///   maximum dust is N units - sub-cent for supported tokens. This is protocol-acceptable
+///   precision loss, not a loss of funds. Direct ZAMM fills have the same rounding behavior.
 contract PMRouter {
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -523,7 +534,12 @@ contract PMRouter {
         if (order.owner == address(0)) revert OrderNotFound();
         if (to == address(0)) to = msg.sender;
 
-        (,,,,, address collateralToken,) = PAMM.markets(order.marketId);
+        // Inline tradingOpen check to prevent fills after early resolution
+        (address resolver, bool resolved,,, uint64 close, address collateralToken,) =
+            PAMM.markets(order.marketId);
+        if (resolver == address(0) || resolved || block.timestamp >= close) {
+            revert TradingNotOpen();
+        }
         uint256 tokenId = order.isYes ? order.marketId : PAMM.getNoId(order.marketId);
 
         (, uint56 deadline, uint96 inDone, uint96 outDone) = ZAMM.orders(orderHash);
@@ -1437,12 +1453,12 @@ contract PMRouter {
     }
 
     /// @dev Validate market and return collateral token.
-    /// @dev Inlines tradingOpen check to avoid duplicate external call.
+    ///      Inlines tradingOpen check to avoid duplicate external call.
     function _validateAndGetCollateral(uint256 marketId) private view returns (address collateral) {
         address resolver;
         bool resolved;
         uint64 close;
-        (resolver, resolved,, , close, collateral,) = PAMM.markets(marketId);
+        (resolver, resolved,,, close, collateral,) = PAMM.markets(marketId);
         if (resolver == address(0)) revert MarketNotFound();
         // Inline tradingOpen: resolver != 0 (checked above) && !resolved && timestamp < close
         if (resolved || block.timestamp >= close) revert TradingNotOpen();

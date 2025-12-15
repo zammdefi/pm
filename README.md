@@ -15,6 +15,7 @@ Minimal onchain mechanisms for binary prediction markets:
 | Contract | Address |
 |----------|---------|
 | [PAMM](https://contractscan.xyz/contract/0x000000000044bfe6c2BBFeD8862973E0612f07C0) | `0x000000000044bfe6c2BBFeD8862973E0612f07C0` |
+| [PMRouter](https://contractscan.xyz/contract/0x000000000055ff709f26efb262fba8b0ae8c35dc) | `0x000000000055ff709f26efb262fba8b0ae8c35dc` |
 | [PM](https://contractscan.xyz/contract/0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e) | `0x0000000000F8d9F51f0765a9dAd6a9487ba85f1e` |
 | [Resolver](https://contractscan.xyz/contract/0x00000000002205020E387b6a378c05639047BcFB) | `0x00000000002205020E387b6a378c05639047BcFB` |
 | [ZAMM](https://contractscan.xyz/contract/0x000000000000040470635EB91b7CE4D132D616eD) | `0x000000000000040470635EB91b7CE4D132D616eD` |
@@ -599,6 +600,24 @@ For a buy order at 0.60:
 - Supports ETH and ERC20 collateral
 - Permits available for gasless ERC20 approvals
 - Multicall for batching multiple operations
+
+### Operational Requirements
+
+- **Collateral tokens** must have >= 6 decimals (ETH, USDC, DAI, etc.)
+- **Fee-on-transfer** and **rebasing tokens** are NOT supported
+- **Tokens requiring approve(0)** before approve(n) (e.g., USDT) are NOT supported as collateral
+- Markets with unsupported collateral should be marked unsafe in UIs/indexers
+
+### Trust Model
+
+- ZAMM is trusted infrastructure with operator privileges over router-held PAMM shares
+- Orders can be filled directly on ZAMM (bypassing router); makers should cancel promptly on market resolution to avoid stale order exploitation
+
+### Behavioral Notes
+
+- **Deadline semantics:** Swap functions treat `deadline == 0` as `block.timestamp`
+- **Partial fill rounding:** ZAMM uses floor division, max dust is N units for N fills
+- **fillOrder()** checks `tradingOpen` to prevent fills after early market resolution
 
 ---
 
@@ -1761,9 +1780,12 @@ Both PAMM and Resolver support multiple collateral types with 1:1 shares (1 shar
 
 **Note:** ZAMM requires `MINIMUM_LIQUIDITY` (1000 shares) to be locked when creating a pool. With 1:1 shares, this is 1000 wei of collateral—negligible for all token types.
 
-The system also supports non-standard ERC20s:
-- **USDT-style** (no return value on transfer)
-- **Fee-on-transfer tokens** (not recommended, may cause accounting issues)
+**Non-standard ERC20 support:**
+- **No return value** (e.g., USDT transfer) — handled by safe transfer wrappers
+- **Fee-on-transfer tokens** — NOT supported (causes accounting issues)
+- **Rebasing tokens** — NOT supported
+- **Tokens requiring approve(0)** (e.g., USDT) — NOT supported as collateral for PMRouter (approval fails)
+- **Collateral decimals** — recommend >= 6 decimals (ETH, USDC, DAI, etc.)
 
 ---
 

@@ -1,5 +1,5 @@
 # PMRouter
-[Git Source](https://github.com/zammdefi/pm/blob/d39f4d0711d78f2e49cc15977d08b491f84e0abe/src/PMRouter.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/fd85de4cbb2d992be3173c764eca542e83197ee2/src/PMRouter.sol)
 
 **Title:**
 PMRouter
@@ -7,6 +7,28 @@ PMRouter
 Limit order and trading router for PAMM prediction markets.
 
 Handles YES/NO share limit orders via ZAMM, market orders via PAMM, and collateral ops.
+Operational Requirements (not enforced on-chain):
+- Collateral tokens must have >= 6 decimals (ETH, USDC, DAI, etc.)
+- Fee-on-transfer and rebasing tokens are not supported
+- Tokens requiring approve(0) before approve(n) (e.g., USDT) are not supported as collateral
+- Markets with unsupported collateral should be marked unsafe in UIs/indexers
+Trust Model:
+- ZAMM is trusted infrastructure with operator privileges over router-held PAMM shares
+- Orders can be filled directly on ZAMM (bypassing router); makers should cancel promptly
+on market resolution to avoid stale order exploitation
+Behavioral Notes:
+- Deadline semantics: Swap functions (swapShares, swapSharesToCollateral, swapCollateralToShares,
+fillOrdersThenSwap) treat `deadline == 0` as `block.timestamp` (execute now). Market order
+functions (buy, sell) pass deadline through to PAMM unchanged. For limit orders, deadlines
+are capped to the market's close time.
+- Expired orders: Orders that have expired (deadline passed) can still be cancelled to
+reclaim escrowed funds. Users should call `cancelOrder` to recover collateral/shares.
+- ERC20 compatibility: The safe transfer functions support non-standard ERC20s that don't
+return a boolean value. Standard ERC20s returning false will revert.
+- Partial fill rounding: ZAMM uses floor division for partial fills, which can result in
+negligible dust (at most 1 smallest unit per fill). For orders filled in N fragments,
+maximum dust is N units - sub-cent for supported tokens. This is protocol-acceptable
+precision loss, not a loss of funds. Direct ZAMM fills have the same rounding behavior.
 
 
 ## State Variables
@@ -52,10 +74,17 @@ mapping(address => bytes32[]) internal _userOrders
 ```
 
 
-### _locked
+### claimedOut
 
 ```solidity
-uint256 private _locked = 1
+mapping(bytes32 => uint96) public claimedOut
+```
+
+
+### REENTRANCY_SLOT
+
+```solidity
+uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21268
 ```
 
 
@@ -83,12 +112,19 @@ receive() external payable;
 
 ### multicall
 
+For ETH operations, msg.value must equal the exact amount needed by the single
+payable call in the batch. Cannot batch multiple ETH operations together.
+
 
 ```solidity
-function multicall(bytes[] calldata data) public returns (bytes[] memory results);
+function multicall(bytes[] calldata data) public payable returns (bytes[] memory results);
 ```
 
 ### permit
+
+ERC20Permit (EIP-2612) - approve via signature.
+
+Use with multicall: [permit, placeOrder] in single tx.
 
 
 ```solidity
@@ -97,6 +133,26 @@ function permit(
     address owner,
     uint256 value,
     uint256 deadline,
+    uint8 v,
+    bytes32 r,
+    bytes32 s
+) public;
+```
+
+### permitDAI
+
+DAI-style permit - approve via signature with nonce.
+
+DAI uses: permit(holder, spender, nonce, expiry, allowed, v, r, s)
+
+
+```solidity
+function permitDAI(
+    address token,
+    address holder,
+    uint256 nonce,
+    uint256 expiry,
+    bool allowed,
     uint8 v,
     bytes32 r,
     bytes32 s
@@ -134,12 +190,44 @@ function placeOrder(
 
 ### cancelOrder
 
-Cancel order and reclaim tokens.
+Cancel order and reclaim escrowed tokens plus any unclaimed proceeds.
+
+Can be called even after order expires to recover funds. Unfilled/partially
+filled orders will return remaining collateral (buy) or shares (sell) to owner.
 
 
 ```solidity
 function cancelOrder(bytes32 orderHash) public nonReentrant;
 ```
+
+### claimProceeds
+
+Claim proceeds from orders filled directly on ZAMM.
+
+If someone fills your order directly on ZAMM (bypassing PMRouter), your proceeds
+accumulate in PMRouter. Call this to withdraw them. Also called automatically
+during cancelOrder.
+
+
+```solidity
+function claimProceeds(bytes32 orderHash, address to)
+    public
+    nonReentrant
+    returns (uint96 amount);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`orderHash`|`bytes32`|Order to claim proceeds from|
+|`to`|`address`|Recipient of proceeds|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`amount`|`uint96`|Amount of proceeds claimed (shares for BUY orders, collateral for SELL)|
+
 
 ### fillOrder
 
@@ -174,9 +262,22 @@ function buy(
     uint256 collateralIn,
     uint256 minSharesOut,
     uint256 feeOrHook,
-    address to
+    address to,
+    uint256 deadline
 ) public payable nonReentrant returns (uint256 sharesOut);
 ```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`marketId`|`uint256`||
+|`isYes`|`bool`||
+|`collateralIn`|`uint256`||
+|`minSharesOut`|`uint256`||
+|`feeOrHook`|`uint256`||
+|`to`|`address`||
+|`deadline`|`uint256`|Timestamp after which tx reverts (passed to PAMM as-is)|
+
 
 ### sell
 
@@ -190,9 +291,22 @@ function sell(
     uint256 sharesIn,
     uint256 minCollateralOut,
     uint256 feeOrHook,
-    address to
+    address to,
+    uint256 deadline
 ) public nonReentrant returns (uint256 collateralOut);
 ```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`marketId`|`uint256`||
+|`isYes`|`bool`||
+|`sharesIn`|`uint256`||
+|`minCollateralOut`|`uint256`||
+|`feeOrHook`|`uint256`||
+|`to`|`address`||
+|`deadline`|`uint256`|Timestamp after which tx reverts (passed to PAMM as-is)|
+
 
 ### swapShares
 
@@ -206,7 +320,8 @@ function swapShares(
     uint256 amountIn,
     uint256 minOut,
     uint256 feeOrHook,
-    address to
+    address to,
+    uint256 deadline
 ) public nonReentrant returns (uint256 amountOut);
 ```
 **Parameters**
@@ -219,6 +334,7 @@ function swapShares(
 |`minOut`|`uint256`|Minimum output shares|
 |`feeOrHook`|`uint256`|Pool fee tier|
 |`to`|`address`|Recipient|
+|`deadline`|`uint256`|Timestamp after which tx reverts (0 = execute immediately)|
 
 
 ### swapSharesToCollateral
@@ -235,9 +351,22 @@ function swapSharesToCollateral(
     uint256 sharesIn,
     uint256 minCollateralOut,
     uint256 feeOrHook,
-    address to
+    address to,
+    uint256 deadline
 ) public nonReentrant returns (uint256 collateralOut);
 ```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`marketId`|`uint256`||
+|`isYes`|`bool`||
+|`sharesIn`|`uint256`||
+|`minCollateralOut`|`uint256`||
+|`feeOrHook`|`uint256`||
+|`to`|`address`||
+|`deadline`|`uint256`|Timestamp after which tx reverts (0 = execute immediately)|
+
 
 ### swapCollateralToShares
 
@@ -251,9 +380,22 @@ function swapCollateralToShares(
     uint256 collateralIn,
     uint256 minSharesOut,
     uint256 feeOrHook,
-    address to
+    address to,
+    uint256 deadline
 ) public payable nonReentrant returns (uint256 sharesOut);
 ```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`marketId`|`uint256`||
+|`isYes`|`bool`||
+|`collateralIn`|`uint256`||
+|`minSharesOut`|`uint256`||
+|`feeOrHook`|`uint256`||
+|`to`|`address`||
+|`deadline`|`uint256`|Timestamp after which tx reverts (0 = execute immediately)|
+
 
 ### fillOrdersThenSwap
 
@@ -271,7 +413,8 @@ function fillOrdersThenSwap(
     uint256 minOutput,
     bytes32[] calldata orderHashes,
     uint256 feeOrHook,
-    address to
+    address to,
+    uint256 deadline
 ) public payable nonReentrant returns (uint256 totalOutput);
 ```
 **Parameters**
@@ -286,6 +429,7 @@ function fillOrdersThenSwap(
 |`orderHashes`|`bytes32[]`|Orders to try filling first|
 |`feeOrHook`|`uint256`|AMM fee tier for remainder|
 |`to`|`address`|Recipient|
+|`deadline`|`uint256`|Timestamp after which tx reverts (0 = execute immediately)|
 
 
 ### split
@@ -419,168 +563,47 @@ function getActiveOrders(uint256 marketId, bool isYes, bool isBuy, uint256 limit
 |`orderDetails`|`Order[]`|Corresponding order details|
 
 
-### getBestOrders
-
-Get best (highest for buys, lowest for sells) orders for filling.
-
-Returns orders sorted by price, best first. Price = collateral/shares.
-
-
-```solidity
-function getBestOrders(uint256 marketId, bool isYes, bool isBuy, uint256 limit)
-    public
-    view
-    returns (bytes32[] memory orderHashes);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`marketId`|`uint256`|Market to query|
-|`isYes`|`bool`|YES or NO shares|
-|`isBuy`|`bool`|Get buy orders (to sell into) or sell orders (to buy from)|
-|`limit`|`uint256`|Max orders to return|
-
-
-### getBidAsk
-
-Get bid/ask spread for a share type.
-
-
-```solidity
-function getBidAsk(uint256 marketId, bool isYes)
-    public
-    view
-    returns (uint256 bidPrice, uint256 askPrice, uint256 bidCount, uint256 askCount);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`marketId`|`uint256`|Market to query|
-|`isYes`|`bool`|True for YES shares, false for NO|
-
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`bidPrice`|`uint256`|Best buy order price (highest) - 18 decimals|
-|`askPrice`|`uint256`|Best sell order price (lowest) - 18 decimals|
-|`bidCount`|`uint256`|Number of active buy orders|
-|`askCount`|`uint256`|Number of active sell orders|
-
-
 ### getOrderbook
 
-Get full orderbook for a share type (for CEX-style UI).
+Get combined orderbook (bids + asks) for a market.
 
 
 ```solidity
 function getOrderbook(uint256 marketId, bool isYes, uint256 depth)
-    public
+    external
     view
     returns (
         bytes32[] memory bidHashes,
-        uint256[] memory bidPrices,
-        uint256[] memory bidSizes,
+        Order[] memory bidOrders,
         bytes32[] memory askHashes,
-        uint256[] memory askPrices,
-        uint256[] memory askSizes
+        Order[] memory askOrders
     );
 ```
-**Parameters**
 
-|Name|Type|Description|
-|----|----|-----------|
-|`marketId`|`uint256`|Market to query|
-|`isYes`|`bool`|True for YES shares, false for NO|
-|`depth`|`uint256`|Max orders per side|
+### _claimProceeds
 
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`bidHashes`|`bytes32[]`|Buy order hashes (best price first)|
-|`bidPrices`|`uint256[]`|Buy order prices (18 decimals)|
-|`bidSizes`|`uint256[]`|Buy order sizes (shares)|
-|`askHashes`|`bytes32[]`|Sell order hashes (best price first)|
-|`askPrices`|`uint256[]`|Sell order prices (18 decimals)|
-|`askSizes`|`uint256[]`|Sell order sizes (shares)|
-
-
-### getUserPositions
-
-Get user's share positions across multiple markets.
+Claim any unclaimed proceeds for an order and transfer to recipient.
 
 
 ```solidity
-function getUserPositions(address user, uint256[] calldata marketIds)
-    public
-    view
-    returns (uint256[] memory yesBalances, uint256[] memory noBalances);
+function _claimProceeds(bytes32 orderHash, Order storage order, address to)
+    private
+    returns (uint96 amount);
 ```
-**Parameters**
 
-|Name|Type|Description|
-|----|----|-----------|
-|`user`|`address`|User address|
-|`marketIds`|`uint256[]`|Markets to query|
+### _cancelOrder
 
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`yesBalances`|`uint256[]`|YES share balances|
-|`noBalances`|`uint256[]`|NO share balances|
-
-
-### getUserActiveOrders
-
-Get user's active orders for a specific market.
+Cancel order: claim proceeds, cancel on ZAMM if live, refund principal, cleanup.
 
 
 ```solidity
-function getUserActiveOrders(address user, uint256 marketId, uint256 limit)
-    public
-    view
-    returns (bytes32[] memory orderHashes, Order[] memory orderDetails);
+function _cancelOrder(bytes32 orderHash, Order storage order, address to) private;
 ```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`user`|`address`|User address|
-|`marketId`|`uint256`|Market to filter by (0 = all markets)|
-|`limit`|`uint256`|Max orders to return|
-
-
-### batchCancelOrders
-
-Cancel multiple orders in one transaction.
-
-
-```solidity
-function batchCancelOrders(bytes32[] calldata orderHashesToCancel)
-    public
-    nonReentrant
-    returns (uint256 cancelled);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`orderHashesToCancel`|`bytes32[]`|Orders to cancel (skips orders not owned by sender)|
-
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`cancelled`|`uint256`|Number of orders successfully cancelled|
-
 
 ### _validateAndGetCollateral
 
 Validate market and return collateral token.
+Inlines tradingOpen check to avoid duplicate external call.
 
 
 ```solidity
@@ -623,13 +646,17 @@ Ensure max approval for spender if not already set.
 function _ensureApproval(address token, address spender) private;
 ```
 
-### _ensureOperatorPAMM
+### _poolKey
 
-Ensure ZAMM is operator for this contract on PAMM.
+Build ZAMM pool key with proper token ordering.
+ZAMM requires token0 < token1, or if same token, id0 < id1.
 
 
 ```solidity
-function _ensureOperatorPAMM() private;
+function _poolKey(address tokenA, uint256 idA, address tokenB, uint256 idB, uint256 feeOrHook)
+    private
+    pure
+    returns (IZAMM.PoolKey memory key);
 ```
 
 ## Events
@@ -666,17 +693,23 @@ event OrderPlaced(
 );
 ```
 
-## Errors
-### Reentrancy
+### ProceedsClaimed
 
 ```solidity
-error Reentrancy();
+event ProceedsClaimed(bytes32 indexed orderHash, address indexed to, uint96 amount);
 ```
 
+## Errors
 ### AmountZero
 
 ```solidity
 error AmountZero();
+```
+
+### Reentrancy
+
+```solidity
+error Reentrancy();
 ```
 
 ### MustFillAll
@@ -685,22 +718,40 @@ error AmountZero();
 error MustFillAll();
 ```
 
+### OrderExists
+
+```solidity
+error OrderExists();
+```
+
+### HashMismatch
+
+```solidity
+error HashMismatch();
+```
+
 ### MarketClosed
 
 ```solidity
 error MarketClosed();
 ```
 
-### OrderInactive
+### ApproveFailed
 
 ```solidity
-error OrderInactive();
+error ApproveFailed();
 ```
 
 ### NotOrderOwner
 
 ```solidity
 error NotOrderOwner();
+```
+
+### OrderInactive
+
+```solidity
+error OrderInactive();
 ```
 
 ### OrderNotFound
@@ -721,10 +772,22 @@ error MarketNotFound();
 error TradingNotOpen();
 ```
 
+### TransferFailed
+
+```solidity
+error TransferFailed();
+```
+
 ### DeadlineExpired
 
 ```solidity
 error DeadlineExpired();
+```
+
+### InvalidETHAmount
+
+```solidity
+error InvalidETHAmount();
 ```
 
 ### SlippageExceeded
@@ -733,10 +796,22 @@ error DeadlineExpired();
 error SlippageExceeded();
 ```
 
-### InvalidETHAmount
+### ETHTransferFailed
 
 ```solidity
-error InvalidETHAmount();
+error ETHTransferFailed();
+```
+
+### InvalidFillAmount
+
+```solidity
+error InvalidFillAmount();
+```
+
+### TransferFromFailed
+
+```solidity
+error TransferFromFailed();
 ```
 
 ## Structs
