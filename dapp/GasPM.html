@@ -2444,6 +2444,8 @@
             'function getMarket(uint256 marketId) public view returns (address resolver, address collateral, uint8 decimals, bool resolved, bool outcome, bool canClose, uint64 close, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply, string description)',
             'function getNoId(uint256 marketId) public pure returns (uint256)',
             'function balanceOf(address owner, uint256 id) public view returns (uint256)',
+            'function setOperator(address operator, bool approved) public returns (bool)',
+            'function isOperator(address owner, address operator) public view returns (bool)',
             'function buyYes(uint256 marketId, uint256 collateralIn, uint256 minYesOut, uint256 minSwapOut, uint256 feeOrHook, address to, uint256 deadline) public payable returns (uint256 yesOut)',
             'function buyNo(uint256 marketId, uint256 collateralIn, uint256 minNoOut, uint256 minSwapOut, uint256 feeOrHook, address to, uint256 deadline) public payable returns (uint256 noOut)',
             'function sellYes(uint256 marketId, uint256 yesAmount, uint256 swapAmount, uint256 minCollateralOut, uint256 minSwapOut, uint256 feeOrHook, address to, uint256 deadline) public returns (uint256 collateralOut)',
@@ -2452,8 +2454,7 @@
         ];
 
         const RESOLVER_ABI = [
-            'function resolveMarket(uint256 marketId) public',
-            'function preview(uint256 marketId) public view returns (uint256 value, bool condTrue, bool ready)'
+            'function resolveMarket(uint256 marketId) public'
         ];
 
         const ZAMM_ABI = [
@@ -2468,19 +2469,21 @@
 
         // PMRouter ABI for limit orders
         const PMROUTER_ABI = [
+            // Multicall
+            'function multicall(bytes[] calldata data) public payable returns (bytes[] memory results)',
             // Limit orders
             'function placeOrder(uint256 marketId, bool isYes, bool isBuy, uint96 shares, uint96 collateral, uint56 deadline, bool partialFill) public payable returns (bytes32 orderHash)',
             'function cancelOrder(bytes32 orderHash) public',
             'function fillOrder(bytes32 orderHash, uint96 sharesToFill, address to) public payable returns (uint96 sharesFilled, uint96 collateralFilled)',
-            // Market orders (through router)
-            'function buy(uint256 marketId, bool isYes, uint256 collateralIn, uint256 minSharesOut, uint256 feeOrHook, address to) public payable returns (uint256 sharesOut)',
-            'function sell(uint256 marketId, bool isYes, uint256 sharesIn, uint256 minCollateralOut, uint256 feeOrHook, address to) public returns (uint256 collateralOut)',
-            // Hybrid routing (orderbook + AMM)
-            'function fillOrdersThenSwap(uint256 marketId, bool isYes, bool isBuy, uint256 totalAmount, uint256 minOutput, bytes32[] orderHashes, uint256 feeOrHook, address to) public payable returns (uint256 totalOutput)',
-            // ZAMM swaps
-            'function swapShares(uint256 marketId, bool yesForNo, uint256 amountIn, uint256 minOut, uint256 feeOrHook, address to) public returns (uint256 amountOut)',
-            'function swapSharesToCollateral(uint256 marketId, bool isYes, uint256 sharesIn, uint256 minCollateralOut, uint256 feeOrHook, address to) public returns (uint256 collateralOut)',
-            'function swapCollateralToShares(uint256 marketId, bool isYes, uint256 collateralIn, uint256 minSharesOut, uint256 feeOrHook, address to) public payable returns (uint256 sharesOut)',
+            // Market orders (through router) - deadline: 0 = execute immediately
+            'function buy(uint256 marketId, bool isYes, uint256 collateralIn, uint256 minSharesOut, uint256 feeOrHook, address to, uint256 deadline) public payable returns (uint256 sharesOut)',
+            'function sell(uint256 marketId, bool isYes, uint256 sharesIn, uint256 minCollateralOut, uint256 feeOrHook, address to, uint256 deadline) public returns (uint256 collateralOut)',
+            // Hybrid routing (orderbook + AMM) - deadline: 0 = execute immediately
+            'function fillOrdersThenSwap(uint256 marketId, bool isYes, bool isBuy, uint256 totalAmount, uint256 minOutput, bytes32[] calldata orderHashes, uint256 feeOrHook, address to, uint256 deadline) public payable returns (uint256 totalOutput)',
+            // ZAMM swaps - deadline: 0 = execute immediately
+            'function swapShares(uint256 marketId, bool yesForNo, uint256 amountIn, uint256 minOut, uint256 feeOrHook, address to, uint256 deadline) public returns (uint256 amountOut)',
+            'function swapSharesToCollateral(uint256 marketId, bool isYes, uint256 sharesIn, uint256 minCollateralOut, uint256 feeOrHook, address to, uint256 deadline) public returns (uint256 collateralOut)',
+            'function swapCollateralToShares(uint256 marketId, bool isYes, uint256 collateralIn, uint256 minSharesOut, uint256 feeOrHook, address to, uint256 deadline) public payable returns (uint256 sharesOut)',
             // Collateral ops
             'function split(uint256 marketId, uint256 amount, address to) public payable',
             'function merge(uint256 marketId, uint256 amount, address to) public',
@@ -2496,29 +2499,14 @@
             'function getActiveOrders(uint256 marketId, bool isYes, bool isBuy, uint256 limit) public view returns (bytes32[] orderHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] orderDetails)',
             'function getBestOrders(uint256 marketId, bool isYes, bool isBuy, uint256 limit) public view returns (bytes32[])',
             'function getBidAsk(uint256 marketId, bool isYes) public view returns (uint256 bidPrice, uint256 askPrice, uint256 bidCount, uint256 askCount)',
-            'function getOrderbook(uint256 marketId, bool isYes, uint256 depth) public view returns (bytes32[] bidHashes, uint256[] bidPrices, uint256[] bidSizes, bytes32[] askHashes, uint256[] askPrices, uint256[] askSizes)',
+            'function getOrderbook(uint256 marketId, bool isYes, uint256 depth) external view returns (bytes32[] memory bidHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] memory bidOrders, bytes32[] memory askHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] memory askOrders)',
             'function getUserActiveOrders(address user, uint256 marketId, uint256 limit) public view returns (bytes32[] orderHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] orderDetails)',
             'function getUserPositions(address user, uint256[] marketIds) public view returns (uint256[] yesBalances, uint256[] noBalances)',
-            'function batchCancelOrders(bytes32[] orderHashesToCancel) public returns (uint256 cancelled)',
             // Events
             'event OrderPlaced(bytes32 indexed orderHash, uint256 indexed marketId, address indexed owner, bool isYes, bool isBuy, uint96 shares, uint96 collateral, uint56 deadline, bool partialFill)',
             'event OrderCancelled(bytes32 indexed orderHash)',
             'event OrderFilled(bytes32 indexed orderHash, address indexed taker, uint96 sharesFilled, uint96 collateralFilled)'
         ];
-
-        // Market type constants
-        const MARKET_TYPES = {
-            2: { name: 'Below', icon: '↓' },
-            3: { name: 'Above', icon: '↑' },
-            4: { name: 'Range', icon: '↔' },
-            5: { name: 'Breakout', icon: '⇔' },
-            6: { name: 'Peak', icon: '⤴' },
-            7: { name: 'Trough', icon: '⤵' },
-            8: { name: 'Volatility', icon: '〰' },
-            9: { name: 'Stability', icon: '—' },
-            10: { name: 'Spot', icon: '◉' },
-            11: { name: 'Comparison', icon: '⇅' }
-        };
 
         // ======================== STATE ========================
         let provider = null;
@@ -2775,7 +2763,7 @@
             updateLimitOrderPreview();
         }
 
-        // Load orderbook data from PMRouter
+        // Load orderbook data from PMRouter (client-side building)
         async function loadOrderbook() {
             if (!currentTradeMarket) return;
 
@@ -2807,43 +2795,68 @@
 
             try {
                 const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpcProvider);
+                const depth = 10;
 
-                // Get orderbook (depth of 10 for each side)
-                const [bidHashes, bidPrices, bidSizes, askHashes, askPrices, askSizes] =
-                    await pmRouter.getOrderbook(currentTradeMarket.marketId, isYes, 10);
+                // Fetch orderbook (bids + asks) and bid/ask spread in parallel
+                const [
+                    [bidHashes, bidOrders, askHashes, askOrders],
+                    [bestBidPrice, bestAskPrice, bidCount, askCount]
+                ] = await Promise.all([
+                    pmRouter.getOrderbook(currentTradeMarket.marketId, isYes, depth),
+                    pmRouter.getBidAsk(currentTradeMarket.marketId, isYes)
+                ]);
 
-                // Format bids
-                currentOrderbook.bids = bidHashes.map((hash, i) => ({
-                    hash,
-                    price: Number(bidPrices[i]) / 1e18,
-                    size: Number(bidSizes[i]) / 1e18,
-                    total: (Number(bidPrices[i]) / 1e18) * (Number(bidSizes[i]) / 1e18)
-                }));
+                // Fetch remaining sizes for each order (batch getOrder calls)
+                const bidDetailsPromises = bidHashes.map(hash => pmRouter.getOrder(hash));
+                const askDetailsPromises = askHashes.map(hash => pmRouter.getOrder(hash));
+                const [bidDetails, askDetails] = await Promise.all([
+                    Promise.all(bidDetailsPromises),
+                    Promise.all(askDetailsPromises)
+                ]);
 
-                // Format asks
-                currentOrderbook.asks = askHashes.map((hash, i) => ({
-                    hash,
-                    price: Number(askPrices[i]) / 1e18,
-                    size: Number(askSizes[i]) / 1e18,
-                    total: (Number(askPrices[i]) / 1e18) * (Number(askSizes[i]) / 1e18)
-                }));
+                // Build bids array with remaining sizes, sorted by price (high to low)
+                currentOrderbook.bids = bidHashes.map((hash, i) => {
+                    const order = bidOrders[i];
+                    const [, , sharesRemaining] = bidDetails[i];
+                    const price = Number(order.collateral) / Number(order.shares);
+                    const size = Number(sharesRemaining) / 1e18;
+                    return {
+                        hash,
+                        price,
+                        size,
+                        total: price * size
+                    };
+                }).filter(o => o.size > 0).sort((a, b) => b.price - a.price);
 
-                // Get bid/ask spread
-                const [bidPrice, askPrice] = await pmRouter.getBidAsk(currentTradeMarket.marketId, isYes);
-                const spread = askPrice > 0n && bidPrice > 0n ?
-                    ((Number(askPrice) - Number(bidPrice)) / 1e18).toFixed(4) : '--';
+                // Build asks array with remaining sizes, sorted by price (low to high)
+                currentOrderbook.asks = askHashes.map((hash, i) => {
+                    const order = askOrders[i];
+                    const [, , sharesRemaining] = askDetails[i];
+                    const price = Number(order.collateral) / Number(order.shares);
+                    const size = Number(sharesRemaining) / 1e18;
+                    return {
+                        hash,
+                        price,
+                        size,
+                        total: price * size
+                    };
+                }).filter(o => o.size > 0).sort((a, b) => a.price - b.price);
+
+                // Calculate spread
+                const spread = bestAskPrice > 0n && bestBidPrice > 0n ?
+                    ((Number(bestAskPrice) - Number(bestBidPrice)) / 1e18).toFixed(4) : '--';
 
                 renderOrderbook();
                 document.getElementById('orderbookSpread').textContent = `Spread: ${spread} ETH`;
 
                 // Calculate mid price
-                if (bidPrice > 0n && askPrice > 0n) {
-                    const mid = ((Number(bidPrice) + Number(askPrice)) / 2 / 1e18).toFixed(4);
+                if (bestBidPrice > 0n && bestAskPrice > 0n) {
+                    const mid = ((Number(bestBidPrice) + Number(bestAskPrice)) / 2 / 1e18).toFixed(4);
                     document.getElementById('orderbookMidPrice').textContent = `${mid} ETH`;
-                } else if (bidPrice > 0n) {
-                    document.getElementById('orderbookMidPrice').textContent = `Bid: ${(Number(bidPrice) / 1e18).toFixed(4)} ETH`;
-                } else if (askPrice > 0n) {
-                    document.getElementById('orderbookMidPrice').textContent = `Ask: ${(Number(askPrice) / 1e18).toFixed(4)} ETH`;
+                } else if (bestBidPrice > 0n) {
+                    document.getElementById('orderbookMidPrice').textContent = `Bid: ${(Number(bestBidPrice) / 1e18).toFixed(4)} ETH`;
+                } else if (bestAskPrice > 0n) {
+                    document.getElementById('orderbookMidPrice').textContent = `Ask: ${(Number(bestAskPrice) / 1e18).toFixed(4)} ETH`;
                 } else {
                     document.getElementById('orderbookMidPrice').textContent = 'No orders';
                 }
@@ -3078,10 +3091,7 @@
                     );
                 } else {
                     // Selling shares: need to approve PMRouter first
-                    const pamm = new ethers.Contract(PAMM_ADDRESS, [
-                        'function setOperator(address operator, bool approved) public returns (bool)',
-                        'function isOperator(address owner, address operator) public view returns (bool)'
-                    ], signer);
+                    const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
 
                     // Check if PMRouter is approved
                     const isApproved = await pamm.isOperator(connectedAddress, PMROUTER_ADDRESS);
@@ -3143,7 +3153,7 @@
             }
         }
 
-        // Cancel all user orders for current market
+        // Cancel all user orders for current market (via multicall)
         async function cancelAllOrders() {
             if (!signer || userOrders.length === 0) return;
 
@@ -3153,7 +3163,12 @@
                 const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
                 const hashes = userOrders.map(o => o.hash);
 
-                const tx = await pmRouter.batchCancelOrders(hashes);
+                // Build multicall data for each cancelOrder call
+                const cancelCalls = hashes.map(hash =>
+                    pmRouter.interface.encodeFunctionData('cancelOrder', [hash])
+                );
+
+                const tx = await pmRouter.multicall(cancelCalls);
                 await tx.wait();
 
                 showStatus('tradeStatus', `Cancelled ${hashes.length} orders!`, 'success');
@@ -3180,7 +3195,7 @@
                 const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
 
                 // Get order details to calculate required ETH
-                const [order, , sharesRemaining, , collateralRemaining, active] = await pmRouter.getOrder(orderHash);
+                const [order, , sharesRemaining, , , active] = await pmRouter.getOrder(orderHash);
                 if (!active) {
                     showStatus('tradeStatus', 'Order is no longer active', 'error');
                     await loadOrderbook();
@@ -3203,10 +3218,7 @@
                 } else {
                     // Taking a bid (buy order) = we are selling shares
                     // Need to approve PMRouter first
-                    const pamm = new ethers.Contract(PAMM_ADDRESS, [
-                        'function setOperator(address operator, bool approved) public returns (bool)',
-                        'function isOperator(address owner, address operator) public view returns (bool)'
-                    ], signer);
+                    const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
 
                     const isApproved = await pamm.isOperator(connectedAddress, PMROUTER_ADDRESS);
                     if (!isApproved) {
@@ -3281,6 +3293,7 @@
                             bestAsks,
                             FEE_TIER,
                             connectedAddress,
+                            0, // deadline: 0 = execute immediately
                             { value: maxCollateral }
                         );
 
@@ -3297,6 +3310,7 @@
                             0, // minSharesOut
                             FEE_TIER,
                             connectedAddress,
+                            0, // deadline: 0 = passed to PAMM as-is
                             { value: maxCollateral }
                         );
 
@@ -3306,10 +3320,7 @@
                 } else {
                     // Selling shares
                     // Approve PMRouter first
-                    const pamm = new ethers.Contract(PAMM_ADDRESS, [
-                        'function setOperator(address operator, bool approved) public returns (bool)',
-                        'function isOperator(address owner, address operator) public view returns (bool)'
-                    ], signer);
+                    const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
 
                     const isApproved = await pamm.isOperator(connectedAddress, PMROUTER_ADDRESS);
                     if (!isApproved) {
@@ -3334,7 +3345,8 @@
                             0, // minOutput
                             bestBids,
                             FEE_TIER,
-                            connectedAddress
+                            connectedAddress,
+                            0 // deadline: 0 = execute immediately
                         );
 
                         await tx.wait();
@@ -3349,7 +3361,8 @@
                             sharesWei,
                             0, // minCollateralOut
                             FEE_TIER,
-                            connectedAddress
+                            connectedAddress,
+                            0 // deadline: 0 = passed to PAMM as-is
                         );
 
                         await tx.wait();
@@ -3701,53 +3714,21 @@
                     }
                 }
 
-                // CALL 3: Fetch user positions if connected
+                // CALL 3: Fetch user positions if connected (single call via PMRouter)
                 if (connectedAddress && markets.length > 0) {
-                    const balanceCalls = [];
-                    for (const m of markets) {
-                        // YES balance (token id = marketId)
-                        balanceCalls.push({
-                            target: PAMM_ADDRESS,
-                            allowFailure: true,
-                            callData: pammInterface.encodeFunctionData('balanceOf', [connectedAddress, m.id])
-                        });
-                        // NO balance (token id = getNoId(marketId))
-                        balanceCalls.push({
-                            target: PAMM_ADDRESS,
-                            allowFailure: true,
-                            callData: pammInterface.encodeFunctionData('getNoId', [m.id])
-                        });
-                    }
-                    const balanceResults = await multicall.aggregate3(balanceCalls);
-
-                    // First pass: get NO token IDs
-                    const noIds = [];
-                    for (let i = 0; i < markets.length; i++) {
-                        const noIdResult = balanceResults[i * 2 + 1];
-                        if (noIdResult.success) {
-                            noIds.push(pammInterface.decodeFunctionResult('getNoId', noIdResult.returnData)[0]);
-                        } else {
-                            noIds.push(null);
-                        }
-                    }
-
-                    // Second batch: get NO balances
-                    const noBalanceCalls = noIds.map((noId, i) => ({
-                        target: PAMM_ADDRESS,
+                    const pmRouterInterface = new ethers.Interface(PMROUTER_ABI);
+                    const marketIds = markets.map(m => m.id);
+                    const positionResult = await multicall.aggregate3([{
+                        target: PMROUTER_ADDRESS,
                         allowFailure: true,
-                        callData: noId ? pammInterface.encodeFunctionData('balanceOf', [connectedAddress, noId]) : '0x'
-                    }));
-                    const noBalanceResults = await multicall.aggregate3(noBalanceCalls);
+                        callData: pmRouterInterface.encodeFunctionData('getUserPositions', [connectedAddress, marketIds])
+                    }]);
 
-                    // Apply balances to markets
-                    for (let i = 0; i < markets.length; i++) {
-                        const yesResult = balanceResults[i * 2];
-                        if (yesResult.success) {
-                            markets[i].userYes = pammInterface.decodeFunctionResult('balanceOf', yesResult.returnData)[0];
-                        }
-                        const noResult = noBalanceResults[i];
-                        if (noResult.success && noIds[i]) {
-                            markets[i].userNo = pammInterface.decodeFunctionResult('balanceOf', noResult.returnData)[0];
+                    if (positionResult[0].success) {
+                        const [yesBalances, noBalances] = pmRouterInterface.decodeFunctionResult('getUserPositions', positionResult[0].returnData);
+                        for (let i = 0; i < markets.length; i++) {
+                            markets[i].userYes = yesBalances[i];
+                            markets[i].userNo = noBalances[i];
                         }
                     }
                 }
@@ -4856,10 +4837,6 @@
         // Generate Etherscan link for transaction
         function txLink(hash, text = 'View on Etherscan') {
             return `<a href="https://etherscan.io/tx/${hash}" target="_blank" rel="noopener" style="color: inherit; text-decoration: underline;">${text}</a>`;
-        }
-
-        function hideStatus() {
-            document.getElementById('statusMessage').className = 'status-message';
         }
 
         function escapeHtml(text) {

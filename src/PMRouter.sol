@@ -3,6 +3,14 @@ pragma solidity ^0.8.30;
 
 /// @notice ZAMM orderbook + AMM interface.
 interface IZAMM {
+    struct PoolKey {
+        uint256 id0;
+        uint256 id1;
+        address token0;
+        address token1;
+        uint256 feeOrHook;
+    }
+
     // Orderbook
     function makeOrder(
         address tokenIn,
@@ -37,7 +45,7 @@ interface IZAMM {
         uint56 deadline,
         bool partialFill,
         uint96 amountToFill
-    ) external payable returns (uint96 filled);
+    ) external payable;
 
     function orders(bytes32 orderHash)
         external
@@ -45,17 +53,20 @@ interface IZAMM {
         returns (bool partialFill, uint56 deadline, uint96 inDone, uint96 outDone);
 
     // AMM
-    function swap(
-        address tokenIn,
-        uint256 idIn,
-        address tokenOut,
-        uint256 idOut,
+    function swapExactIn(
+        PoolKey calldata poolKey,
         uint256 amountIn,
-        uint256 minOut,
-        uint256 feeOrHook,
+        uint256 amountOutMin,
+        bool zeroForOne,
         address to,
         uint256 deadline
     ) external payable returns (uint256 amountOut);
+
+    function deposit(address token, uint256 id, uint256 amount) external payable;
+
+    function recoverTransientBalance(address token, uint256 id, address to)
+        external
+        returns (uint256 amount);
 }
 
 /// @notice PAMM interface.
@@ -136,6 +147,20 @@ interface IPAMM {
 /// @title PMRouter
 /// @notice Limit order and trading router for PAMM prediction markets.
 /// @dev Handles YES/NO share limit orders via ZAMM, market orders via PAMM, and collateral ops.
+///
+/// Behavioral Notes:
+/// - Deadline semantics: Swap functions (swapShares, swapSharesToCollateral, swapCollateralToShares,
+///   fillOrdersThenSwap) treat `deadline == 0` as `block.timestamp` (execute now). Market order
+///   functions (buy, sell) pass deadline through to PAMM unchanged. For limit orders, deadlines
+///   are capped to the market's close time.
+/// - Expired orders: Orders that have expired (deadline passed) can still be cancelled to
+///   reclaim escrowed funds. Users should call `cancelOrder` to recover collateral/shares.
+/// - ERC20 compatibility: The safe transfer functions support non-standard ERC20s (like USDT)
+///   that don't return a boolean value. Standard ERC20s returning false will revert.
+/// - Partial fill rounding: ZAMM uses floor division for partial fills, which can result in
+///   negligible dust (at most 1 wei per fill). For orders filled in N fragments, maximum dust
+///   is N wei - effectively zero for 18-decimal tokens. This is protocol-acceptable precision
+///   loss, not a loss of funds.
 contract PMRouter {
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -149,18 +174,25 @@ contract PMRouter {
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    error Reentrancy();
     error AmountZero();
+    error Reentrancy();
     error MustFillAll();
+    error OrderExists();
+    error HashMismatch();
     error MarketClosed();
-    error OrderInactive();
+    error ApproveFailed();
     error NotOrderOwner();
+    error OrderInactive();
     error OrderNotFound();
     error MarketNotFound();
     error TradingNotOpen();
+    error TransferFailed();
     error DeadlineExpired();
-    error SlippageExceeded();
     error InvalidETHAmount();
+    error SlippageExceeded();
+    error ETHTransferFailed();
+    error InvalidFillAmount();
+    error TransferFromFailed();
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -187,6 +219,8 @@ contract PMRouter {
         bool partialFill
     );
 
+    event ProceedsClaimed(bytes32 indexed orderHash, address indexed to, uint96 amount);
+
     /*//////////////////////////////////////////////////////////////
                                 STRUCTS
     //////////////////////////////////////////////////////////////*/
@@ -212,20 +246,32 @@ contract PMRouter {
     mapping(bytes32 => Order) public orders;
     mapping(uint256 => bytes32[]) internal _marketOrders; // marketId => orderHashes
     mapping(address => bytes32[]) internal _userOrders; // user => orderHashes
-    uint256 private _locked = 1;
+    mapping(bytes32 => uint96) public claimedOut; // proceeds already forwarded to owner
+
+    uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21268;
 
     modifier nonReentrant() {
-        if (_locked != 1) revert Reentrancy();
-        _locked = 2;
+        assembly ("memory-safe") {
+            if tload(REENTRANCY_SLOT) {
+                mstore(0x00, 0xab143c06) // Reentrancy()
+                revert(0x1c, 0x04)
+            }
+            tstore(REENTRANCY_SLOT, 1)
+        }
         _;
-        _locked = 1;
+        assembly ("memory-safe") {
+            tstore(REENTRANCY_SLOT, 0)
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor() payable {}
+    constructor() payable {
+        // Allow ZAMM to pull PAMM shares from this contract for order fills and swaps
+        PAMM.setOperator(address(ZAMM), true);
+    }
 
     receive() external payable {}
 
@@ -233,7 +279,9 @@ contract PMRouter {
                                MULTICALL
     //////////////////////////////////////////////////////////////*/
 
-    function multicall(bytes[] calldata data) public returns (bytes[] memory results) {
+    /// @dev For ETH operations, msg.value must equal the exact amount needed by the single
+    ///      payable call in the batch. Cannot batch multiple ETH operations together.
+    function multicall(bytes[] calldata data) public payable returns (bytes[] memory results) {
         results = new bytes[](data.length);
         for (uint256 i; i != data.length; ++i) {
             (bool ok, bytes memory result) = address(this).delegatecall(data[i]);
@@ -250,6 +298,8 @@ contract PMRouter {
                                 PERMIT
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice ERC20Permit (EIP-2612) - approve via signature.
+    /// @dev Use with multicall: [permit, placeOrder] in single tx.
     function permit(
         address token,
         address owner,
@@ -270,6 +320,36 @@ contract PMRouter {
             mstore(add(m, 0xa4), r)
             mstore(add(m, 0xc4), s)
             if iszero(call(gas(), token, 0, m, 0xe4, 0x00, 0x00)) {
+                returndatacopy(m, 0, returndatasize())
+                revert(m, returndatasize())
+            }
+        }
+    }
+
+    /// @notice DAI-style permit - approve via signature with nonce.
+    /// @dev DAI uses: permit(holder, spender, nonce, expiry, allowed, v, r, s)
+    function permitDAI(
+        address token,
+        address holder,
+        uint256 nonce,
+        uint256 expiry,
+        bool allowed,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public {
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x8fcbaf0c00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), holder)
+            mstore(add(m, 0x24), address())
+            mstore(add(m, 0x44), nonce)
+            mstore(add(m, 0x64), expiry)
+            mstore(add(m, 0x84), allowed)
+            mstore(add(m, 0xa4), v)
+            mstore(add(m, 0xc4), r)
+            mstore(add(m, 0xe4), s)
+            if iszero(call(gas(), token, 0, m, 0x104, 0x00, 0x00)) {
                 returndatacopy(m, 0, returndatasize())
                 revert(m, returndatasize())
             }
@@ -307,18 +387,51 @@ contract PMRouter {
 
         uint256 tokenId = isYes ? marketId : PAMM.getNoId(marketId);
 
+        // Precompute orderHash to prevent reuse while local state exists
+        // ZAMM hash: keccak256(abi.encode(maker, tokenIn, idIn, amtIn, tokenOut, idOut, amtOut, deadline, partialFill))
+        address pamm = address(PAMM);
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, address())
+            switch isBuy
+            case 1 {
+                // BUY: collateral -> shares
+                mstore(add(m, 0x20), collateralToken)
+                mstore(add(m, 0x40), 0)
+                mstore(add(m, 0x60), collateral)
+                mstore(add(m, 0x80), pamm)
+                mstore(add(m, 0xa0), tokenId)
+                mstore(add(m, 0xc0), shares)
+            }
+            default {
+                // SELL: shares -> collateral
+                mstore(add(m, 0x20), pamm)
+                mstore(add(m, 0x40), tokenId)
+                mstore(add(m, 0x60), shares)
+                mstore(add(m, 0x80), collateralToken)
+                mstore(add(m, 0xa0), 0)
+                mstore(add(m, 0xc0), collateral)
+            }
+            mstore(add(m, 0xe0), deadline)
+            mstore(add(m, 0x100), partialFill)
+            orderHash := keccak256(m, 0x120)
+        }
+        if (orders[orderHash].owner != address(0)) revert OrderExists();
+
+        // Create order on ZAMM and verify hash matches
+        bytes32 zammHash;
         if (isBuy) {
             // BUY: escrow collateral, receive shares on fill
             if (collateralToken == ETH) {
                 if (msg.value != collateral) revert InvalidETHAmount();
-                orderHash = ZAMM.makeOrder{value: collateral}(
+                zammHash = ZAMM.makeOrder{value: collateral}(
                     ETH, 0, collateral, address(PAMM), tokenId, shares, deadline, partialFill
                 );
             } else {
                 if (msg.value != 0) revert InvalidETHAmount();
                 _safeTransferFrom(collateralToken, msg.sender, address(this), collateral);
                 _ensureApproval(collateralToken, address(ZAMM));
-                orderHash = ZAMM.makeOrder(
+                zammHash = ZAMM.makeOrder(
                     collateralToken,
                     0,
                     collateral,
@@ -333,8 +446,7 @@ contract PMRouter {
             // SELL: escrow shares, receive collateral on fill
             if (msg.value != 0) revert InvalidETHAmount();
             PAMM.transferFrom(msg.sender, address(this), tokenId, shares);
-            _ensureOperatorPAMM();
-            orderHash = ZAMM.makeOrder(
+            zammHash = ZAMM.makeOrder(
                 address(PAMM),
                 tokenId,
                 shares,
@@ -345,6 +457,7 @@ contract PMRouter {
                 partialFill
             );
         }
+        if (zammHash != orderHash) revert HashMismatch();
 
         orders[orderHash] = Order({
             owner: msg.sender,
@@ -366,59 +479,34 @@ contract PMRouter {
         );
     }
 
-    /// @notice Cancel order and reclaim tokens.
+    /// @notice Cancel order and reclaim escrowed tokens plus any unclaimed proceeds.
+    /// @dev Can be called even after order expires to recover funds. Unfilled/partially
+    ///      filled orders will return remaining collateral (buy) or shares (sell) to owner.
     function cancelOrder(bytes32 orderHash) public nonReentrant {
         Order storage order = orders[orderHash];
         if (order.owner == address(0)) revert OrderNotFound();
         if (order.owner != msg.sender) revert NotOrderOwner();
+        _cancelOrder(orderHash, order, msg.sender);
+    }
 
-        (,,,,, address collateralToken,) = PAMM.markets(order.marketId);
-        uint256 tokenId = order.isYes ? order.marketId : PAMM.getNoId(order.marketId);
+    /// @notice Claim proceeds from orders filled directly on ZAMM.
+    /// @dev If someone fills your order directly on ZAMM (bypassing PMRouter), your proceeds
+    ///      accumulate in PMRouter. Call this to withdraw them. Also called automatically
+    ///      during cancelOrder.
+    /// @param orderHash Order to claim proceeds from
+    /// @param to Recipient of proceeds
+    /// @return amount Amount of proceeds claimed (shares for BUY orders, collateral for SELL)
+    function claimProceeds(bytes32 orderHash, address to)
+        public
+        nonReentrant
+        returns (uint96 amount)
+    {
+        Order storage order = orders[orderHash];
+        if (order.owner == address(0)) revert OrderNotFound();
+        if (order.owner != msg.sender) revert NotOrderOwner();
+        if (to == address(0)) to = msg.sender;
 
-        (, uint56 zammDeadline, uint96 inDone,) = ZAMM.orders(orderHash);
-
-        if (order.isBuy) {
-            ZAMM.cancelOrder(
-                collateralToken,
-                0,
-                order.collateral,
-                address(PAMM),
-                tokenId,
-                order.shares,
-                order.deadline,
-                order.partialFill
-            );
-            if (zammDeadline != 0) {
-                uint96 remaining = order.collateral - inDone;
-                if (remaining > 0) {
-                    if (collateralToken == ETH) {
-                        _safeTransferETH(msg.sender, remaining);
-                    } else {
-                        _safeTransfer(collateralToken, msg.sender, remaining);
-                    }
-                }
-            }
-        } else {
-            ZAMM.cancelOrder(
-                address(PAMM),
-                tokenId,
-                order.shares,
-                collateralToken,
-                0,
-                order.collateral,
-                order.deadline,
-                order.partialFill
-            );
-            if (zammDeadline != 0) {
-                uint96 remaining = order.shares - inDone;
-                if (remaining > 0) {
-                    PAMM.transfer(msg.sender, tokenId, remaining);
-                }
-            }
-        }
-
-        delete orders[orderHash];
-        emit OrderCancelled(orderHash);
+        amount = _claimProceeds(orderHash, order, to);
     }
 
     /// @notice Fill a limit order.
@@ -431,10 +519,9 @@ contract PMRouter {
         nonReentrant
         returns (uint96 sharesFilled, uint96 collateralFilled)
     {
-        if (to == address(0)) to = msg.sender;
-
         Order storage order = orders[orderHash];
         if (order.owner == address(0)) revert OrderNotFound();
+        if (to == address(0)) to = msg.sender;
 
         (,,,,, address collateralToken,) = PAMM.markets(order.marketId);
         uint256 tokenId = order.isYes ? order.marketId : PAMM.getNoId(order.marketId);
@@ -452,15 +539,13 @@ contract PMRouter {
             revert MustFillAll();
         }
 
-        // Calculate expected collateral for ETH validation (actual amount calculated after fill)
-        uint96 expectedCollateral = uint96(uint256(order.collateral) * sharesToFill / order.shares);
-
         if (order.isBuy) {
             // Maker buying shares: taker sells shares, receives collateral
+            // BUY order: tokenIn=collateral, tokenOut=shares, fillPart=shares (output)
+            if (msg.value != 0) revert InvalidETHAmount();
             PAMM.transferFrom(msg.sender, address(this), tokenId, sharesToFill);
-            _ensureOperatorPAMM();
 
-            sharesFilled = ZAMM.fillOrder(
+            ZAMM.fillOrder(
                 address(this),
                 collateralToken,
                 0,
@@ -470,9 +555,20 @@ contract PMRouter {
                 order.shares,
                 order.deadline,
                 order.partialFill,
-                sharesToFill
+                sharesToFill // fillPart = output amount (shares)
             );
-            collateralFilled = uint96(uint256(order.collateral) * sharesFilled / order.shares);
+
+            // Calculate actual fill from state diff (order may be deleted if fully filled)
+            (, uint56 deadlineAfter, uint96 inDoneAfter, uint96 outDoneAfter) =
+                ZAMM.orders(orderHash);
+            if (deadlineAfter == 0) {
+                // Order was fully filled and deleted - use total amounts
+                sharesFilled = order.shares - outDone;
+                collateralFilled = order.collateral - inDone;
+            } else {
+                sharesFilled = outDoneAfter - outDone;
+                collateralFilled = inDoneAfter - inDone;
+            }
 
             // Collateral to taker
             if (collateralToken == ETH) {
@@ -482,11 +578,17 @@ contract PMRouter {
             }
             // Shares to order owner
             PAMM.transfer(order.owner, tokenId, sharesFilled);
+            claimedOut[orderHash] += sharesFilled;
         } else {
             // Maker selling shares: taker buys shares, provides collateral
+            // SELL order: tokenIn=shares, tokenOut=collateral, fillPart=collateral (output)
+            uint96 expectedCollateral =
+                uint96(uint256(order.collateral) * sharesToFill / order.shares);
+            // Prevent fillPart=0 being interpreted as "fill all" by ZAMM when partialFill=true
+            if (order.partialFill && expectedCollateral == 0) revert InvalidFillAmount();
             if (collateralToken == ETH) {
                 if (msg.value < expectedCollateral) revert InvalidETHAmount();
-                sharesFilled = ZAMM.fillOrder{value: expectedCollateral}(
+                ZAMM.fillOrder{value: expectedCollateral}(
                     address(this),
                     address(PAMM),
                     tokenId,
@@ -496,9 +598,20 @@ contract PMRouter {
                     order.collateral,
                     order.deadline,
                     order.partialFill,
-                    sharesToFill
+                    expectedCollateral // fillPart = output amount (collateral)
                 );
-                collateralFilled = uint96(uint256(order.collateral) * sharesFilled / order.shares);
+
+                // Calculate actual fill from state diff (order may be deleted if fully filled)
+                (, uint56 deadlineAfter, uint96 inDoneAfter, uint96 outDoneAfter) =
+                    ZAMM.orders(orderHash);
+                if (deadlineAfter == 0) {
+                    // Order was fully filled and deleted
+                    sharesFilled = order.shares - inDone;
+                    collateralFilled = order.collateral - outDone;
+                } else {
+                    sharesFilled = inDoneAfter - inDone;
+                    collateralFilled = outDoneAfter - outDone;
+                }
                 if (msg.value > collateralFilled) {
                     _safeTransferETH(msg.sender, msg.value - collateralFilled);
                 }
@@ -506,7 +619,7 @@ contract PMRouter {
                 if (msg.value != 0) revert InvalidETHAmount();
                 _safeTransferFrom(collateralToken, msg.sender, address(this), expectedCollateral);
                 _ensureApproval(collateralToken, address(ZAMM));
-                sharesFilled = ZAMM.fillOrder(
+                ZAMM.fillOrder(
                     address(this),
                     address(PAMM),
                     tokenId,
@@ -516,9 +629,20 @@ contract PMRouter {
                     order.collateral,
                     order.deadline,
                     order.partialFill,
-                    sharesToFill
+                    expectedCollateral // fillPart = output amount (collateral)
                 );
-                collateralFilled = uint96(uint256(order.collateral) * sharesFilled / order.shares);
+
+                // Calculate actual fill from state diff (order may be deleted if fully filled)
+                (, uint56 deadlineAfter, uint96 inDoneAfter, uint96 outDoneAfter) =
+                    ZAMM.orders(orderHash);
+                if (deadlineAfter == 0) {
+                    // Order was fully filled and deleted
+                    sharesFilled = order.shares - inDone;
+                    collateralFilled = order.collateral - outDone;
+                } else {
+                    sharesFilled = inDoneAfter - inDone;
+                    collateralFilled = outDoneAfter - outDone;
+                }
                 // Refund excess if any
                 if (expectedCollateral > collateralFilled) {
                     _safeTransfer(
@@ -535,6 +659,7 @@ contract PMRouter {
             } else {
                 _safeTransfer(collateralToken, order.owner, collateralFilled);
             }
+            claimedOut[orderHash] += collateralFilled;
         }
 
         emit OrderFilled(orderHash, msg.sender, sharesFilled, collateralFilled);
@@ -545,13 +670,15 @@ contract PMRouter {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Buy YES or NO shares via PAMM AMM.
+    /// @param deadline Timestamp after which tx reverts (passed to PAMM as-is)
     function buy(
         uint256 marketId,
         bool isYes,
         uint256 collateralIn,
         uint256 minSharesOut,
         uint256 feeOrHook,
-        address to
+        address to,
+        uint256 deadline
     ) public payable nonReentrant returns (uint256 sharesOut) {
         if (to == address(0)) to = msg.sender;
         if (!PAMM.tradingOpen(marketId)) revert TradingNotOpen();
@@ -562,48 +689,90 @@ contract PMRouter {
             if (msg.value != collateralIn) revert InvalidETHAmount();
             sharesOut = isYes
                 ? PAMM.buyYes{value: collateralIn}(
-                    marketId, collateralIn, minSharesOut, 0, feeOrHook, to, block.timestamp
+                    marketId, collateralIn, minSharesOut, 0, feeOrHook, to, deadline
                 )
                 : PAMM.buyNo{value: collateralIn}(
-                    marketId, collateralIn, minSharesOut, 0, feeOrHook, to, block.timestamp
+                    marketId, collateralIn, minSharesOut, 0, feeOrHook, to, deadline
                 );
         } else {
             if (msg.value != 0) revert InvalidETHAmount();
             _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
             _ensureApproval(collateral, address(PAMM));
             sharesOut = isYes
-                ? PAMM.buyYes(
-                    marketId, collateralIn, minSharesOut, 0, feeOrHook, to, block.timestamp
-                )
-                : PAMM.buyNo(
-                    marketId, collateralIn, minSharesOut, 0, feeOrHook, to, block.timestamp
-                );
+                ? PAMM.buyYes(marketId, collateralIn, minSharesOut, 0, feeOrHook, to, deadline)
+                : PAMM.buyNo(marketId, collateralIn, minSharesOut, 0, feeOrHook, to, deadline);
         }
     }
 
     /// @notice Sell YES or NO shares via PAMM AMM.
+    /// @param deadline Timestamp after which tx reverts (passed to PAMM as-is)
     function sell(
         uint256 marketId,
         bool isYes,
         uint256 sharesIn,
         uint256 minCollateralOut,
         uint256 feeOrHook,
-        address to
+        address to,
+        uint256 deadline
     ) public nonReentrant returns (uint256 collateralOut) {
         if (to == address(0)) to = msg.sender;
         if (!PAMM.tradingOpen(marketId)) revert TradingNotOpen();
 
-        uint256 tokenId = isYes ? marketId : PAMM.getNoId(marketId);
+        uint256 noId = PAMM.getNoId(marketId);
+        uint256 tokenId = isYes ? marketId : noId;
+
+        // Track balances BEFORE user transfer to forward leftovers after
+        address pamm = address(PAMM);
+        uint256 yesBefore;
+        uint256 noBefore;
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x00fdd58e00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), address())
+            mstore(add(m, 0x24), marketId)
+            if iszero(staticcall(gas(), pamm, m, 0x44, 0x00, 0x20)) { revert(0, 0) }
+            yesBefore := mload(0x00)
+            mstore(add(m, 0x24), noId)
+            if iszero(staticcall(gas(), pamm, m, 0x44, 0x00, 0x20)) { revert(0, 0) }
+            noBefore := mload(0x00)
+        }
+
         PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn);
-        _ensureOperatorPAMM();
 
         collateralOut = isYes
-            ? PAMM.sellYes(
-                marketId, sharesIn, 0, minCollateralOut, 0, feeOrHook, to, block.timestamp
-            )
-            : PAMM.sellNo(
-                marketId, sharesIn, 0, minCollateralOut, 0, feeOrHook, to, block.timestamp
-            );
+            ? PAMM.sellYes(marketId, sharesIn, 0, minCollateralOut, 0, feeOrHook, to, deadline)
+            : PAMM.sellNo(marketId, sharesIn, 0, minCollateralOut, 0, feeOrHook, to, deadline);
+
+        // Forward any leftovers to user (balance above pre-transfer level)
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x00fdd58e00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), address())
+            mstore(add(m, 0x24), marketId)
+            if iszero(staticcall(gas(), pamm, m, 0x44, 0x00, 0x20)) { revert(0, 0) }
+            let yesAfter := mload(0x00)
+            if gt(yesAfter, yesBefore) {
+                let leftoverYes := sub(yesAfter, yesBefore)
+                mstore(m, 0x095bcdb600000000000000000000000000000000000000000000000000000000)
+                mstore(add(m, 0x04), to)
+                mstore(add(m, 0x24), marketId)
+                mstore(add(m, 0x44), leftoverYes)
+                if iszero(call(gas(), pamm, 0, m, 0x64, 0, 0)) { revert(0, 0) }
+            }
+            mstore(m, 0x00fdd58e00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), address())
+            mstore(add(m, 0x24), noId)
+            if iszero(staticcall(gas(), pamm, m, 0x44, 0x00, 0x20)) { revert(0, 0) }
+            let noAfter := mload(0x00)
+            if gt(noAfter, noBefore) {
+                let leftoverNo := sub(noAfter, noBefore)
+                mstore(m, 0x095bcdb600000000000000000000000000000000000000000000000000000000)
+                mstore(add(m, 0x04), to)
+                mstore(add(m, 0x24), noId)
+                mstore(add(m, 0x44), leftoverNo)
+                if iszero(call(gas(), pamm, 0, m, 0x64, 0, 0)) { revert(0, 0) }
+            }
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -617,13 +786,15 @@ contract PMRouter {
     /// @param minOut Minimum output shares
     /// @param feeOrHook Pool fee tier
     /// @param to Recipient
+    /// @param deadline Timestamp after which tx reverts (0 = execute immediately)
     function swapShares(
         uint256 marketId,
         bool yesForNo,
         uint256 amountIn,
         uint256 minOut,
         uint256 feeOrHook,
-        address to
+        address to,
+        uint256 deadline
     ) public nonReentrant returns (uint256 amountOut) {
         if (to == address(0)) to = msg.sender;
         _validateAndGetCollateral(marketId);
@@ -632,95 +803,74 @@ contract PMRouter {
         uint256 noId = PAMM.getNoId(marketId);
 
         uint256 tokenIn = yesForNo ? yesId : noId;
-        uint256 tokenOut = yesForNo ? noId : yesId;
 
         PAMM.transferFrom(msg.sender, address(this), tokenIn, amountIn);
-        _ensureOperatorPAMM();
 
-        amountOut = ZAMM.swap(
-            address(PAMM),
-            tokenIn,
-            address(PAMM),
-            tokenOut,
-            amountIn,
-            minOut,
-            feeOrHook,
-            to,
-            block.timestamp
-        );
+        IZAMM.PoolKey memory key = _poolKey(address(PAMM), yesId, address(PAMM), noId, feeOrHook);
+        bool zeroForOne = key.id0 == tokenIn;
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+
+        ZAMM.deposit(address(PAMM), tokenIn, amountIn);
+        amountOut = ZAMM.swapExactIn(key, amountIn, minOut, zeroForOne, to, dl);
+        ZAMM.recoverTransientBalance(address(PAMM), tokenIn, address(this));
     }
 
     /// @notice Swap shares directly to collateral via ZAMM AMM (not PAMM).
     /// @dev Uses ZAMM's share/collateral pools if they exist.
+    /// @param deadline Timestamp after which tx reverts (0 = execute immediately)
     function swapSharesToCollateral(
         uint256 marketId,
         bool isYes,
         uint256 sharesIn,
         uint256 minCollateralOut,
         uint256 feeOrHook,
-        address to
+        address to,
+        uint256 deadline
     ) public nonReentrant returns (uint256 collateralOut) {
         if (to == address(0)) to = msg.sender;
         address collateral = _validateAndGetCollateral(marketId);
         uint256 tokenId = isYes ? marketId : PAMM.getNoId(marketId);
 
         PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn);
-        _ensureOperatorPAMM();
 
-        collateralOut = ZAMM.swap(
-            address(PAMM),
-            tokenId,
-            collateral,
-            0,
-            sharesIn,
-            minCollateralOut,
-            feeOrHook,
-            to,
-            block.timestamp
-        );
+        IZAMM.PoolKey memory key = _poolKey(address(PAMM), tokenId, collateral, 0, feeOrHook);
+        bool zeroForOne = key.token0 == address(PAMM) && key.id0 == tokenId;
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+
+        ZAMM.deposit(address(PAMM), tokenId, sharesIn);
+        collateralOut = ZAMM.swapExactIn(key, sharesIn, minCollateralOut, zeroForOne, to, dl);
+        ZAMM.recoverTransientBalance(address(PAMM), tokenId, address(this));
     }
 
     /// @notice Swap collateral directly to shares via ZAMM AMM (not PAMM).
+    /// @param deadline Timestamp after which tx reverts (0 = execute immediately)
     function swapCollateralToShares(
         uint256 marketId,
         bool isYes,
         uint256 collateralIn,
         uint256 minSharesOut,
         uint256 feeOrHook,
-        address to
+        address to,
+        uint256 deadline
     ) public payable nonReentrant returns (uint256 sharesOut) {
         if (to == address(0)) to = msg.sender;
         address collateral = _validateAndGetCollateral(marketId);
         uint256 tokenId = isYes ? marketId : PAMM.getNoId(marketId);
 
+        IZAMM.PoolKey memory key = _poolKey(collateral, 0, address(PAMM), tokenId, feeOrHook);
+        bool zeroForOne = key.token0 == collateral && key.id0 == 0;
+        uint256 dl = deadline == 0 ? block.timestamp : deadline;
+
         if (collateral == ETH) {
             if (msg.value != collateralIn) revert InvalidETHAmount();
-            sharesOut = ZAMM.swap{value: collateralIn}(
-                ETH,
-                0,
-                address(PAMM),
-                tokenId,
-                collateralIn,
-                minSharesOut,
-                feeOrHook,
-                to,
-                block.timestamp
-            );
+            ZAMM.deposit{value: collateralIn}(ETH, 0, collateralIn);
+            sharesOut = ZAMM.swapExactIn(key, collateralIn, minSharesOut, zeroForOne, to, dl);
         } else {
             if (msg.value != 0) revert InvalidETHAmount();
             _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
             _ensureApproval(collateral, address(ZAMM));
-            sharesOut = ZAMM.swap(
-                collateral,
-                0,
-                address(PAMM),
-                tokenId,
-                collateralIn,
-                minSharesOut,
-                feeOrHook,
-                to,
-                block.timestamp
-            );
+            ZAMM.deposit(collateral, 0, collateralIn);
+            sharesOut = ZAMM.swapExactIn(key, collateralIn, minSharesOut, zeroForOne, to, dl);
         }
     }
 
@@ -734,6 +884,7 @@ contract PMRouter {
     /// @param orderHashes Orders to try filling first
     /// @param feeOrHook AMM fee tier for remainder
     /// @param to Recipient
+    /// @param deadline Timestamp after which tx reverts (0 = execute immediately)
     function fillOrdersThenSwap(
         uint256 marketId,
         bool isYes,
@@ -742,7 +893,8 @@ contract PMRouter {
         uint256 minOutput,
         bytes32[] calldata orderHashes,
         uint256 feeOrHook,
-        address to
+        address to,
+        uint256 deadline
     ) public payable nonReentrant returns (uint256 totalOutput) {
         if (to == address(0)) to = msg.sender;
         address collateral = _validateAndGetCollateral(marketId);
@@ -758,9 +910,9 @@ contract PMRouter {
                 _safeTransferFrom(collateral, msg.sender, address(this), totalAmount);
                 _ensureApproval(collateral, address(ZAMM));
             }
-            _ensureOperatorPAMM();
 
             // Try filling orders (orders where maker is selling shares)
+            // SELL orders: tokenIn=shares, tokenOut=collateral, fillPart=collateral (output to maker)
             for (uint256 i; i < orderHashes.length && remaining > 0; ++i) {
                 Order storage order = orders[orderHashes[i]];
                 if (
@@ -768,8 +920,9 @@ contract PMRouter {
                         || order.isBuy
                 ) continue;
 
-                (, uint56 deadline, uint96 inDone,) = ZAMM.orders(orderHashes[i]);
-                if (deadline == 0 || block.timestamp > deadline) continue;
+                (, uint56 orderDeadline, uint96 inDone, uint96 outDone) =
+                    ZAMM.orders(orderHashes[i]);
+                if (orderDeadline == 0 || block.timestamp > orderDeadline) continue;
 
                 uint96 sharesAvail = order.shares - inDone;
                 if (sharesAvail == 0) continue;
@@ -778,15 +931,15 @@ contract PMRouter {
                     uint96(uint256(order.collateral) * sharesAvail / order.shares);
                 uint96 collateralToUse =
                     remaining >= collateralNeeded ? collateralNeeded : uint96(remaining);
-                uint96 sharesToFill =
-                    uint96(uint256(order.shares) * collateralToUse / order.collateral);
-                if (sharesToFill == 0 || (!order.partialFill && sharesToFill != sharesAvail)) {
+                if (
+                    collateralToUse == 0
+                        || (!order.partialFill && collateralToUse != collateralNeeded)
+                ) {
                     continue;
                 }
 
-                uint96 filled;
                 if (collateral == ETH) {
-                    filled = ZAMM.fillOrder{value: collateralToUse}(
+                    ZAMM.fillOrder{value: collateralToUse}(
                         address(this),
                         address(PAMM),
                         tokenId,
@@ -796,10 +949,10 @@ contract PMRouter {
                         order.collateral,
                         order.deadline,
                         order.partialFill,
-                        sharesToFill
+                        collateralToUse // fillPart = output amount (collateral to maker)
                     );
                 } else {
-                    filled = ZAMM.fillOrder(
+                    ZAMM.fillOrder(
                         address(this),
                         address(PAMM),
                         tokenId,
@@ -809,18 +962,32 @@ contract PMRouter {
                         order.collateral,
                         order.deadline,
                         order.partialFill,
-                        sharesToFill
+                        collateralToUse // fillPart = output amount (collateral to maker)
                     );
+                }
+
+                // Calculate actual fill from state diff (order may be deleted if fully filled)
+                (, uint56 deadlineAfter, uint96 inDoneAfter, uint96 outDoneAfter) =
+                    ZAMM.orders(orderHashes[i]);
+                uint96 filled;
+                uint96 collateralFilled;
+                if (deadlineAfter == 0) {
+                    // Order was fully filled and deleted
+                    filled = order.shares - inDone;
+                    collateralFilled = order.collateral - outDone;
+                } else {
+                    filled = inDoneAfter - inDone;
+                    collateralFilled = outDoneAfter - outDone;
                 }
 
                 // Transfer shares to buyer, collateral to seller
                 PAMM.transfer(to, tokenId, filled);
-                uint96 collateralFilled = uint96(uint256(order.collateral) * filled / order.shares);
                 if (collateral == ETH) {
                     _safeTransferETH(order.owner, collateralFilled);
                 } else {
                     _safeTransfer(collateral, order.owner, collateralFilled);
                 }
+                claimedOut[orderHashes[i]] += collateralFilled;
 
                 emit OrderFilled(orderHashes[i], msg.sender, filled, collateralFilled);
 
@@ -830,29 +997,24 @@ contract PMRouter {
 
             // Swap remainder via AMM
             if (remaining > 0) {
-                totalOutput += collateral == ETH
-                    ? ZAMM.swap{value: remaining}(
-                        ETH, 0, address(PAMM), tokenId, remaining, 0, feeOrHook, to, block.timestamp
-                    )
-                    : ZAMM.swap(
-                        collateral,
-                        0,
-                        address(PAMM),
-                        tokenId,
-                        remaining,
-                        0,
-                        feeOrHook,
-                        to,
-                        block.timestamp
-                    );
+                IZAMM.PoolKey memory key =
+                    _poolKey(collateral, 0, address(PAMM), tokenId, feeOrHook);
+                bool zeroForOne = key.token0 == collateral && key.id0 == 0;
+                uint256 dl = deadline == 0 ? block.timestamp : deadline;
+                if (collateral == ETH) {
+                    ZAMM.deposit{value: remaining}(ETH, 0, remaining);
+                } else {
+                    ZAMM.deposit(collateral, 0, remaining);
+                }
+                totalOutput += ZAMM.swapExactIn(key, remaining, 0, zeroForOne, to, dl);
             }
         } else {
             // Selling shares for collateral
             if (msg.value != 0) revert InvalidETHAmount();
             PAMM.transferFrom(msg.sender, address(this), tokenId, totalAmount);
-            _ensureOperatorPAMM();
 
             // Try filling orders (orders where maker is buying shares)
+            // BUY orders: tokenIn=collateral, tokenOut=shares, fillPart=shares (output to maker)
             for (uint256 i; i < orderHashes.length && remaining > 0; ++i) {
                 Order storage order = orders[orderHashes[i]];
                 if (
@@ -860,8 +1022,9 @@ contract PMRouter {
                         || !order.isBuy
                 ) continue;
 
-                (, uint56 deadline,, uint96 outDone) = ZAMM.orders(orderHashes[i]);
-                if (deadline == 0 || block.timestamp > deadline) continue;
+                (, uint56 orderDeadline, uint96 inDone, uint96 outDone) =
+                    ZAMM.orders(orderHashes[i]);
+                if (orderDeadline == 0 || block.timestamp > orderDeadline) continue;
 
                 uint96 sharesAvail = order.shares - outDone;
                 if (sharesAvail == 0) continue;
@@ -869,7 +1032,7 @@ contract PMRouter {
                 uint96 sharesToFill = remaining >= sharesAvail ? sharesAvail : uint96(remaining);
                 if (!order.partialFill && sharesToFill != sharesAvail) continue;
 
-                uint96 filled = ZAMM.fillOrder(
+                ZAMM.fillOrder(
                     address(this),
                     collateral,
                     0,
@@ -879,17 +1042,31 @@ contract PMRouter {
                     order.shares,
                     order.deadline,
                     order.partialFill,
-                    sharesToFill
+                    sharesToFill // fillPart = output amount (shares to maker)
                 );
 
+                // Calculate actual fill from state diff (order may be deleted if fully filled)
+                (, uint56 deadlineAfter, uint96 inDoneAfter, uint96 outDoneAfter) =
+                    ZAMM.orders(orderHashes[i]);
+                uint96 filled;
+                uint96 collateralFilled;
+                if (deadlineAfter == 0) {
+                    // Order was fully filled and deleted
+                    filled = order.shares - outDone;
+                    collateralFilled = order.collateral - inDone;
+                } else {
+                    filled = outDoneAfter - outDone;
+                    collateralFilled = inDoneAfter - inDone;
+                }
+
                 // Transfer collateral to seller, shares to buyer
-                uint96 collateralFilled = uint96(uint256(order.collateral) * filled / order.shares);
                 if (collateral == ETH) {
                     _safeTransferETH(to, collateralFilled);
                 } else {
                     _safeTransfer(collateral, to, collateralFilled);
                 }
                 PAMM.transfer(order.owner, tokenId, filled);
+                claimedOut[orderHashes[i]] += filled;
 
                 emit OrderFilled(orderHashes[i], msg.sender, filled, collateralFilled);
 
@@ -899,17 +1076,13 @@ contract PMRouter {
 
             // Swap remainder via AMM
             if (remaining > 0) {
-                totalOutput += ZAMM.swap(
-                    address(PAMM),
-                    tokenId,
-                    collateral,
-                    0,
-                    remaining,
-                    0,
-                    feeOrHook,
-                    to,
-                    block.timestamp
-                );
+                IZAMM.PoolKey memory key =
+                    _poolKey(address(PAMM), tokenId, collateral, 0, feeOrHook);
+                bool zeroForOne = key.token0 == address(PAMM) && key.id0 == tokenId;
+                uint256 dl = deadline == 0 ? block.timestamp : deadline;
+                ZAMM.deposit(address(PAMM), tokenId, remaining);
+                totalOutput += ZAMM.swapExactIn(key, remaining, 0, zeroForOne, to, dl);
+                ZAMM.recoverTransientBalance(address(PAMM), tokenId, address(this));
             }
         }
 
@@ -943,7 +1116,6 @@ contract PMRouter {
 
         PAMM.transferFrom(msg.sender, address(this), marketId, amount);
         PAMM.transferFrom(msg.sender, address(this), noId, amount);
-        _ensureOperatorPAMM();
 
         PAMM.merge(marketId, amount, to);
     }
@@ -951,16 +1123,52 @@ contract PMRouter {
     /// @notice Claim winnings from resolved market.
     function claim(uint256 marketId, address to) public nonReentrant returns (uint256 payout) {
         if (to == address(0)) to = msg.sender;
-        uint256 noId = PAMM.getNoId(marketId);
-
-        // Transfer any shares user has
-        uint256 yesBal = PAMM.balanceOf(msg.sender, marketId);
-        uint256 noBal = PAMM.balanceOf(msg.sender, noId);
-
-        if (yesBal > 0) PAMM.transferFrom(msg.sender, address(this), marketId, yesBal);
-        if (noBal > 0) PAMM.transferFrom(msg.sender, address(this), noId, noBal);
-
-        payout = PAMM.claim(marketId, to);
+        address pamm = address(PAMM);
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            // getNoId(marketId) - selector 0x4076ac51
+            mstore(m, 0x4076ac5100000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), marketId)
+            if iszero(staticcall(gas(), pamm, m, 0x24, 0x00, 0x20)) { revert(0, 0) }
+            let noId := mload(0x00)
+            // balanceOf(msg.sender, marketId) - selector 0x00fdd58e
+            mstore(m, 0x00fdd58e00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), caller())
+            mstore(add(m, 0x24), marketId)
+            if iszero(staticcall(gas(), pamm, m, 0x44, 0x00, 0x20)) { revert(0, 0) }
+            let yesBal := mload(0x00)
+            // balanceOf(msg.sender, noId)
+            mstore(add(m, 0x24), noId)
+            if iszero(staticcall(gas(), pamm, m, 0x44, 0x00, 0x20)) { revert(0, 0) }
+            let noBal := mload(0x00)
+            // transferFrom(msg.sender, this, marketId, yesBal) if yesBal > 0 - selector 0xfe99049a
+            if yesBal {
+                mstore(m, 0xfe99049a00000000000000000000000000000000000000000000000000000000)
+                mstore(add(m, 0x04), caller())
+                mstore(add(m, 0x24), address())
+                mstore(add(m, 0x44), marketId)
+                mstore(add(m, 0x64), yesBal)
+                if iszero(call(gas(), pamm, 0, m, 0x84, 0, 0)) { revert(0, 0) }
+            }
+            // transferFrom(msg.sender, this, noId, noBal) if noBal > 0
+            if noBal {
+                mstore(m, 0xfe99049a00000000000000000000000000000000000000000000000000000000)
+                mstore(add(m, 0x04), caller())
+                mstore(add(m, 0x24), address())
+                mstore(add(m, 0x44), noId)
+                mstore(add(m, 0x64), noBal)
+                if iszero(call(gas(), pamm, 0, m, 0x84, 0, 0)) { revert(0, 0) }
+            }
+            // claim(marketId, to) - selector 0xddd5e1b2
+            mstore(m, 0xddd5e1b200000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), marketId)
+            mstore(add(m, 0x24), to)
+            if iszero(call(gas(), pamm, 0, m, 0x44, 0x00, 0x20)) {
+                returndatacopy(m, 0, returndatasize())
+                revert(m, returndatasize())
+            }
+            payout := mload(0x00)
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -985,6 +1193,12 @@ contract PMRouter {
 
         (, uint56 deadline, uint96 inDone, uint96 outDone) = ZAMM.orders(orderHash);
 
+        // ZAMM deletes fully-filled orders (returns deadline=0, inDone=0, outDone=0)
+        // If our local order exists but ZAMM's is deleted, treat as fully filled
+        if (deadline == 0) {
+            return (order, order.shares, 0, order.collateral, 0, false);
+        }
+
         if (order.isBuy) {
             collateralFilled = inDone;
             sharesFilled = outDone;
@@ -995,7 +1209,7 @@ contract PMRouter {
 
         sharesRemaining = order.shares - sharesFilled;
         collateralRemaining = order.collateral - collateralFilled;
-        active = deadline != 0 && block.timestamp <= deadline && sharesRemaining > 0;
+        active = block.timestamp <= deadline && sharesRemaining > 0;
     }
 
     function isOrderActive(bytes32 orderHash) public view returns (bool) {
@@ -1078,12 +1292,13 @@ contract PMRouter {
         bytes32[] storage allOrders = _marketOrders[marketId];
         uint256 len = allOrders.length;
 
-        // Single pass: collect matching active orders up to limit
+        // Iterate backwards: newer orders more likely to be active
         bytes32[] memory tempHashes = new bytes32[](limit);
         Order[] memory tempOrders = new Order[](limit);
         uint256 count;
 
-        for (uint256 i; i < len && count < limit; ++i) {
+        for (uint256 i = len; i > 0 && count < limit;) {
+            --i;
             bytes32 hash = allOrders[i];
             Order storage o = orders[hash];
             if (o.isYes == isYes && o.isBuy == isBuy && isOrderActive(hash)) {
@@ -1102,213 +1317,83 @@ contract PMRouter {
         }
     }
 
-    /// @notice Get best (highest for buys, lowest for sells) orders for filling.
-    /// @dev Returns orders sorted by price, best first. Price = collateral/shares.
-    /// @param marketId Market to query
-    /// @param isYes YES or NO shares
-    /// @param isBuy Get buy orders (to sell into) or sell orders (to buy from)
-    /// @param limit Max orders to return
-    function getBestOrders(uint256 marketId, bool isYes, bool isBuy, uint256 limit)
-        public
-        view
-        returns (bytes32[] memory orderHashes)
-    {
-        // Get active orders (fetch up to 2x limit for sorting buffer)
-        uint256 fetchLimit = limit > type(uint256).max / 2 ? type(uint256).max : limit * 2;
-        (bytes32[] memory active, Order[] memory activeOrders) =
-            getActiveOrders(marketId, isYes, isBuy, fetchLimit);
-        uint256 len = active.length;
-        if (len == 0) return new bytes32[](0);
-
-        // Cache prices in memory to avoid repeated storage reads during sort
-        uint256[] memory prices = new uint256[](len);
-        for (uint256 i; i < len; ++i) {
-            prices[i] = uint256(activeOrders[i].collateral) * 1e18 / activeOrders[i].shares;
-        }
-
-        // Simple insertion sort by price (fine for small arrays)
-        // For buys: higher price = better (they pay more)
-        // For sells: lower price = better (they accept less)
-        for (uint256 i = 1; i < len; ++i) {
-            bytes32 keyHash = active[i];
-            uint256 keyPrice = prices[i];
-
-            uint256 j = i;
-            while (j > 0) {
-                bool shouldSwap = isBuy ? (keyPrice > prices[j - 1]) : (keyPrice < prices[j - 1]);
-                if (!shouldSwap) break;
-
-                active[j] = active[j - 1];
-                prices[j] = prices[j - 1];
-                --j;
-            }
-            active[j] = keyHash;
-            prices[j] = keyPrice;
-        }
-
-        // Return up to limit
-        uint256 resultLen = len < limit ? len : limit;
-        orderHashes = new bytes32[](resultLen);
-        for (uint256 i; i < resultLen; ++i) {
-            orderHashes[i] = active[i];
-        }
-    }
-
     /*//////////////////////////////////////////////////////////////
                              UX HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Get bid/ask spread for a share type.
-    /// @param marketId Market to query
-    /// @param isYes True for YES shares, false for NO
-    /// @return bidPrice Best buy order price (highest) - 18 decimals
-    /// @return askPrice Best sell order price (lowest) - 18 decimals
-    /// @return bidCount Number of active buy orders
-    /// @return askCount Number of active sell orders
-    function getBidAsk(uint256 marketId, bool isYes)
-        public
-        view
-        returns (uint256 bidPrice, uint256 askPrice, uint256 bidCount, uint256 askCount)
-    {
-        bytes32[] storage allOrders = _marketOrders[marketId];
-        uint256 len = allOrders.length;
-
-        for (uint256 i; i < len; ++i) {
-            bytes32 hash = allOrders[i];
-            Order storage o = orders[hash];
-            if (o.isYes != isYes || !isOrderActive(hash)) continue;
-
-            uint256 price = uint256(o.collateral) * 1e18 / o.shares;
-
-            if (o.isBuy) {
-                ++bidCount;
-                if (price > bidPrice) bidPrice = price;
-            } else {
-                ++askCount;
-                if (askPrice == 0 || price < askPrice) askPrice = price;
-            }
-        }
-    }
-
-    /// @notice Get full orderbook for a share type (for CEX-style UI).
-    /// @param marketId Market to query
-    /// @param isYes True for YES shares, false for NO
-    /// @param depth Max orders per side
-    /// @return bidHashes Buy order hashes (best price first)
-    /// @return bidPrices Buy order prices (18 decimals)
-    /// @return bidSizes Buy order sizes (shares)
-    /// @return askHashes Sell order hashes (best price first)
-    /// @return askPrices Sell order prices (18 decimals)
-    /// @return askSizes Sell order sizes (shares)
+    /// @notice Get combined orderbook (bids + asks) for a market.
     function getOrderbook(uint256 marketId, bool isYes, uint256 depth)
-        public
+        external
         view
         returns (
             bytes32[] memory bidHashes,
-            uint256[] memory bidPrices,
-            uint256[] memory bidSizes,
+            Order[] memory bidOrders,
             bytes32[] memory askHashes,
-            uint256[] memory askPrices,
-            uint256[] memory askSizes
+            Order[] memory askOrders
         )
     {
-        bidHashes = getBestOrders(marketId, isYes, true, depth);
-        askHashes = getBestOrders(marketId, isYes, false, depth);
-
-        uint256 bidLen = bidHashes.length;
-        uint256 askLen = askHashes.length;
-
-        bidPrices = new uint256[](bidLen);
-        bidSizes = new uint256[](bidLen);
-        askPrices = new uint256[](askLen);
-        askSizes = new uint256[](askLen);
-
-        for (uint256 i; i < bidLen; ++i) {
-            Order storage o = orders[bidHashes[i]];
-            bidPrices[i] = uint256(o.collateral) * 1e18 / o.shares;
-            (,,, uint96 outDone) = ZAMM.orders(bidHashes[i]);
-            bidSizes[i] = o.shares - outDone; // Remaining shares wanted
-        }
-
-        for (uint256 i; i < askLen; ++i) {
-            Order storage o = orders[askHashes[i]];
-            askPrices[i] = uint256(o.collateral) * 1e18 / o.shares;
-            (,, uint96 inDone,) = ZAMM.orders(askHashes[i]);
-            askSizes[i] = o.shares - inDone; // Remaining shares available
-        }
+        (bidHashes, bidOrders) = getActiveOrders(marketId, isYes, true, depth);
+        (askHashes, askOrders) = getActiveOrders(marketId, isYes, false, depth);
     }
 
-    /// @notice Get user's share positions across multiple markets.
-    /// @param user User address
-    /// @param marketIds Markets to query
-    /// @return yesBalances YES share balances
-    /// @return noBalances NO share balances
-    function getUserPositions(address user, uint256[] calldata marketIds)
-        public
-        view
-        returns (uint256[] memory yesBalances, uint256[] memory noBalances)
-    {
-        uint256 len = marketIds.length;
-        yesBalances = new uint256[](len);
-        noBalances = new uint256[](len);
+    /*//////////////////////////////////////////////////////////////
+                            INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////*/
 
-        for (uint256 i; i < len; ++i) {
-            yesBalances[i] = PAMM.balanceOf(user, marketIds[i]);
-            noBalances[i] = PAMM.balanceOf(user, PAMM.getNoId(marketIds[i]));
+    /// @dev Claim any unclaimed proceeds for an order and transfer to recipient.
+    function _claimProceeds(bytes32 orderHash, Order storage order, address to)
+        private
+        returns (uint96 amount)
+    {
+        (, uint56 deadline,, uint96 out) = ZAMM.orders(orderHash);
+        uint96 outDoneTotal = deadline == 0 ? (order.isBuy ? order.shares : order.collateral) : out;
+        uint96 already = claimedOut[orderHash];
+        if (outDoneTotal <= already) return 0;
+
+        amount = outDoneTotal - already;
+        claimedOut[orderHash] = outDoneTotal;
+
+        (,,,,, address collateralToken,) = PAMM.markets(order.marketId);
+        uint256 tokenId = order.isYes ? order.marketId : PAMM.getNoId(order.marketId);
+
+        if (order.isBuy) {
+            PAMM.transfer(to, tokenId, amount);
+        } else if (collateralToken == ETH) {
+            _safeTransferETH(to, amount);
+        } else {
+            _safeTransfer(collateralToken, to, amount);
         }
+
+        emit ProceedsClaimed(orderHash, to, amount);
     }
 
-    /// @notice Get user's active orders for a specific market.
-    /// @param user User address
-    /// @param marketId Market to filter by (0 = all markets)
-    /// @param limit Max orders to return
-    function getUserActiveOrders(address user, uint256 marketId, uint256 limit)
-        public
-        view
-        returns (bytes32[] memory orderHashes, Order[] memory orderDetails)
-    {
-        bytes32[] storage allOrders = _userOrders[user];
-        uint256 len = allOrders.length;
+    /// @dev Cancel order: claim proceeds, cancel on ZAMM if live, refund principal, cleanup.
+    function _cancelOrder(bytes32 orderHash, Order storage order, address to) private {
+        (,,,,, address collateralToken,) = PAMM.markets(order.marketId);
+        uint256 tokenId = order.isYes ? order.marketId : PAMM.getNoId(order.marketId);
+        (, uint56 zammDeadline, uint96 inDone, uint96 outDone) = ZAMM.orders(orderHash);
 
-        bytes32[] memory tempHashes = new bytes32[](limit);
-        Order[] memory tempOrders = new Order[](limit);
-        uint256 count;
+        // Claim any unclaimed proceeds
+        uint96 outDoneTotal =
+            zammDeadline == 0 ? (order.isBuy ? order.shares : order.collateral) : outDone;
+        uint96 already = claimedOut[orderHash];
+        if (outDoneTotal > already) {
+            uint96 claimAmount = outDoneTotal - already;
+            claimedOut[orderHash] = outDoneTotal;
 
-        for (uint256 i; i < len && count < limit; ++i) {
-            bytes32 hash = allOrders[i];
-            Order storage o = orders[hash];
-            if ((marketId == 0 || o.marketId == marketId) && isOrderActive(hash)) {
-                tempHashes[count] = hash;
-                tempOrders[count] = o;
-                ++count;
+            if (order.isBuy) {
+                PAMM.transfer(to, tokenId, claimAmount);
+            } else if (collateralToken == ETH) {
+                _safeTransferETH(to, claimAmount);
+            } else {
+                _safeTransfer(collateralToken, to, claimAmount);
             }
+
+            emit ProceedsClaimed(orderHash, to, claimAmount);
         }
 
-        orderHashes = new bytes32[](count);
-        orderDetails = new Order[](count);
-        for (uint256 i; i < count; ++i) {
-            orderHashes[i] = tempHashes[i];
-            orderDetails[i] = tempOrders[i];
-        }
-    }
-
-    /// @notice Cancel multiple orders in one transaction.
-    /// @param orderHashesToCancel Orders to cancel (skips orders not owned by sender)
-    /// @return cancelled Number of orders successfully cancelled
-    function batchCancelOrders(bytes32[] calldata orderHashesToCancel)
-        public
-        nonReentrant
-        returns (uint256 cancelled)
-    {
-        for (uint256 i; i < orderHashesToCancel.length; ++i) {
-            bytes32 orderHash = orderHashesToCancel[i];
-            Order storage order = orders[orderHash];
-            if (order.owner != msg.sender) continue;
-
-            (,,,,, address collateralToken,) = PAMM.markets(order.marketId);
-            uint256 tokenId = order.isYes ? order.marketId : PAMM.getNoId(order.marketId);
-            (, uint56 zammDeadline, uint96 inDone,) = ZAMM.orders(orderHash);
-
+        // Cancel on ZAMM and refund principal if order still exists
+        if (zammDeadline != 0) {
             if (order.isBuy) {
                 ZAMM.cancelOrder(
                     collateralToken,
@@ -1320,14 +1405,12 @@ contract PMRouter {
                     order.deadline,
                     order.partialFill
                 );
-                if (zammDeadline != 0) {
-                    uint96 remaining = order.collateral - inDone;
-                    if (remaining > 0) {
-                        if (collateralToken == ETH) {
-                            _safeTransferETH(msg.sender, remaining);
-                        } else {
-                            _safeTransfer(collateralToken, msg.sender, remaining);
-                        }
+                uint96 remaining = order.collateral - inDone;
+                if (remaining > 0) {
+                    if (collateralToken == ETH) {
+                        _safeTransferETH(to, remaining);
+                    } else {
+                        _safeTransfer(collateralToken, to, remaining);
                     }
                 }
             } else {
@@ -1341,37 +1424,36 @@ contract PMRouter {
                     order.deadline,
                     order.partialFill
                 );
-                if (zammDeadline != 0) {
-                    uint96 remaining = order.shares - inDone;
-                    if (remaining > 0) {
-                        PAMM.transfer(msg.sender, tokenId, remaining);
-                    }
+                uint96 remaining = order.shares - inDone;
+                if (remaining > 0) {
+                    PAMM.transfer(to, tokenId, remaining);
                 }
             }
-
-            delete orders[orderHash];
-            emit OrderCancelled(orderHash);
-            ++cancelled;
         }
+
+        delete orders[orderHash];
+        delete claimedOut[orderHash];
+        emit OrderCancelled(orderHash);
     }
 
-    /*//////////////////////////////////////////////////////////////
-                            INTERNAL HELPERS
-    //////////////////////////////////////////////////////////////*/
-
     /// @dev Validate market and return collateral token.
+    /// @dev Inlines tradingOpen check to avoid duplicate external call.
     function _validateAndGetCollateral(uint256 marketId) private view returns (address collateral) {
         address resolver;
-        (resolver,,,,, collateral,) = PAMM.markets(marketId);
+        bool resolved;
+        uint64 close;
+        (resolver, resolved,, , close, collateral,) = PAMM.markets(marketId);
         if (resolver == address(0)) revert MarketNotFound();
-        if (!PAMM.tradingOpen(marketId)) revert TradingNotOpen();
+        // Inline tradingOpen: resolver != 0 (checked above) && !resolved && timestamp < close
+        if (resolved || block.timestamp >= close) revert TradingNotOpen();
     }
 
     /// @dev Transfer ETH to recipient.
     function _safeTransferETH(address to, uint256 amount) private {
         assembly ("memory-safe") {
             if iszero(call(gas(), to, amount, codesize(), 0x00, codesize(), 0x00)) {
-                revert(0, 0)
+                mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
+                revert(0x1c, 0x04)
             }
         }
     }
@@ -1381,11 +1463,12 @@ contract PMRouter {
         assembly ("memory-safe") {
             mstore(0x14, to)
             mstore(0x34, amount)
-            mstore(0x00, 0xa9059cbb000000000000000000000000)
+            mstore(0x00, 0xa9059cbb000000000000000000000000) // transfer(address,uint256)
             let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
             if iszero(and(eq(mload(0x00), 1), success)) {
                 if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
-                    revert(0, 0)
+                    mstore(0x00, 0x90b8ec18) // TransferFailed()
+                    revert(0x1c, 0x04)
                 }
             }
             mstore(0x34, 0)
@@ -1399,11 +1482,12 @@ contract PMRouter {
             mstore(0x60, amount)
             mstore(0x40, to)
             mstore(0x2c, shl(96, from))
-            mstore(0x0c, 0x23b872dd000000000000000000000000)
+            mstore(0x0c, 0x23b872dd000000000000000000000000) // transferFrom(address,address,uint256)
             let success := call(gas(), token, 0, 0x1c, 0x64, 0x00, 0x20)
             if iszero(and(eq(mload(0x00), 1), success)) {
                 if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
-                    revert(0, 0)
+                    mstore(0x00, 0x7939f424) // TransferFromFailed()
+                    revert(0x1c, 0x04)
                 }
             }
             mstore(0x60, 0)
@@ -1414,10 +1498,11 @@ contract PMRouter {
     /// @dev Ensure max approval for spender if not already set.
     function _ensureApproval(address token, address spender) private {
         assembly ("memory-safe") {
-            mstore(0x00, 0xdd62ed3e000000000000000000000000)
+            mstore(0x00, 0xdd62ed3e000000000000000000000000) // allowance(address,address)
             mstore(0x14, address())
             mstore(0x34, spender)
             let success := staticcall(gas(), token, 0x10, 0x44, 0x00, 0x20)
+            // If allowance <= uint128.max, set max approval
             if iszero(and(success, gt(mload(0x00), 0xffffffffffffffffffffffffffffffff))) {
                 mstore(0x14, spender)
                 mstore(0x34, not(0))
@@ -1425,7 +1510,8 @@ contract PMRouter {
                 success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
                 if iszero(and(eq(mload(0x00), 1), success)) {
                     if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
-                        revert(0, 0)
+                        mstore(0x00, 0x3e3f8f73)
+                        revert(0x1c, 0x04)
                     }
                 }
             }
@@ -1433,10 +1519,21 @@ contract PMRouter {
         }
     }
 
-    /// @dev Ensure ZAMM is operator for this contract on PAMM.
-    function _ensureOperatorPAMM() private {
-        if (!PAMM.isOperator(address(this), address(ZAMM))) {
-            PAMM.setOperator(address(ZAMM), true);
+    /// @dev Build ZAMM pool key with proper token ordering.
+    /// ZAMM requires token0 < token1, or if same token, id0 < id1.
+    function _poolKey(address tokenA, uint256 idA, address tokenB, uint256 idB, uint256 feeOrHook)
+        private
+        pure
+        returns (IZAMM.PoolKey memory key)
+    {
+        if (tokenA < tokenB || (tokenA == tokenB && idA < idB)) {
+            key = IZAMM.PoolKey({
+                id0: idA, id1: idB, token0: tokenA, token1: tokenB, feeOrHook: feeOrHook
+            });
+        } else {
+            key = IZAMM.PoolKey({
+                id0: idB, id1: idA, token0: tokenB, token1: tokenA, feeOrHook: feeOrHook
+            });
         }
     }
 }
