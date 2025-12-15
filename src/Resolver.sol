@@ -10,6 +10,7 @@ CONDITION TYPES:
   - Ratio:  value = (A * 1e18) / B, where A and B are uint256 reads
             Threshold must be 1e18-scaled:
               1.5x = 1.5e18, 2x = 2e18, 50% = 0.5e18, 100x = 100e18
+            If B == 0, value = type(uint256).max (prevents bricked markets)
   - ETH Balance: pass empty callData ("") and target = account to check
                  Returns account.balance in wei
 
@@ -20,8 +21,9 @@ BOOLEAN SUPPORT:
   - Example: isActive() == true => Op.EQ, threshold=1
 
 RESOLUTION SEMANTICS:
-  - YES wins: condition is true at resolution time
-  - NO wins:  condition is false at/after close time
+  - Evaluated when resolveMarket() is called, NOT at close time
+  - YES wins: condition is true when resolved
+  - NO wins:  condition is false when resolved (callable only after close, unless canClose early-resolved)
   - canClose = true: allows early resolution once condition becomes true
   - canClose = false: must wait until close time regardless of condition
 
@@ -33,7 +35,7 @@ COLLATERAL:
   - ERC20:
       - user must approve resolver (or use permit externally)
       - msg.value must be 0
-  - collateralIn and collateralForSwap must be divisible by 10^decimals (no dust)
+  - Any collateral amount works (1:1 shares, no dust)
 
 SEED + BUY:
   - *SeedAndBuy functions do NOT set target odds
@@ -97,7 +99,6 @@ interface IPAMM {
         returns (
             address resolver,
             address collateral,
-            uint8 decimals,
             bool resolved,
             bool outcome,
             bool canClose,
@@ -116,7 +117,7 @@ interface IPAMM {
 /// @title Resolver
 /// @notice On-chain oracle for PAMM markets based on arbitrary staticcall reads.
 /// @dev Scalar: value = staticcall(target, callData). Ratio: value = A * 1e18 / B.
-///      YES wins if condition true at resolution. NO wins if false at close time.
+///      Outcome determined by condition value when resolveMarket() is called.
 ///      canClose=true allows early resolution when condition becomes true.
 contract Resolver {
     /*//////////////////////////////////////////////////////////////
@@ -125,24 +126,49 @@ contract Resolver {
 
     error Unknown();
     error Pending();
+    error Reentrancy();
+    error MulDivFailed();
     error InvalidTarget();
+    error ApproveFailed();
     error MarketResolved();
+    error TransferFailed();
     error ConditionExists();
     error InvalidDeadline();
     error InvalidETHAmount();
     error TargetCallFailed();
+    error ETHTransferFailed();
     error NotResolverMarket();
-    error CollateralNotMultiple();
+    error TransferFromFailed();
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    address public constant PAMM = 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d;
+    address public constant PAMM = 0x000000000044bfe6c2BBFeD8862973E0612f07C0;
 
     receive() external payable {}
 
     constructor() payable {}
+
+    /*//////////////////////////////////////////////////////////////
+                              REENTRANCY
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21269;
+
+    modifier nonReentrant() {
+        assembly ("memory-safe") {
+            if tload(REENTRANCY_SLOT) {
+                mstore(0x00, 0xab143c06) // Reentrancy()
+                revert(0x1c, 0x04)
+            }
+            tstore(REENTRANCY_SLOT, 1)
+        }
+        _;
+        assembly ("memory-safe") {
+            tstore(REENTRANCY_SLOT, 0)
+        }
+    }
 
     /*//////////////////////////////////////////////////////////////
                                MULTICALL
@@ -173,7 +199,7 @@ contract Resolver {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public {
+    ) public nonReentrant {
         assembly ("memory-safe") {
             // token.permit(owner, address(this), value, deadline, v, r, s)
             let m := mload(0x40)
@@ -201,7 +227,7 @@ contract Resolver {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public {
+    ) public nonReentrant {
         assembly ("memory-safe") {
             // token.permit(owner, address(this), nonce, deadline, allowed, v, r, s)
             let m := mload(0x40)
@@ -258,6 +284,7 @@ contract Resolver {
         uint256 collateralForSwap;
         uint256 minOut;
         bool yesForNo; // true = buyNo, false = buyYes
+        address recipient; // recipient of swapped shares (use address(0) for msg.sender)
     }
 
     mapping(uint256 marketId => Condition) public conditions;
@@ -342,6 +369,7 @@ contract Resolver {
         bool canClose
     ) internal returns (uint256 marketId, uint256 noId) {
         if (target == address(0)) revert InvalidTarget();
+        if (callData.length != 0 && target.code.length == 0) revert InvalidTarget();
         if (close <= block.timestamp) revert InvalidDeadline();
 
         string memory description = _buildDescription(observable, op, threshold, close, canClose);
@@ -365,7 +393,12 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    )
+        public
+        payable
+        nonReentrant
+        returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity)
+    {
         (marketId, noId) = _createNumericMarket(
             observable,
             collateral,
@@ -376,8 +409,9 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -393,12 +427,18 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    )
+        public
+        payable
+        nonReentrant
+        returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity)
+    {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -466,6 +506,8 @@ contract Resolver {
         bool canClose
     ) internal returns (uint256 marketId, uint256 noId) {
         if (targetA == address(0) || targetB == address(0)) revert InvalidTarget();
+        if (callDataA.length != 0 && targetA.code.length == 0) revert InvalidTarget();
+        if (callDataB.length != 0 && targetB.code.length == 0) revert InvalidTarget();
         if (close <= block.timestamp) revert InvalidDeadline();
 
         string memory description = _buildDescription(observable, op, threshold, close, canClose);
@@ -492,7 +534,12 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    )
+        public
+        payable
+        nonReentrant
+        returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity)
+    {
         (marketId, noId) = _createRatioMarket(
             observable,
             collateral,
@@ -505,8 +552,9 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -524,7 +572,12 @@ contract Resolver {
         uint64 close,
         bool canClose,
         SeedParams calldata seed
-    ) public payable returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) {
+    )
+        public
+        payable
+        nonReentrant
+        returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity)
+    {
         (marketId, noId) = _createRatioMarket(
             observable,
             collateral,
@@ -537,8 +590,9 @@ contract Resolver {
             close,
             canClose
         );
-        (shares, liquidity,) = _seedLiquidity(collateral, marketId, seed, 0);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, 0);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -566,17 +620,16 @@ contract Resolver {
     )
         public
         payable
+        nonReentrant
         returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut)
     {
         (marketId, noId) = _createNumericMarket(
             observable, collateral, target, callData, op, threshold, close, canClose
         );
-        uint256 perShare;
-        (shares, liquidity, perShare) =
-            _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
-        swapOut =
-            _buyToSkewOdds(collateral, marketId, perShare, seed.feeOrHook, seed.deadline, swap);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
+        swapOut = _buyToSkewOdds(collateral, marketId, seed.feeOrHook, seed.deadline, swap);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -602,6 +655,7 @@ contract Resolver {
     )
         public
         payable
+        nonReentrant
         returns (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut)
     {
         (marketId, noId) = _createRatioMarket(
@@ -616,12 +670,10 @@ contract Resolver {
             close,
             canClose
         );
-        uint256 perShare;
-        (shares, liquidity, perShare) =
-            _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
-        swapOut =
-            _buyToSkewOdds(collateral, marketId, perShare, seed.feeOrHook, seed.deadline, swap);
+        (shares, liquidity) = _seedLiquidity(collateral, marketId, seed, swap.collateralForSwap);
+        swapOut = _buyToSkewOdds(collateral, marketId, seed.feeOrHook, seed.deadline, swap);
         _flushLeftoverShares(marketId);
+        _refundDust(collateral);
         emit MarketSeeded(
             marketId, seed.collateralIn, seed.feeOrHook, shares, liquidity, seed.lpRecipient
         );
@@ -660,9 +712,10 @@ contract Resolver {
         uint256 threshold
     ) internal {
         if (target == address(0)) revert InvalidTarget();
+        if (callData.length != 0 && target.code.length == 0) revert InvalidTarget();
         if (conditions[marketId].targetA != address(0)) revert ConditionExists();
 
-        (address resolver,,, bool resolved,, bool canClose, uint64 close,,,,) =
+        (address resolver,, bool resolved,, bool canClose, uint64 close,,,,) =
             IPAMM(PAMM).getMarket(marketId);
         if (resolver != address(this)) revert NotResolverMarket();
         if (resolved) revert MarketResolved();
@@ -709,9 +762,11 @@ contract Resolver {
         if (targetA == address(0) || targetB == address(0)) {
             revert InvalidTarget();
         }
+        if (callDataA.length != 0 && targetA.code.length == 0) revert InvalidTarget();
+        if (callDataB.length != 0 && targetB.code.length == 0) revert InvalidTarget();
         if (conditions[marketId].targetA != address(0)) revert ConditionExists();
 
-        (address resolver,,, bool resolved,, bool canClose, uint64 close,,,,) =
+        (address resolver,, bool resolved,, bool canClose, uint64 close,,,,) =
             IPAMM(PAMM).getMarket(marketId);
         if (resolver != address(this)) revert NotResolverMarket();
         if (resolved) revert MarketResolved();
@@ -725,19 +780,17 @@ contract Resolver {
                                RESOLUTION
     //////////////////////////////////////////////////////////////*/
 
-    function resolveMarket(uint256 marketId) public {
+    function resolveMarket(uint256 marketId) public nonReentrant {
         Condition storage c = conditions[marketId];
         if (c.targetA == address(0)) revert Unknown();
 
-        (address resolver,,, bool resolved,, bool canClose, uint64 close,,,,) =
+        (address resolver,, bool resolved,, bool canClose, uint64 close,,,,) =
             IPAMM(PAMM).getMarket(marketId);
         if (resolver != address(this)) revert NotResolverMarket();
         if (resolved) revert MarketResolved();
 
         uint256 value = _currentValue(c);
         bool condTrue = _compare(value, c.op, c.threshold);
-
-        delete conditions[marketId];
 
         if (condTrue) {
             if (block.timestamp < close) {
@@ -749,6 +802,8 @@ contract Resolver {
             if (block.timestamp < close) revert Pending();
             IPAMM(PAMM).resolve(marketId, false);
         }
+
+        delete conditions[marketId];
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -763,7 +818,7 @@ contract Resolver {
         Condition storage c = conditions[marketId];
         if (c.targetA == address(0)) return (0, false, false);
 
-        (,,,,, bool canClose, uint64 close,,,,) = IPAMM(PAMM).getMarket(marketId);
+        (,,,, bool canClose, uint64 close,,,,) = IPAMM(PAMM).getMarket(marketId);
         value = _currentValue(c);
         condTrue = _compare(value, c.op, c.threshold);
         ready = (block.timestamp >= close) || (condTrue && canClose);
@@ -789,6 +844,7 @@ contract Resolver {
         } else {
             uint256 a = _readUint(c.targetA, c.callDataA);
             uint256 b = _readUint(c.targetB, c.callDataB);
+            if (b == 0) return type(uint256).max; // Undefined ratio = max (prevents bricked markets)
             value = mulDiv(a, 1e18, b);
         }
     }
@@ -809,8 +865,7 @@ contract Resolver {
         if (op == Op.LTE) return value <= threshold;
         if (op == Op.GTE) return value >= threshold;
         if (op == Op.EQ) return value == threshold;
-        if (op == Op.NEQ) return value != threshold;
-        return false;
+        return value != threshold; // NEQ is only remaining case
     }
 
     function _opSymbol(Op op) internal pure returns (string memory) {
@@ -819,8 +874,7 @@ contract Resolver {
         if (op == Op.LTE) return "<=";
         if (op == Op.GTE) return ">=";
         if (op == Op.EQ) return "==";
-        if (op == Op.NEQ) return "!=";
-        return "?";
+        return "!="; // NEQ is only remaining case
     }
 
     function _buildDescription(
@@ -860,11 +914,7 @@ contract Resolver {
         uint256 marketId,
         SeedParams calldata p,
         uint256 extraETH
-    ) internal returns (uint256 shares, uint256 liquidity, uint256 perShare) {
-        (,, uint8 decimals,,,,,,,,) = IPAMM(PAMM).getMarket(marketId);
-        perShare = 10 ** decimals;
-        if (p.collateralIn == 0 || p.collateralIn % perShare != 0) revert CollateralNotMultiple();
-
+    ) internal returns (uint256 shares, uint256 liquidity) {
         if (collateral == address(0)) {
             if (msg.value != p.collateralIn + extraETH) revert InvalidETHAmount();
             (shares, liquidity) = IPAMM(PAMM).splitAndAddLiquidity{value: p.collateralIn}(
@@ -908,42 +958,52 @@ contract Resolver {
         }
     }
 
+    /// @dev Refunds any dust collateral (ETH or ERC20) to msg.sender.
+    function _refundDust(address collateral) internal {
+        if (collateral == address(0)) {
+            uint256 dust = address(this).balance;
+            if (dust != 0) {
+                safeTransferETH(msg.sender, dust);
+            }
+        } else {
+            uint256 dust = getBalance(collateral, address(this));
+            if (dust != 0) {
+                safeTransfer(collateral, msg.sender, dust);
+            }
+        }
+    }
+
     /// @dev Executes buyYes or buyNo to skew pool odds. Does NOT set a target probability.
     function _buyToSkewOdds(
         address collateral,
         uint256 marketId,
-        uint256 perShare,
         uint256 feeOrHook,
         uint256 deadline,
         SwapParams calldata s
     ) internal returns (uint256 amountOut) {
         if (s.collateralForSwap == 0) return 0;
 
-        // Enforce whole-share multiple to avoid dust trapped in Resolver
-        if (s.collateralForSwap % perShare != 0) revert CollateralNotMultiple();
-
         if (collateral != address(0)) {
             safeTransferFrom(collateral, msg.sender, address(this), s.collateralForSwap);
             ensureApproval(collateral, PAMM);
         }
 
+        // Use specified recipient or fallback to msg.sender
+        address to = s.recipient == address(0) ? msg.sender : s.recipient;
+
         if (s.yesForNo) {
             amountOut = collateral != address(0)
                 ? IPAMM(PAMM)
-                    .buyNo(
-                        marketId, s.collateralForSwap, s.minOut, 0, feeOrHook, msg.sender, deadline
-                    )
+                    .buyNo(marketId, s.collateralForSwap, s.minOut, 0, feeOrHook, to, deadline)
                 : IPAMM(PAMM).buyNo{value: s.collateralForSwap}(
-                    marketId, 0, s.minOut, 0, feeOrHook, msg.sender, deadline
+                    marketId, 0, s.minOut, 0, feeOrHook, to, deadline
                 );
         } else {
             amountOut = collateral != address(0)
                 ? IPAMM(PAMM)
-                    .buyYes(
-                        marketId, s.collateralForSwap, s.minOut, 0, feeOrHook, msg.sender, deadline
-                    )
+                    .buyYes(marketId, s.collateralForSwap, s.minOut, 0, feeOrHook, to, deadline)
                 : IPAMM(PAMM).buyYes{value: s.collateralForSwap}(
-                    marketId, 0, s.minOut, 0, feeOrHook, msg.sender, deadline
+                    marketId, 0, s.minOut, 0, feeOrHook, to, deadline
                 );
         }
     }
@@ -1000,7 +1060,7 @@ function safeTransferFrom(address token, address from, address to, uint256 amoun
     }
 }
 
-/// @dev Sets max approval if allowance < uint128.max. USDT-compatible (approves once).
+/// @dev Sets max approval once if allowance <= uint128.max. Does NOT support tokens requiring approve(0) first.
 function ensureApproval(address token, address spender) {
     assembly ("memory-safe") {
         mstore(0x00, 0xdd62ed3e000000000000000000000000) // allowance(address,address)
@@ -1021,5 +1081,44 @@ function ensureApproval(address token, address spender) {
             }
         }
         mstore(0x34, 0)
+    }
+}
+
+/// @dev Sends ETH to `to`, reverts on failure.
+function safeTransferETH(address to, uint256 amount) {
+    assembly ("memory-safe") {
+        if iszero(call(gas(), to, amount, 0, 0, 0, 0)) {
+            mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
+            revert(0x1c, 0x04)
+        }
+    }
+}
+
+/// @dev Transfers tokens using transfer (not transferFrom), reverts on failure.
+function safeTransfer(address token, address to, uint256 amount) {
+    assembly ("memory-safe") {
+        mstore(0x14, to)
+        mstore(0x34, amount)
+        mstore(0x00, 0xa9059cbb000000000000000000000000) // transfer(address,uint256)
+        let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
+        if iszero(and(eq(mload(0x00), 1), success)) {
+            if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                mstore(0x00, 0x90b8ec18) // TransferFailed()
+                revert(0x1c, 0x04)
+            }
+        }
+        mstore(0x34, 0)
+    }
+}
+
+/// @dev Returns the ERC20 balance of an account.
+function getBalance(address token, address account) view returns (uint256 bal) {
+    assembly ("memory-safe") {
+        mstore(0x14, account)
+        mstore(0x00, 0x70a08231000000000000000000000000) // balanceOf(address)
+        bal := mul(
+            mload(0x20),
+            and(gt(returndatasize(), 0x1f), staticcall(gas(), token, 0x10, 0x24, 0x20, 0x20))
+        )
     }
 }

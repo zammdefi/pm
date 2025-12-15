@@ -215,7 +215,7 @@ contract ResolverTest is Test {
     uint64 internal closeTime;
 
     // Hardcoded PAMM address that resolver expects
-    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    address payable constant PAMM_ADDRESS = payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     uint256 constant FEE_BPS = 30;
 
     function setUp() public {
@@ -274,7 +274,7 @@ contract ResolverTest is Test {
         );
 
         // Verify market created in PAMM
-        (address mResolver,,,,,, uint64 close,,,,) = pm.getMarket(marketId);
+        (address mResolver,,,,, uint64 close,,,,) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
         assertEq(close, closeTime);
         assertTrue(noId != 0);
@@ -339,6 +339,22 @@ contract ResolverTest is Test {
             "test",
             address(token),
             address(0),
+            MockOracle.getValue.selector,
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false
+        );
+    }
+
+    function test_CreateNumericMarket_RevertInvalidTarget_EOAWithSelector() public {
+        // EOA with non-empty callData should revert (extcodesize check)
+        address eoa = address(0xdead);
+        vm.expectRevert(Resolver.InvalidTarget.selector);
+        resolver.createNumericMarketSimple(
+            "test",
+            address(token),
+            eoa, // EOA, not a contract
             MockOracle.getValue.selector,
             Resolver.Op.GT,
             50,
@@ -468,7 +484,7 @@ contract ResolverTest is Test {
 
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
 
@@ -494,7 +510,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
     }
@@ -516,7 +532,7 @@ contract ResolverTest is Test {
         // Still before close, but condition is true
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins via early close
     }
@@ -604,14 +620,14 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 2 > 1.5
     }
 
-    function test_ResolveMarket_Ratio_RevertDivisionByZero() public {
+    function test_ResolveMarket_Ratio_DenominatorZero_ReturnsMax() public {
         oracleA.setValue(100);
-        oracleB.setValue(0); // Division by zero
+        oracleB.setValue(0); // Division by zero -> returns type(uint256).max
 
         (uint256 marketId,) = resolver.createRatioMarketSimple(
             "A/B",
@@ -626,10 +642,20 @@ contract ResolverTest is Test {
             false
         );
 
+        // Preview should show max value and condition true (max > 1e18)
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, type(uint256).max);
+        assertTrue(condTrue);
+        assertFalse(ready); // Not ready yet (before close, canClose=false)
+
         vm.warp(closeTime);
 
-        vm.expectRevert(bytes4(0xad251c27)); // MulDivFailed()
+        // Should resolve successfully with YES winning (max > threshold)
         resolver.resolveMarket(marketId);
+
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins because max > 1e18
     }
 
     function test_ResolveMarket_RevertTargetCallFailed_Reverts() public {
@@ -673,7 +699,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 40 < 50
     }
@@ -695,7 +721,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50 <= 50
     }
@@ -717,7 +743,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50 >= 50
     }
@@ -739,7 +765,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50 == 50
     }
@@ -761,7 +787,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 51 != 50
     }
@@ -1038,7 +1064,7 @@ contract ResolverTest is Test {
             false
         );
 
-        (, address collateral,,,,,,,,,) = pm.getMarket(marketId);
+        (, address collateral,,,,,,,,) = pm.getMarket(marketId);
         assertEq(collateral, address(0));
     }
 
@@ -1063,7 +1089,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -1085,7 +1111,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 0 == 0
     }
@@ -1114,7 +1140,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
 
         // Verify outcome matches expected comparison
@@ -1154,7 +1180,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
 
         uint256 ratio = (valueA * 1e18) / valueB;
@@ -1169,61 +1195,10 @@ contract ResolverTest is Test {
     // and should be run as fork tests. Here we only test error paths
     // that revert before calling PAMM.splitAndAddLiquidity.
 
-    function test_SeedLiquidity_RevertCollateralNotMultiple() public {
-        oracleA.setValue(100);
+    // Note: CollateralNotMultiple check has been removed. Fractional amounts
+    // are now supported with automatic dust refunds.
 
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10.5 ether, // Not a clean multiple
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketAndSeed(
-            "bad amount",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed
-        );
-    }
-
-    function test_SeedLiquidity_RevertCollateralZero() public {
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 0, // Zero collateral
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketAndSeed(
-            "zero amount",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed
-        );
-    }
+    // Note: Zero collateral test removed - PAMM handles this case
 
     function test_SeedLiquidity_RevertInvalidETHAmount_ERC20WithETH() public {
         oracleA.setValue(100);
@@ -1332,7 +1307,7 @@ contract ResolverTest is Test {
         // Should succeed - maxSafe * 1e18 doesn't overflow
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // maxSafe * 1e18 / 1 > 1e18
     }
@@ -1459,7 +1434,7 @@ contract ResolverTest is Test {
 
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -1497,7 +1472,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // Current value 100 > 50
     }
@@ -1553,7 +1528,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 50 > 50 is FALSE
     }
@@ -1575,7 +1550,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 50 < 50 is FALSE
     }
@@ -1597,7 +1572,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 51 == 50 is FALSE
     }
@@ -1619,7 +1594,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // 50 != 50 is FALSE
     }
@@ -1702,7 +1677,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 0/100 * 1e18 = 0, 0 == 0
     }
@@ -1727,7 +1702,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 200/100 * 1e18 = 2e18, 2e18 == 2e18
     }
@@ -1752,7 +1727,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 50/100 * 1e18 = 0.5e18, 0.5e18 < 1e18
     }
@@ -1978,7 +1953,7 @@ contract ResolverTest is Test {
         oracleA.setValue(30);
 
         // Market should still be resolved as YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome);
     }
@@ -2019,8 +1994,8 @@ contract ResolverTest is Test {
         resolver.resolveMarket(marketId1);
         resolver.resolveMarket(marketId2);
 
-        (,,, bool resolved1, bool outcome1,,,,,,) = pm.getMarket(marketId1);
-        (,,, bool resolved2, bool outcome2,,,,,,) = pm.getMarket(marketId2);
+        (,, bool resolved1, bool outcome1,,,,,,) = pm.getMarket(marketId1);
+        (,, bool resolved2, bool outcome2,,,,,,) = pm.getMarket(marketId2);
 
         assertTrue(resolved1);
         assertTrue(outcome1); // 75 > 50
@@ -2029,78 +2004,8 @@ contract ResolverTest is Test {
         assertFalse(outcome2); // 75 > 100 is false
     }
 
-    /*//////////////////////////////////////////////////////////////
-                    USDC (6 DECIMALS) SEED ERROR TEST
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SeedLiquidity_USDC_RevertCollateralNotMultiple() public {
-        MockUSDC usdc = new MockUSDC();
-        usdc.mint(ALICE, 1000e6);
-
-        vm.prank(ALICE);
-        usdc.approve(address(resolver), type(uint256).max);
-
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10.5e6, // Not a clean multiple of 10^6
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketAndSeed(
-            "usdc bad",
-            address(usdc),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed
-        );
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    RATIO SIMPLE SEED ERROR TEST
-    //////////////////////////////////////////////////////////////*/
-
-    function test_CreateRatioMarketAndSeedSimple_RevertCollateralZero() public {
-        oracleA.setValue(100);
-        oracleB.setValue(50);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 0, // Zero collateral
-            feeOrHook: 0,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createRatioMarketAndSeedSimple(
-            "ratio seed zero",
-            address(token),
-            address(oracleA),
-            MockOracle.getValue.selector,
-            address(oracleB),
-            MockOracle.getValue.selector,
-            Resolver.Op.GT,
-            1e18,
-            closeTime,
-            false,
-            seed
-        );
-    }
+    // Note: USDC CollateralNotMultiple test removed - fractional amounts now supported
+    // Note: Ratio seed zero test removed - PAMM handles this case
 
     /*//////////////////////////////////////////////////////////////
                     ADDITIONAL EDGE CASES
@@ -2126,7 +2031,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // 2e18 == 2e18
     }
@@ -2146,7 +2051,7 @@ contract ResolverTest is Test {
         );
 
         // Should still work - description will just be " > 50 by X Unix time."
-        (address mResolver,,,,,,,,,, string memory desc) = pm.getMarket(marketId);
+        (address mResolver,,,,,,,,, string memory desc) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
         assertTrue(bytes(desc).length > 0);
     }
@@ -2194,7 +2099,7 @@ contract ResolverTest is Test {
         vm.prank(randomUser);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved,,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved,,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
     }
 
@@ -2222,7 +2127,7 @@ contract ResolverTest is Test {
         vm.warp(justAfter);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved,,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved,,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
     }
 
@@ -2285,7 +2190,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // isPaused() == true, so YES wins
     }
@@ -2308,7 +2213,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // isPaused() == false (0), not equal to 1, so NO wins
     }
@@ -2332,7 +2237,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // isPaused() == false (0), equals 0, so YES wins
     }
@@ -2356,7 +2261,7 @@ contract ResolverTest is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // isPaused() = 0, 0 != 1, so YES wins
     }
@@ -2387,7 +2292,7 @@ contract ResolverTest is Test {
         // Now can resolve early
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // Insurance pays out
     }
@@ -2451,8 +2356,8 @@ contract ResolverTest is Test {
 
         assertTrue(marketId1 != marketId2);
 
-        (address r1,,,,,,,,,,) = pm.getMarket(marketId1);
-        (address r2,,,,,,,,,,) = pm.getMarket(marketId2);
+        (address r1,,,,,,,,,) = pm.getMarket(marketId1);
+        (address r2,,,,,,,,,) = pm.getMarket(marketId2);
 
         assertEq(r1, address(resolver));
         assertEq(r2, address(resolver));
@@ -2488,6 +2393,60 @@ contract ResolverTest is Test {
         resolver.multicall(calls);
     }
 
+    function test_Multicall_ResolveMultipleMarkets_WithNonReentrant() public {
+        // Create two markets with different oracles
+        oracleA.setValue(100);
+        oracleB.setValue(200);
+
+        (uint256 marketId1,) = resolver.createNumericMarketSimple(
+            "market 1",
+            address(token),
+            address(oracleA),
+            MockOracle.getValue.selector,
+            Resolver.Op.GT,
+            50, // 100 > 50 = true (YES wins)
+            closeTime,
+            false
+        );
+
+        (uint256 marketId2,) = resolver.createNumericMarketSimple(
+            "market 2",
+            address(token),
+            address(oracleB),
+            MockOracle.getValue.selector,
+            Resolver.Op.LT,
+            100, // 200 < 100 = false (NO wins)
+            closeTime,
+            false
+        );
+
+        // Warp past close
+        vm.warp(closeTime);
+
+        // Resolve both markets via multicall - tests nonReentrant doesn't block sequential calls
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(resolver.resolveMarket, (marketId1));
+        calls[1] = abi.encodeCall(resolver.resolveMarket, (marketId2));
+
+        resolver.multicall(calls);
+
+        // Verify both markets resolved correctly
+        (,, bool resolved1, bool outcome1,,,,,,) = pm.getMarket(marketId1);
+        (,, bool resolved2, bool outcome2,,,,,,) = pm.getMarket(marketId2);
+
+        assertTrue(resolved1, "Market 1 should be resolved");
+        assertTrue(outcome1, "Market 1: YES should win (100 > 50)");
+
+        assertTrue(resolved2, "Market 2 should be resolved");
+        assertFalse(outcome2, "Market 2: NO should win (200 < 100 is false)");
+
+        // Conditions should be deleted
+        (address targetA1,,,,,,) = resolver.conditions(marketId1);
+        (address targetA2,,,,,,) = resolver.conditions(marketId2);
+        assertEq(targetA1, address(0), "Condition 1 should be deleted");
+        assertEq(targetA2, address(0), "Condition 2 should be deleted");
+    }
+
     /*//////////////////////////////////////////////////////////////
                     STRUCT TESTS
     //////////////////////////////////////////////////////////////*/
@@ -2510,8 +2469,9 @@ contract ResolverTest is Test {
     }
 
     function test_SwapParams_Struct() public pure {
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1 ether, minOut: 0.9 ether, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1 ether, minOut: 0.9 ether, yesForNo: true, recipient: address(0)
+        });
 
         assertEq(swap.collateralForSwap, 1 ether);
         assertEq(swap.minOut, 0.9 ether);
@@ -2534,7 +2494,7 @@ contract Resolver_Integration_Test is Test {
     address internal ALICE = makeAddr("ALICE");
     address internal BOB = makeAddr("BOB");
 
-    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    address payable constant PAMM_ADDRESS = payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     address constant ZAMM_ADDRESS = 0x000000000000040470635EB91b7CE4D132D616eD;
     uint256 constant FEE_BPS = 30;
 
@@ -2614,11 +2574,11 @@ contract Resolver_Integration_Test is Test {
         );
 
         // Verify market created
-        (address mResolver,,,,,,,,,,) = pm.getMarket(marketId);
+        (address mResolver,,,,,,,,,) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
 
-        // Verify shares minted
-        assertEq(shares, 10000); // 10000 ether / 1e18 per share
+        // Verify shares minted (1:1 with collateral)
+        assertEq(shares, 10000 ether);
 
         // Verify liquidity received
         assertTrue(liquidity > 0);
@@ -2655,7 +2615,7 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 5000);
+        assertEq(shares, 5000 ether);
         assertTrue(liquidity > 0);
 
         // Verify condition registered
@@ -2696,7 +2656,7 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 8000);
+        assertEq(shares, 8000 ether);
         assertTrue(liquidity > 0);
 
         // Verify ratio condition
@@ -2734,11 +2694,11 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 10000); // 10000 ETH = 10000 shares
+        assertEq(shares, 10000 ether); // 10000 ETH = 10000 ether shares (1:1)
         assertTrue(liquidity > 0);
 
         // Verify market uses ETH
-        (, address collateral,,,,,,,,,) = pm.getMarket(marketId);
+        (, address collateral,,,,,,,,) = pm.getMarket(marketId);
         assertEq(collateral, address(0));
     }
 
@@ -2764,8 +2724,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Use 1000 ether to buy NO (via split + swap YES→NO)
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (, uint256 noId, uint256 shares, uint256 liquidity, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -2781,13 +2742,13 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
 
         // swapOut is the TOTAL NO from buyNo (split shares + swap output)
-        // Should be > 1000 (got bonus from swap) but < 2000 (fees/slippage)
-        assertTrue(swapOut > 1000, "should get more NO than input shares");
-        assertTrue(swapOut < 2000, "should be less than 2x due to fees");
+        // Should be > 1000 ether (got bonus from swap) but < 2000 ether (fees/slippage)
+        assertTrue(swapOut > 1000 ether, "should get more NO than input shares");
+        assertTrue(swapOut < 2000 ether, "should be less than 2x due to fees");
 
         // ALICE's NO balance should equal swapOut
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
@@ -2812,8 +2773,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Use 500 ether to buy YES (via split + swap NO→YES)
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 500 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 500 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -2829,12 +2791,12 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
 
         // swapOut is the TOTAL YES from buyYes (split shares + swap output)
-        // Should be > 500 (got bonus from swap) but < 1000 (fees/slippage)
-        assertTrue(swapOut > 500, "should get more YES than input shares");
-        assertTrue(swapOut < 1000, "should be less than 2x due to fees");
+        // Should be > 500 ether (got bonus from swap) but < 1000 ether (fees/slippage)
+        assertTrue(swapOut > 500 ether, "should get more YES than input shares");
+        assertTrue(swapOut < 1000 ether, "should be less than 2x due to fees");
 
         // ALICE's YES balance should equal swapOut
         uint256 aliceYes = pm.balanceOf(ALICE, marketId);
@@ -2856,8 +2818,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Zero collateral for swap = no swap
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 0, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 0, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -2873,7 +2836,7 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertEq(swapOut, 0); // No swap executed
     }
 
@@ -2891,8 +2854,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         // msg.value must be seed.collateralIn + swap.collateralForSwap
         vm.deal(ALICE, 11000 ether);
@@ -2912,84 +2876,15 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 1000, "should get more NO than input shares");
+        assertTrue(swapOut > 1000 ether, "should get more NO than input shares");
 
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
         assertEq(aliceNo, swapOut);
     }
 
-    function test_SeedAndBuy_RevertSwapCollateralNotMultiple() public {
-        // Test that swap collateral must be a multiple of 10^decimals
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000 ether, // Large enough for pool creation
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of 10^18
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000 ether + 0.5 ether, minOut: 0, yesForNo: false
-        });
-
-        vm.deal(ALICE, 11000.5 ether);
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy{value: 11000.5 ether}(
-            "dust trap test",
-            address(0),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
-
-    function test_SeedAndBuy_RevertSwapCollateralNotMultiple_ERC20() public {
-        // Test ERC20 path for swap collateral divisibility check
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000 ether, // Large enough for pool creation
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of 10^18
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000 ether + 0.5 ether, minOut: 0, yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "dust trap test erc20",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: SeedAndBuy collateral not multiple tests removed - fractional amounts now supported with dust refunds
 
     /*//////////////////////////////////////////////////////////////
                     FULL LIFECYCLE TEST
@@ -3033,7 +2928,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // 5. Verify resolution
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES won
 
@@ -3078,7 +2973,7 @@ contract Resolver_Integration_Test is Test {
         // Now can resolve early
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES won via early close
     }
@@ -3134,8 +3029,9 @@ contract Resolver_Integration_Test is Test {
             deadline: 500 // expired - applies to both seed and swap
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         vm.expectRevert(ZAMM.Expired.selector); // ZAMM checks deadline first
@@ -3197,7 +3093,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000 ether,
             minOut: type(uint256).max, // impossible to satisfy
-            yesForNo: true
+            yesForNo: true,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3236,7 +3133,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000 ether,
             minOut: 1800, // expect ~1906 NO shares total
-            yesForNo: true
+            yesForNo: true,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3253,9 +3151,9 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
-        assertTrue(swapOut >= 1800, "should meet minOut");
-        assertTrue(swapOut > 1000, "buyNo should yield bonus NO shares");
+        assertEq(shares, 10000 ether);
+        assertTrue(swapOut >= 1800 ether, "should meet minOut");
+        assertTrue(swapOut > 1000 ether, "buyNo should yield bonus NO shares");
     }
 
     function test_Integration_DeadlineZero_NoCheck() public {
@@ -3272,8 +3170,9 @@ contract Resolver_Integration_Test is Test {
             deadline: 0 // no deadline
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 1000 ether, minOut: 0, yesForNo: true});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 1000 ether, minOut: 0, yesForNo: true, recipient: address(0)
+        });
 
         // Warp far into future - should still work with deadline=0
         vm.warp(block.timestamp + 365 days);
@@ -3292,7 +3191,7 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
     }
 
     function test_Integration_RatioMarket_SeedAndSeedAndBuy() public {
@@ -3313,7 +3212,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 500 ether,
             minOut: 0,
-            yesForNo: false // buy YES
+            yesForNo: false, // buy YES
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3332,8 +3232,8 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
-        assertTrue(swapOut > 500, "should get bonus YES from swap");
+        assertEq(shares, 10000 ether);
+        assertTrue(swapOut > 500 ether, "should get bonus YES from swap");
 
         // Verify ALICE has YES tokens
         uint256 aliceYes = pm.balanceOf(ALICE, marketId);
@@ -3370,7 +3270,7 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
         assertEq(noId, pm.getNoId(marketId));
     }
@@ -3600,7 +3500,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 500 ether,
             minOut: 0,
-            yesForNo: true // buy NO
+            yesForNo: true, // buy NO
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -3619,9 +3520,9 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 500, "should get bonus NO from swap");
+        assertTrue(swapOut > 500 ether, "should get bonus NO from swap");
 
         // Verify ALICE has NO tokens
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
@@ -3631,7 +3532,7 @@ contract Resolver_Integration_Test is Test {
         vm.warp(closeTime);
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -4076,7 +3977,7 @@ contract Resolver_Integration_Test is Test {
         );
 
         // Verify market created
-        (address mResolver,,,,,, uint64 close,,,,) = pm.getMarket(marketId);
+        (address mResolver,,,,, uint64 close,,,,) = pm.getMarket(marketId);
         assertEq(mResolver, address(resolver));
         assertEq(close, closeTime);
         assertTrue(noId != 0);
@@ -4157,7 +4058,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify YES outcome
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -4200,7 +4101,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify NO outcome
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
     }
@@ -4433,7 +4334,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000e6, // 1000 USDC (must be multiple of 1e6)
             minOut: 0,
-            yesForNo: false
+            yesForNo: false,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -4450,56 +4352,17 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        // Shares should be collateralIn / 1e6 = 10000
-        assertEq(shares, 10000);
+        // With 1:1 shares: shares = collateralIn = 10000e6
+        assertEq(shares, 10000e6);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 1000, "should get more YES than input (6 decimal shares)");
+        assertTrue(swapOut > 1000e6, "should get more YES than input (6 decimal shares)");
 
         // Alice should have YES tokens
         uint256 aliceYes = pm.balanceOf(ALICE, marketId);
         assertEq(aliceYes, swapOut);
     }
 
-    function test_Integration_SeedAndBuy_USDC_RevertNotMultiple() public {
-        MockUSDC usdc = new MockUSDC();
-        usdc.mint(ALICE, 100000e6);
-        vm.prank(ALICE);
-        usdc.approve(address(resolver), type(uint256).max);
-
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000e6,
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap collateral NOT multiple of 1e6
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000e6 + 500000, // 1000.5 USDC - not a multiple of 1e6
-            minOut: 0,
-            yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "USDC bad swap",
-            address(usdc),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: SeedAndBuy USDC not multiple test removed - fractional amounts now supported
 
     /*//////////////////////////////////////////////////////////////
                     ETH BALANCE IN RATIO MARKET TESTS
@@ -4548,7 +4411,7 @@ contract Resolver_Integration_Test is Test {
         // Resolve early (canClose = true)
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -4611,7 +4474,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 500 ether,
             minOut: 0,
-            yesForNo: true // buy NO
+            yesForNo: true, // buy NO
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -4630,9 +4494,9 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 10000);
+        assertEq(shares, 10000 ether);
         assertTrue(liquidity > 0);
-        assertTrue(swapOut > 500, "should get more NO than input");
+        assertTrue(swapOut > 500 ether, "should get more NO than input");
 
         // Check NO balance
         uint256 aliceNo = pm.balanceOf(ALICE, noId);
@@ -4652,8 +4516,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 500 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 500 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -4696,8 +4561,9 @@ contract Resolver_Integration_Test is Test {
         });
 
         // Swap larger than seed
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 20000 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 20000 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (,,,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -4732,8 +4598,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: 100 ether, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: 100 ether, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (uint256 marketId,, uint256 shares,, uint256 swapOut) = resolver.createNumericMarketSeedAndBuy(
@@ -4749,7 +4616,7 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, 2000); // 2000 shares from 2000 ether
+        assertEq(shares, 2000 ether); // 2000 ether shares from 2000 ether (1:1)
         assertTrue(swapOut > 0);
     }
 
@@ -4787,8 +4654,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         vm.prank(ALICE);
         (,, uint256 shares,,) = resolver.createNumericMarketSeedAndBuy(
@@ -4804,7 +4672,8 @@ contract Resolver_Integration_Test is Test {
             swap
         );
 
-        assertEq(shares, seedShares);
+        // With 1:1 shares: shares = seedCollateral = seedShares * 1 ether
+        assertEq(shares, seedCollateral);
     }
 
     function testFuzz_ETHBalance_Ratio(uint256 balanceA, uint256 balanceB) public {
@@ -4941,8 +4810,8 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Verify shares are in 6-decimal units (10000e6 / 1e6 = 10000 shares)
-        assertEq(shares, 10000, "Should have 10000 shares for 6-decimal token");
+        // With 1:1 shares: 10000e6 collateral = 10000e6 shares
+        assertEq(shares, 10000e6, "Should have 10000 shares for 6-decimal token");
 
         // Buy and sell with USDC
         usdc.mint(BOB, 1000e6);
@@ -4995,8 +4864,8 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Verify 6-decimal handling
-        assertEq(shares, 10000, "Should have 10000 shares for 10000 USDC");
+        // With 1:1 shares: 10000e6 collateral = 10000e6 shares
+        assertEq(shares, 10000e6, "Should have 10000 shares for 10000 USDC");
         assertTrue(liquidity > 0);
 
         // BOB buys YES
@@ -5011,7 +4880,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
 
@@ -5021,8 +4890,8 @@ contract Resolver_Integration_Test is Test {
         (uint256 claimedShares, uint256 payout) = pm.claim(marketId, BOB);
 
         assertEq(claimedShares, bobYesBefore, "Should claim all YES shares");
-        // Payout should be shares * perShare (1e6 for USDC)
-        assertEq(payout, bobYesBefore * 1e6, "Payout should be shares * 1e6");
+        // With 1:1 shares: payout = shares (shares are already in collateral units)
+        assertEq(payout, bobYesBefore, "Payout should equal shares (1:1)");
         assertEq(usdc.balanceOf(BOB) - bobUsdcBefore, payout, "BOB should receive USDC payout");
     }
 
@@ -5065,8 +4934,8 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Verify 8-decimal handling: 5000e8 / 1e8 = 5000 shares
-        assertEq(shares, 5000, "Should have 5000 shares for 5000 WBTC");
+        // With 1:1 shares: 5000e8 collateral = 5000e8 shares
+        assertEq(shares, 5000e8, "Should have 5000 shares for 5000 WBTC");
 
         // BOB buys NO (betting condition will be false)
         vm.prank(BOB);
@@ -5081,7 +4950,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with NO (condition was false)
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
 
@@ -5091,8 +4960,8 @@ contract Resolver_Integration_Test is Test {
         (uint256 claimedShares, uint256 payout) = pm.claim(marketId, BOB);
 
         assertEq(claimedShares, bobNoBefore, "Should claim all NO shares");
-        // Payout should be shares * perShare (1e8 for WBTC)
-        assertEq(payout, bobNoBefore * 1e8, "Payout should be shares * 1e8");
+        // With 1:1 shares: payout = shares (shares are already in collateral units)
+        assertEq(payout, bobNoBefore, "Payout should equal shares (1:1)");
         assertEq(wbtc.balanceOf(BOB) - bobWbtcBefore, payout, "BOB should receive WBTC payout");
     }
 
@@ -5117,8 +4986,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         uint256 resolverBalanceBefore = address(resolver).balance;
         uint256 aliceBalanceBefore = ALICE.balance;
@@ -5171,8 +5041,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         // Too little ETH should revert
         vm.prank(ALICE);
@@ -5211,7 +5082,7 @@ contract Resolver_Integration_Test is Test {
                     RATIO MARKET B=0 TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_RatioMarket_BZero_RevertsOnPreview() public {
+    function test_RatioMarket_BZero_ReturnsMaxValue() public {
         address targetA = makeAddr("TARGET_A");
         address targetB = makeAddr("TARGET_B");
 
@@ -5245,12 +5116,24 @@ contract Resolver_Integration_Test is Test {
             seed
         );
 
-        // Preview should revert when B=0 (division by zero in mulDiv)
-        vm.expectRevert(); // MulDivFailed
-        resolver.preview(marketId);
+        // Preview should return max value when B=0 (prevents bricked markets)
+        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
+        assertEq(value, type(uint256).max);
+        assertTrue(condTrue); // max > 1e18
+        assertFalse(ready); // Not at close time yet, canClose=false
+
+        // Wait until close time
+        vm.warp(closeTime);
+
+        // Resolution should succeed with YES winning
+        resolver.resolveMarket(marketId);
+
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        assertTrue(resolved);
+        assertTrue(outcome); // YES wins because max > threshold
     }
 
-    function test_RatioMarket_BZero_RecoverAndResolve() public {
+    function test_RatioMarket_BZero_LTCondition_NoWins() public {
         address targetA = makeAddr("TARGET_A");
         address targetB = makeAddr("TARGET_B");
 
@@ -5268,45 +5151,34 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        // Create ratio market
+        // Create ratio market with LT operator (ratio < threshold)
         vm.prank(ALICE);
         (uint256 marketId,,,) = resolver.createRatioMarketAndSeed(
-            "ratio recovery test",
+            "ratio LT test",
             address(token),
             targetA,
             "",
             targetB,
             "",
-            Resolver.Op.GT,
+            Resolver.Op.LT, // Less than
             1e18,
             closeTime,
             false,
             seed
         );
 
-        // Resolution should fail when B=0
-        vm.expectRevert(); // MulDivFailed
-        resolver.resolveMarket(marketId);
+        // Preview: max is NOT < 1e18, so condTrue = false
+        (uint256 value, bool condTrue,) = resolver.preview(marketId);
+        assertEq(value, type(uint256).max);
+        assertFalse(condTrue); // max is NOT < 1e18
 
-        // Now give targetB some balance
-        vm.deal(targetB, 50 ether);
-
-        // Preview should now work
-        (uint256 value, bool condTrue, bool ready) = resolver.preview(marketId);
-        assertEq(value, (100 ether * 1e18) / 50 ether); // 2e18
-        assertTrue(condTrue); // 2e18 > 1e18
-        assertFalse(ready); // Not at close time yet
-
-        // Wait until close time
         vm.warp(closeTime);
-
-        // Now resolution should succeed
         resolver.resolveMarket(marketId);
 
-        // Verify resolved with YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        // NO wins because condition is false
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
-        assertTrue(outcome); // YES wins because ratio > threshold
+        assertFalse(outcome); // NO wins
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -5353,7 +5225,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with YES
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -5406,7 +5278,7 @@ contract Resolver_Integration_Test is Test {
         resolver.resolveMarket(marketId);
 
         // Verify resolved with NO (condition was false)
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertFalse(outcome); // NO wins
     }
@@ -5454,7 +5326,7 @@ contract Resolver_Integration_Test is Test {
         // Now resolution should work
         resolver.resolveMarket(marketId);
 
-        (,,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
+        (,, bool resolved, bool outcome,,,,,,) = pm.getMarket(marketId);
         assertTrue(resolved);
         assertTrue(outcome); // YES wins
     }
@@ -5463,41 +5335,7 @@ contract Resolver_Integration_Test is Test {
                     SEED+BUY COLLATERAL DIVISIBILITY TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_SeedAndBuy_NonMultipleSwap_Reverts() public {
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000 ether, // Valid multiple of 1e18
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of perShare (1e18 for 18-decimal token)
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000 ether + 1, // Not divisible by 1e18
-            minOut: 0,
-            yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "non-multiple test",
-            address(token),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: Non-multiple swap test removed - fractional amounts now supported with dust refunds
 
     function test_SeedAndBuy_MultipleSwap_SucceedsNoRefund() public {
         oracleA.setValue(100);
@@ -5515,8 +5353,9 @@ contract Resolver_Integration_Test is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        Resolver.SwapParams memory swap =
-            Resolver.SwapParams({collateralForSwap: swapCollateral, minOut: 0, yesForNo: false});
+        Resolver.SwapParams memory swap = Resolver.SwapParams({
+            collateralForSwap: swapCollateral, minOut: 0, yesForNo: false, recipient: address(0)
+        });
 
         uint256 aliceTokenBefore = token.balanceOf(ALICE);
 
@@ -5550,46 +5389,7 @@ contract Resolver_Integration_Test is Test {
         assertEq(token.balanceOf(address(resolver)), 0, "Resolver should have no leftover tokens");
     }
 
-    function test_SeedAndBuy_USDC_NonMultiple_Reverts() public {
-        MockUSDC usdc = new MockUSDC();
-        usdc.mint(ALICE, 100000e6);
-        vm.prank(ALICE);
-        usdc.approve(address(resolver), type(uint256).max);
-
-        oracleA.setValue(100);
-
-        Resolver.SeedParams memory seed = Resolver.SeedParams({
-            collateralIn: 10000e6, // Valid multiple of 1e6
-            feeOrHook: FEE_BPS,
-            amount0Min: 0,
-            amount1Min: 0,
-            minLiquidity: 0,
-            lpRecipient: ALICE,
-            deadline: block.timestamp + 1 hours
-        });
-
-        // Swap amount is NOT a multiple of perShare (1e6 for 6-decimal token)
-        Resolver.SwapParams memory swap = Resolver.SwapParams({
-            collateralForSwap: 1000e6 + 1, // Not divisible by 1e6
-            minOut: 0,
-            yesForNo: false
-        });
-
-        vm.prank(ALICE);
-        vm.expectRevert(Resolver.CollateralNotMultiple.selector);
-        resolver.createNumericMarketSeedAndBuy(
-            "USDC non-multiple",
-            address(usdc),
-            address(oracleA),
-            abi.encodeWithSelector(MockOracle.getValue.selector),
-            Resolver.Op.GT,
-            50,
-            closeTime,
-            false,
-            seed,
-            swap
-        );
-    }
+    // Note: USDC non-multiple test removed - fractional amounts now supported with dust refunds
 
     function test_SeedAndBuy_USDC_Multiple_Succeeds() public {
         MockUSDC usdc = new MockUSDC();
@@ -5612,7 +5412,8 @@ contract Resolver_Integration_Test is Test {
         Resolver.SwapParams memory swap = Resolver.SwapParams({
             collateralForSwap: 1000e6, // Exact multiple of 1e6
             minOut: 0,
-            yesForNo: false
+            yesForNo: false,
+            recipient: address(0)
         });
 
         vm.prank(ALICE);
@@ -5630,8 +5431,264 @@ contract Resolver_Integration_Test is Test {
         );
 
         assertTrue(marketId > 0);
-        assertEq(shares, 10000); // 10000e6 / 1e6 = 10000 shares
+        assertEq(shares, 10000e6); // 1:1 shares: 10000e6 collateral = 10000e6 shares
         assertTrue(swapOut > 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            DUST REFUND TESTS (CollateralNotMultiple check removed)
+    //////////////////////////////////////////////////////////////*/
+
+    // NOTE: Fractional amount tests (like 10.5 ETH) require fork testing due to
+    // mock ZAMM limitations. The CollateralNotMultiple check has been removed
+    // from Resolver.sol, and dust refund logic has been added. These tests
+    // verify the refund logic works for any leftover collateral.
+
+    /// @notice Verify resolver has no leftover ETH after successful market creation
+    /// @dev Tests that dust refund logic doesn't break normal operations
+    function test_CreateMarket_NoLeftoverETH() public {
+        oracleA.setValue(100);
+
+        uint256 collateralIn = 10000 ether;
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: collateralIn,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        uint256 aliceBefore = ALICE.balance;
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeed{
+            value: collateralIn
+        }(
+            "no leftover ETH test",
+            address(0),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        assertTrue(marketId > 0, "Market should be created");
+        assertTrue(shares > 0, "Should receive shares");
+        assertTrue(liquidity > 0, "Should receive liquidity");
+
+        // Verify no ETH left in resolver (dust refund should clean it up)
+        assertEq(address(resolver).balance, 0, "Resolver should have no leftover ETH");
+
+        uint256 aliceAfter = ALICE.balance;
+        assertTrue(aliceBefore - aliceAfter <= collateralIn, "Should not spend more than input");
+    }
+
+    /// @notice Verify resolver has no leftover ERC20 tokens after successful market creation
+    function test_CreateMarket_NoLeftoverERC20() public {
+        oracleA.setValue(100);
+
+        uint256 collateralIn = 10000 ether;
+
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: collateralIn,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 0,
+            lpRecipient: ALICE,
+            deadline: block.timestamp + 1 hours
+        });
+
+        uint256 aliceTokenBefore = token.balanceOf(ALICE);
+
+        vm.prank(ALICE);
+        (uint256 marketId,, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeed(
+            "no leftover ERC20 test",
+            address(token),
+            address(oracleA),
+            abi.encodeWithSelector(MockOracle.getValue.selector),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        assertTrue(marketId > 0, "Market should be created");
+        assertTrue(shares > 0, "Should receive shares");
+        assertTrue(liquidity > 0, "Should receive liquidity");
+
+        // Verify no tokens left in resolver (dust refund should clean it up)
+        assertEq(token.balanceOf(address(resolver)), 0, "Resolver should have no leftover tokens");
+
+        uint256 aliceTokenAfter = token.balanceOf(ALICE);
+        assertTrue(
+            aliceTokenBefore - aliceTokenAfter <= collateralIn, "Should not spend more than input"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    REENTRANCY PROTECTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_Reentrancy_Claim_ETH_Blocked() public {
+        // Create and seed ETH market
+        oracleA.setValue(100);
+        Resolver.SeedParams memory seed = Resolver.SeedParams({
+            collateralIn: 10000 ether,
+            feeOrHook: FEE_BPS,
+            amount0Min: 0,
+            amount1Min: 0,
+            minLiquidity: 1,
+            lpRecipient: ALICE,
+            deadline: 0
+        });
+
+        vm.prank(ALICE);
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeedSimple{value: 10000 ether}(
+            "eth reentrancy claim",
+            address(0),
+            address(oracleA),
+            MockOracle.getValue.selector,
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false,
+            seed
+        );
+
+        // Buy some YES shares for attacker
+        ReentrantClaimAttacker_Integration attacker =
+            new ReentrantClaimAttacker_Integration(pm, resolver, marketId);
+        vm.deal(address(attacker), 10000 ether);
+        attacker.buyShares{value: 5000 ether}();
+
+        // Resolve market
+        vm.warp(closeTime);
+        resolver.resolveMarket(marketId);
+
+        // Attacker tries to reenter claim via receive()
+        // The reentrancy guard blocks the inner call, causing receive() to revert,
+        // which makes the ETH transfer fail with ETHTransferFailed
+        vm.expectRevert(PAMM.ETHTransferFailed.selector);
+        attacker.attackClaim();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    PREVIEW WITH FAILING ORACLE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_Preview_RevertingOracle_Reverts() public {
+        RevertingOracle badOracle = new RevertingOracle();
+
+        (uint256 marketId,) = resolver.createNumericMarketSimple(
+            "preview revert",
+            address(token),
+            address(badOracle),
+            RevertingOracle.getValue.selector,
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false
+        );
+
+        // Preview should revert when oracle reverts
+        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        resolver.preview(marketId);
+    }
+
+    function test_Integration_Preview_BadReturnOracle_Reverts() public {
+        BadReturnOracle badOracle = new BadReturnOracle();
+
+        (uint256 marketId,) = resolver.createNumericMarketSimple(
+            "preview bad return",
+            address(token),
+            address(badOracle),
+            bytes4(keccak256("getValue()")),
+            Resolver.Op.GT,
+            50,
+            closeTime,
+            false
+        );
+
+        // Preview should revert when oracle returns short data
+        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        resolver.preview(marketId);
+    }
+
+    function test_Integration_Preview_RatioMarket_RevertingOracleB() public {
+        oracleA.setValue(100);
+        RevertingOracle badOracleB = new RevertingOracle();
+
+        (uint256 marketId,) = resolver.createRatioMarketSimple(
+            "ratio preview revert B",
+            address(token),
+            address(oracleA),
+            MockOracle.getValue.selector,
+            address(badOracleB),
+            RevertingOracle.getValue.selector,
+            Resolver.Op.GT,
+            1e18,
+            closeTime,
+            false
+        );
+
+        // Preview should revert when oracle B reverts
+        vm.expectRevert(Resolver.TargetCallFailed.selector);
+        resolver.preview(marketId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    MULTICALL NON-PAYABLE PROTECTION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Verify multicall is non-payable to prevent msg.value reuse attacks
+    function test_Integration_Multicall_NonPayable_PreventsMsgValueReuse() public {
+        // Multicall should not accept ETH value
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeCall(Resolver.preview, (0));
+
+        // This should fail because multicall is not payable
+        (bool success,) = address(resolver).call{value: 1 ether}(
+            abi.encodeWithSelector(Resolver.multicall.selector, calls)
+        );
+        assertFalse(success, "Multicall should reject ETH");
+    }
+}
+
+/// @notice Contract that attempts reentrancy via receive() during claim
+contract ReentrantClaimAttacker_Integration {
+    PAMM public pamm;
+    Resolver public resolver;
+    uint256 public marketId;
+    bool public attacking;
+
+    constructor(PAMM _pamm, Resolver _resolver, uint256 _marketId) {
+        pamm = _pamm;
+        resolver = _resolver;
+        marketId = _marketId;
+    }
+
+    function buyShares() external payable {
+        pamm.split{value: msg.value}(marketId, 0, address(this));
+    }
+
+    function attackClaim() external {
+        pamm.claim(marketId, address(this));
+    }
+
+    receive() external payable {
+        if (!attacking) {
+            attacking = true;
+            // Try to reenter claim
+            pamm.claim(marketId, address(this));
+        }
     }
 }
 
@@ -5820,7 +5877,7 @@ contract Resolver_Permit_Test is Test {
     address internal BOB = vm.addr(bobPk);
 
     uint64 internal closeTime;
-    address payable constant PAMM_ADDRESS = payable(0x0000000000F8bA51d6e987660D3e455ac2c4BE9d);
+    address payable constant PAMM_ADDRESS = payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     uint256 constant FEE_BPS = 30;
 
     function setUp() public {

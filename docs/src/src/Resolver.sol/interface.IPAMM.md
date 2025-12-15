@@ -1,5 +1,5 @@
 # IPAMM
-[Git Source](https://github.com/zammdefi/pm/blob/006ba95d7cfd5dfbd631c3f6ce5b2bedefc25ed2/src/Resolver.sol)
+[Git Source](https://github.com/zammdefi/pm/blob/fd85de4cbb2d992be3173c764eca542e83197ee2/src/Resolver.sol)
 
 
 ## Functions
@@ -86,7 +86,6 @@ function getMarket(uint256 marketId)
     returns (
         address resolver,
         address collateral,
-        uint8 decimals,
         bool resolved,
         bool outcome,
         bool canClose,

@@ -11,8 +11,8 @@ contract GasPM {
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    address public constant PAMM = 0x0000000000F8bA51d6e987660D3e455ac2c4BE9d;
-    address payable public constant RESOLVER = payable(0x0000000000b0ba1b2bb3AF96FbB893d835970ec4);
+    address public constant PAMM = 0x000000000044bfe6c2BBFeD8862973E0612f07C0;
+    address payable public constant RESOLVER = payable(0x00000000002205020E387b6a378c05639047BcFB);
 
     // Resolver comparison operators
     uint8 internal constant OP_LTE = 2;
@@ -31,6 +31,26 @@ contract GasPM {
     uint8 internal constant MARKET_TYPE_COMPARISON = 11;
 
     /*//////////////////////////////////////////////////////////////
+                              REENTRANCY
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd2126a;
+
+    modifier nonReentrant() {
+        assembly ("memory-safe") {
+            if tload(REENTRANCY_SLOT) {
+                mstore(0x00, 0xab143c06) // Reentrancy()
+                revert(0x1c, 0x04)
+            }
+            tstore(REENTRANCY_SLOT, 1)
+        }
+        _;
+        assembly ("memory-safe") {
+            tstore(REENTRANCY_SLOT, 0)
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
                               TWAP STORAGE
     //////////////////////////////////////////////////////////////*/
 
@@ -40,6 +60,18 @@ contract GasPM {
     uint64 public startTime;
     uint128 public maxBaseFee;
     uint128 public minBaseFee;
+
+    /*//////////////////////////////////////////////////////////////
+                         OBSERVATION STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Historical observation for time-series data. Stores spot + cumulative for charts & TWAP.
+    struct Observation {
+        uint64 timestamp;
+        uint64 baseFee;
+        uint128 cumulativeBaseFee;
+    }
+    Observation[] public observations;
 
     /*//////////////////////////////////////////////////////////////
                             REWARD STORAGE
@@ -64,8 +96,8 @@ contract GasPM {
     }
     mapping(uint256 => Snapshot) public marketSnapshots;
 
-    /// @dev Per-market max/min tracking for window volatility/stability markets.
-    ///      Updated via pokeWindowVolatility() to track spread during the market window.
+    /// @dev Per-market max/min tracking for window peak/trough/volatility/stability markets.
+    ///      Updated via pokeWindowVolatility() to track extremes during the market window.
     struct WindowSpread {
         uint128 windowMax;
         uint128 windowMin;
@@ -93,6 +125,7 @@ contract GasPM {
         uint256 collateralForSwap;
         uint256 minOut;
         bool yesForNo; // true = buyNo (swap yes for no), false = buyYes (swap no for yes)
+        address recipient; // recipient of swapped shares (use address(0) for msg.sender)
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -100,7 +133,11 @@ contract GasPM {
     //////////////////////////////////////////////////////////////*/
 
     event Updated(
-        uint256 baseFee, uint256 cumulativeBaseFee, address indexed updater, uint256 reward
+        uint64 indexed timestamp,
+        uint256 baseFee,
+        uint256 cumulativeBaseFee,
+        address indexed updater,
+        uint256 reward
     );
     event MarketCreated(
         uint256 indexed marketId,
@@ -119,13 +156,19 @@ contract GasPM {
     //////////////////////////////////////////////////////////////*/
 
     error InvalidOp();
+    error Reentrancy();
     error InvalidClose();
     error Unauthorized();
+    error ApproveFailed();
+    error TransferFailed();
     error AlreadyExceeded();
     error InvalidCooldown();
     error InvalidThreshold();
     error InvalidETHAmount();
+    error MarketIdMismatch();
+    error ETHTransferFailed();
     error ResolverCallFailed();
+    error TransferFromFailed();
     error AlreadyBelowThreshold();
 
     /*//////////////////////////////////////////////////////////////
@@ -156,6 +199,8 @@ contract GasPM {
         lastBaseFee = block.basefee;
         maxBaseFee = uint128(block.basefee);
         minBaseFee = uint128(block.basefee);
+        // Initial observation at deployment
+        observations.push(Observation(uint64(block.timestamp), uint64(block.basefee), 0));
     }
 
     receive() external payable {}
@@ -175,6 +220,11 @@ contract GasPM {
         lastBaseFee = basefee;
         lastUpdateTime = uint64(block.timestamp);
 
+        // Store observation for time-series queries
+        observations.push(
+            Observation(uint64(block.timestamp), uint64(basefee), uint128(cumulativeBaseFee))
+        );
+
         // Track peak/trough
         if (basefee > maxBaseFee) maxBaseFee = uint128(basefee);
         if (basefee < minBaseFee) minBaseFee = uint128(basefee);
@@ -185,7 +235,7 @@ contract GasPM {
             _safeTransferETH(msg.sender, reward);
         }
 
-        emit Updated(basefee, cumulativeBaseFee, msg.sender, reward);
+        emit Updated(uint64(block.timestamp), basefee, cumulativeBaseFee, msg.sender, reward);
     }
 
     /// @notice TWAP since deployment in wei.
@@ -197,40 +247,25 @@ contract GasPM {
         return cumulative / totalTime;
     }
 
-    /// @notice TWAP since deployment in gwei.
-    function baseFeeAverageGwei() public view returns (uint256) {
-        return baseFeeAverage() / 1 gwei;
-    }
-
     /// @notice Current spot base fee in wei.
     function baseFeeCurrent() public view returns (uint256) {
         return block.basefee;
     }
 
-    /// @notice Current spot base fee in gwei.
-    function baseFeeCurrentGwei() public view returns (uint256) {
-        return block.basefee / 1 gwei;
-    }
-
-    /// @notice Seconds since oracle started.
-    function trackingDuration() public view returns (uint256) {
-        return block.timestamp - startTime;
-    }
-
     /// @notice Returns 1 if TWAP is within [lower, upper], 0 otherwise.
     /// @param lower Lower bound in wei (inclusive)
     /// @param upper Upper bound in wei (inclusive)
-    function baseFeeInRange(uint256 lower, uint256 upper) public view returns (uint256) {
+    function baseFeeInRange(uint256 lower, uint256 upper) public view returns (uint256 r) {
         uint256 avg = baseFeeAverage();
-        return (avg >= lower && avg <= upper) ? 1 : 0;
+        assembly ("memory-safe") { r := and(iszero(lt(avg, lower)), iszero(gt(avg, upper))) }
     }
 
     /// @notice Returns 1 if TWAP is outside (lower, upper), 0 otherwise.
     /// @param lower Lower bound in wei
     /// @param upper Upper bound in wei
-    function baseFeeOutOfRange(uint256 lower, uint256 upper) public view returns (uint256) {
+    function baseFeeOutOfRange(uint256 lower, uint256 upper) public view returns (uint256 r) {
         uint256 avg = baseFeeAverage();
-        return (avg < lower || avg > upper) ? 1 : 0;
+        assembly ("memory-safe") { r := or(lt(avg, lower), gt(avg, upper)) }
     }
 
     /// @notice Highest base fee recorded since deployment (wei). Updated via update().
@@ -270,10 +305,10 @@ contract GasPM {
     function baseFeeInRangeSince(uint256 marketId, uint256 lower, uint256 upper)
         public
         view
-        returns (uint256)
+        returns (uint256 r)
     {
         uint256 avg = baseFeeAverageSince(marketId);
-        return (avg >= lower && avg <= upper) ? 1 : 0;
+        assembly ("memory-safe") { r := and(iszero(lt(avg, lower)), iszero(gt(avg, upper))) }
     }
 
     /// @notice Returns 1 if window TWAP is outside (lower, upper), 0 otherwise.
@@ -283,10 +318,10 @@ contract GasPM {
     function baseFeeOutOfRangeSince(uint256 marketId, uint256 lower, uint256 upper)
         public
         view
-        returns (uint256)
+        returns (uint256 r)
     {
         uint256 avg = baseFeeAverageSince(marketId);
-        return (avg < lower || avg > upper) ? 1 : 0;
+        assembly ("memory-safe") { r := or(lt(avg, lower), gt(avg, upper)) }
     }
 
     /// @notice Absolute spread (max - min) during the market window.
@@ -294,11 +329,29 @@ contract GasPM {
     /// @param marketId The market ID to get the window spread for
     function baseFeeSpreadSince(uint256 marketId) public view returns (uint256) {
         WindowSpread memory ws = windowSpreads[marketId];
-        if (ws.windowMax == 0 && ws.windowMin == 0) return baseFeeSpread();
+        if (ws.windowMax == 0) return baseFeeSpread(); // Uninitialized market
         // Include current basefee in spread calculation for accuracy without requiring poke
         uint256 currentMax = block.basefee > ws.windowMax ? block.basefee : ws.windowMax;
         uint256 currentMin = block.basefee < ws.windowMin ? block.basefee : ws.windowMin;
         return currentMax - currentMin;
+    }
+
+    /// @notice Maximum base fee during the market window.
+    /// @dev Includes current basefee for real-time accuracy without requiring poke.
+    /// @param marketId The window market ID
+    function baseFeeMaxSince(uint256 marketId) public view returns (uint256 m) {
+        m = windowSpreads[marketId].windowMax;
+        if (m == 0) return block.basefee; // Uninitialized market
+        if (block.basefee > m) m = block.basefee;
+    }
+
+    /// @notice Minimum base fee during the market window.
+    /// @dev Includes current basefee for real-time accuracy without requiring poke.
+    /// @param marketId The window market ID
+    function baseFeeMinSince(uint256 marketId) public view returns (uint256 m) {
+        if (windowSpreads[marketId].windowMax == 0) return block.basefee;
+        m = windowSpreads[marketId].windowMin;
+        if (block.basefee < m) m = block.basefee;
     }
 
     /// @notice Returns 1 if current TWAP > starting TWAP, 0 otherwise.
@@ -315,7 +368,7 @@ contract GasPM {
     /// @param marketId The market ID to update
     function pokeWindowVolatility(uint256 marketId) public {
         WindowSpread storage ws = windowSpreads[marketId];
-        if (ws.windowMax == 0 && ws.windowMin == 0) return; // Not a window volatility market
+        if (ws.windowMax == 0) return; // Not a window market
         uint128 current = uint128(block.basefee);
         if (current > ws.windowMax) ws.windowMax = current;
         if (current < ws.windowMin) ws.windowMin = current;
@@ -327,9 +380,36 @@ contract GasPM {
         uint128 current = uint128(block.basefee);
         for (uint256 i; i < marketIds.length; ++i) {
             WindowSpread storage ws = windowSpreads[marketIds[i]];
-            if (ws.windowMax == 0 && ws.windowMin == 0) continue;
+            if (ws.windowMax == 0) continue; // Not a window market
             if (current > ws.windowMax) ws.windowMax = current;
             if (current < ws.windowMin) ws.windowMin = current;
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         OBSERVATION VIEWS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Total number of stored observations.
+    function observationCount() public view returns (uint256) {
+        return observations.length;
+    }
+
+    /// @notice Batch fetch observations for time-series graphs.
+    function getObservations(uint256 start, uint256 count)
+        public
+        view
+        returns (Observation[] memory obs)
+    {
+        unchecked {
+            uint256 len = observations.length;
+            if (start >= len) return obs;
+            uint256 end = start + count;
+            if (end > len) end = len;
+            obs = new Observation[](end - start);
+            for (uint256 i = start; i != end; ++i) {
+                obs[i - start] = observations[i];
+            }
         }
     }
 
@@ -357,11 +437,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
         if (op != OP_LTE && op != OP_GTE) revert InvalidOp();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -382,6 +466,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
     }
 
@@ -402,16 +488,23 @@ contract GasPM {
         uint8 op,
         SeedParams calldata seed,
         SwapParams calldata swap
-    ) public payable canCreate returns (uint256 marketId, uint256 swapOut) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
         if (op != OP_LTE && op != OP_GTE) revert InvalidOp();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         uint256 ethValue = _handleCollateral(collateral, seed.collateralIn + swap.collateralForSwap);
+
+        // Ensure recipient is set to caller if not specified
+        address recipient = swap.recipient == address(0) ? msg.sender : swap.recipient;
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
             abi.encodeWithSignature(
-                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool))",
+                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool,address))",
                 _buildObservable(threshold, op),
                 collateral,
                 address(this),
@@ -421,13 +514,15 @@ contract GasPM {
                 close,
                 canClose,
                 seed,
-                swap
+                SwapParams(swap.collateralForSwap, swap.minOut, swap.yesForNo, recipient)
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
 
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
     }
@@ -452,13 +547,16 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (lower == 0 || upper == 0) revert InvalidThreshold();
         if (lower >= upper) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildRangeObservable(lower, upper);
-
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -479,6 +577,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
 
@@ -498,17 +598,24 @@ contract GasPM {
         bool canClose,
         SeedParams calldata seed,
         SwapParams calldata swap
-    ) public payable canCreate returns (uint256 marketId, uint256 swapOut) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut) {
         if (lower == 0 || upper == 0) revert InvalidThreshold();
         if (lower >= upper) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildRangeObservable(lower, upper);
         uint256 ethValue = _handleCollateral(collateral, seed.collateralIn + swap.collateralForSwap);
 
+        // Ensure recipient is set to caller if not specified
+        address recipient = swap.recipient == address(0) ? msg.sender : swap.recipient;
+
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
             abi.encodeWithSignature(
-                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool))",
+                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool,address))",
                 observable,
                 collateral,
                 address(this),
@@ -518,13 +625,15 @@ contract GasPM {
                 close,
                 canClose,
                 seed,
-                swap
+                SwapParams(swap.collateralForSwap, swap.minOut, swap.yesForNo, recipient)
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
         (marketId,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
 
@@ -548,13 +657,16 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (lower == 0 || upper == 0) revert InvalidThreshold();
         if (lower >= upper) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildBreakoutObservable(lower, upper);
-
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -575,6 +687,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_BREAKOUT);
     }
 
@@ -596,12 +710,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildPeakObservable(threshold);
-
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -622,6 +739,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_PEAK);
     }
 
@@ -643,12 +762,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildTroughObservable(threshold);
-
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -669,6 +791,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_TROUGH);
     }
 
@@ -690,12 +814,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildVolatilityObservable(threshold);
-
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -716,6 +843,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_VOLATILITY);
     }
 
@@ -737,12 +866,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildStabilityObservable(threshold);
-
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -763,6 +895,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_STABILITY);
     }
 
@@ -785,12 +919,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildSpotObservable(threshold);
-
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
@@ -811,6 +948,8 @@ contract GasPM {
         (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_SPOT);
     }
 
@@ -829,9 +968,13 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         uint256 startTwap = baseFeeAverage();
         string memory observable = _buildComparisonObservable(startTwap);
 
@@ -855,8 +998,11 @@ contract GasPM {
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, startTwap, 0, close, false, MARKET_TYPE_COMPARISON);
     }
 
@@ -884,11 +1030,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
         if (op != OP_LTE && op != OP_GTE) revert InvalidOp();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowObservable(threshold, op);
         marketId = _computeMarketId(observable, collateral, op, threshold, close, canClose);
         _snapshotForMarket(marketId);
@@ -910,8 +1060,11 @@ contract GasPM {
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
     }
 
@@ -931,20 +1084,27 @@ contract GasPM {
         uint8 op,
         SeedParams calldata seed,
         SwapParams calldata swap
-    ) public payable canCreate returns (uint256 marketId, uint256 swapOut) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
         if (op != OP_LTE && op != OP_GTE) revert InvalidOp();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowObservable(threshold, op);
         marketId = _computeMarketId(observable, collateral, op, threshold, close, canClose);
         _snapshotForMarket(marketId);
 
         uint256 ethValue = _handleCollateral(collateral, seed.collateralIn + swap.collateralForSwap);
 
+        // Ensure recipient is set to caller if not specified
+        address recipient = swap.recipient == address(0) ? msg.sender : swap.recipient;
+
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
             abi.encodeWithSignature(
-                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool))",
+                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool,address))",
                 observable,
                 collateral,
                 address(this),
@@ -954,13 +1114,15 @@ contract GasPM {
                 close,
                 canClose,
                 seed,
-                swap
+                SwapParams(swap.collateralForSwap, swap.minOut, swap.yesForNo, recipient)
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
-        (,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
+        swapOut = _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, op);
     }
 
@@ -984,11 +1146,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (lower == 0 || upper == 0) revert InvalidThreshold();
         if (lower >= upper) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowRangeObservable(lower, upper);
         marketId = _computeMarketId(observable, collateral, OP_EQ, 1, close, canClose);
         _snapshotForMarket(marketId);
@@ -1010,8 +1176,11 @@ contract GasPM {
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
 
@@ -1031,20 +1200,27 @@ contract GasPM {
         bool canClose,
         SeedParams calldata seed,
         SwapParams calldata swap
-    ) public payable canCreate returns (uint256 marketId, uint256 swapOut) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId, uint256 swapOut) {
         if (lower == 0 || upper == 0) revert InvalidThreshold();
         if (lower >= upper) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowRangeObservable(lower, upper);
         marketId = _computeMarketId(observable, collateral, OP_EQ, 1, close, canClose);
         _snapshotForMarket(marketId);
 
         uint256 ethValue = _handleCollateral(collateral, seed.collateralIn + swap.collateralForSwap);
 
+        // Ensure recipient is set to caller if not specified
+        address recipient = swap.recipient == address(0) ? msg.sender : swap.recipient;
+
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
             abi.encodeWithSignature(
-                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool))",
+                "createNumericMarketSeedAndBuy(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256),(uint256,uint256,bool,address))",
                 observable,
                 collateral,
                 address(this),
@@ -1054,13 +1230,15 @@ contract GasPM {
                 close,
                 canClose,
                 seed,
-                swap
+                SwapParams(swap.collateralForSwap, swap.minOut, swap.yesForNo, recipient)
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
-        (,,,, swapOut) = abi.decode(ret, (uint256, uint256, uint256, uint256, uint256));
+        swapOut = _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_RANGE);
     }
 
@@ -1084,11 +1262,15 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (lower == 0 || upper == 0) revert InvalidThreshold();
         if (lower >= upper) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowBreakoutObservable(lower, upper);
         marketId = _computeMarketId(observable, collateral, OP_EQ, 1, close, canClose);
         _snapshotForMarket(marketId);
@@ -1110,17 +1292,20 @@ contract GasPM {
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, lower, upper, close, canClose, MARKET_TYPE_BREAKOUT);
     }
 
     /// @notice Create window peak market: "Will gas spike to X DURING THIS MARKET?"
-    /// @dev Reverts if threshold already exceeded (maxBaseFee >= threshold).
-    /// @param threshold Target peak in wei (must be > current maxBaseFee)
+    /// @dev Reverts if threshold already reached (current basefee >= threshold).
+    ///      Always enables early close since peaks should resolve when the spike occurs.
+    /// @param threshold Target peak in wei (must be > current basefee)
     /// @param collateral Token (address(0) for ETH)
     /// @param close Resolution timestamp
-    /// @param canClose If true, resolves early when threshold reached
     /// @param collateralIn Liquidity seed amount
     /// @param feeOrHook Pool fee tier
     /// @param minLiquidity Min LP tokens
@@ -1129,48 +1314,59 @@ contract GasPM {
         uint256 threshold,
         address collateral,
         uint64 close,
-        bool canClose,
         uint256 collateralIn,
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
-        update();
-        if (maxBaseFee >= threshold) revert AlreadyExceeded();
-
+        update(); // May pay reward, so compute escrow after
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowPeakObservable(threshold);
+        marketId = _computeMarketId(observable, collateral, OP_GTE, threshold, close, true);
+        uint128 current = uint128(block.basefee);
+        if (current >= threshold) revert AlreadyExceeded();
+        // windowMax = max(1, current) to distinguish from uninitialized (0)
+        uint128 maxVal;
+        assembly ("memory-safe") { maxVal := or(current, iszero(current)) }
+        windowSpreads[marketId] = WindowSpread(maxVal, current);
+
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
             abi.encodeWithSignature(
-                "createNumericMarketAndSeedSimple(string,address,address,bytes4,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256))",
+                "createNumericMarketAndSeed(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256))",
                 observable,
                 collateral,
                 address(this),
-                this.baseFeeMax.selector,
+                abi.encodeCall(this.baseFeeMaxSince, (marketId)),
                 OP_GTE,
                 threshold,
                 close,
-                canClose,
+                true,
                 SeedParams(collateralIn, feeOrHook, 0, 0, minLiquidity, lpRecipient, 0)
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
-        (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
-        emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_PEAK);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
+        emit MarketCreated(marketId, threshold, 0, close, true, MARKET_TYPE_PEAK);
     }
 
     /// @notice Create window trough market: "Will gas dip to X DURING THIS MARKET?"
-    /// @dev Reverts if threshold already reached (minBaseFee <= threshold).
-    /// @param threshold Target trough in wei (must be < current minBaseFee)
+    /// @dev Reverts if threshold already reached (current basefee <= threshold).
+    ///      Always enables early close since troughs should resolve when the dip occurs.
+    /// @param threshold Target trough in wei (must be < current basefee)
     /// @param collateral Token (address(0) for ETH)
     /// @param close Resolution timestamp
-    /// @param canClose If true, resolves early when threshold reached
     /// @param collateralIn Liquidity seed amount
     /// @param feeOrHook Pool fee tier
     /// @param minLiquidity Min LP tokens
@@ -1179,49 +1375,60 @@ contract GasPM {
         uint256 threshold,
         address collateral,
         uint64 close,
-        bool canClose,
         uint256 collateralIn,
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
-        update();
-        if (minBaseFee <= threshold) revert AlreadyBelowThreshold();
-
+        update(); // May pay reward, so compute escrow after
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowTroughObservable(threshold);
+        marketId = _computeMarketId(observable, collateral, OP_LTE, threshold, close, true);
+        uint128 current = uint128(block.basefee);
+        if (current <= threshold) revert AlreadyBelowThreshold();
+        // windowMax = max(1, current) to distinguish from uninitialized (0)
+        uint128 maxVal;
+        assembly ("memory-safe") { maxVal := or(current, iszero(current)) }
+        windowSpreads[marketId] = WindowSpread(maxVal, current);
+
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
         (bool ok, bytes memory ret) = RESOLVER.call{value: ethValue}(
             abi.encodeWithSignature(
-                "createNumericMarketAndSeedSimple(string,address,address,bytes4,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256))",
+                "createNumericMarketAndSeed(string,address,address,bytes,uint8,uint256,uint64,bool,(uint256,uint256,uint256,uint256,uint256,address,uint256))",
                 observable,
                 collateral,
                 address(this),
-                this.baseFeeMin.selector,
+                abi.encodeCall(this.baseFeeMinSince, (marketId)),
                 OP_LTE,
                 threshold,
                 close,
-                canClose,
+                true,
                 SeedParams(collateralIn, feeOrHook, 0, 0, minLiquidity, lpRecipient, 0)
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
-        (marketId,,,) = abi.decode(ret, (uint256, uint256, uint256, uint256));
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
-        emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_TROUGH);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
+        emit MarketCreated(marketId, threshold, 0, close, true, MARKET_TYPE_TROUGH);
     }
 
     /// @notice Create window volatility market: "Will gas spread exceed X DURING THIS MARKET?"
     /// @dev Tracks absolute spread (max - min) during the market window.
     ///      Call pokeWindowVolatility() periodically to capture extremes between blocks.
+    ///      Always enables early close since volatility should resolve when spread is reached.
     /// @param threshold Target spread in wei
     /// @param collateral Token (address(0) for ETH)
     /// @param close Resolution timestamp
-    /// @param canClose If true, resolves early when spread reached
     /// @param collateralIn Liquidity seed amount
     /// @param feeOrHook Pool fee tier
     /// @param minLiquidity Min LP tokens
@@ -1230,20 +1437,26 @@ contract GasPM {
         uint256 threshold,
         address collateral,
         uint64 close,
-        bool canClose,
         uint256 collateralIn,
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
-        update();
+        update(); // May pay reward, so compute escrow after
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowVolatilityObservable(threshold);
-        marketId = _computeMarketId(observable, collateral, OP_GTE, threshold, close, canClose);
+        marketId = _computeMarketId(observable, collateral, OP_GTE, threshold, close, true);
         uint128 current = uint128(block.basefee);
-        windowSpreads[marketId] = WindowSpread(current, current);
+        // windowMax = max(1, current) to distinguish from uninitialized (0)
+        uint128 maxVal;
+        assembly ("memory-safe") { maxVal := or(current, iszero(current)) }
+        windowSpreads[marketId] = WindowSpread(maxVal, current);
 
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
@@ -1257,14 +1470,17 @@ contract GasPM {
                 OP_GTE,
                 threshold,
                 close,
-                canClose,
+                true,
                 SeedParams(collateralIn, feeOrHook, 0, 0, minLiquidity, lpRecipient, 0)
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
-        emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_VOLATILITY);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
+        emit MarketCreated(marketId, threshold, 0, close, true, MARKET_TYPE_VOLATILITY);
     }
 
     /// @notice Create window stability market: "Will gas spread stay below X DURING THIS MARKET?"
@@ -1287,15 +1503,22 @@ contract GasPM {
         uint256 feeOrHook,
         uint256 minLiquidity,
         address lpRecipient
-    ) public payable canCreate returns (uint256 marketId) {
+    ) public payable canCreate nonReentrant returns (uint256 marketId) {
         if (threshold == 0) revert InvalidThreshold();
         if (close <= block.timestamp) revert InvalidClose();
 
-        update();
+        update(); // May pay reward, so compute escrow after
+        uint256 escrow;
+        unchecked {
+            escrow = address(this).balance - msg.value;
+        }
         string memory observable = _buildWindowStabilityObservable(threshold);
         marketId = _computeMarketId(observable, collateral, OP_LTE, threshold, close, canClose);
         uint128 current = uint128(block.basefee);
-        windowSpreads[marketId] = WindowSpread(current, current);
+        // windowMax = max(1, current) to distinguish from uninitialized (0)
+        uint128 maxVal;
+        assembly ("memory-safe") { maxVal := or(current, iszero(current)) }
+        windowSpreads[marketId] = WindowSpread(maxVal, current);
 
         uint256 ethValue = _handleCollateral(collateral, collateralIn);
 
@@ -1314,8 +1537,11 @@ contract GasPM {
             )
         );
         if (!ok || ret.length == 0) revert ResolverCallFailed();
+        _verifyMarketId(ret, marketId);
 
         _registerMarket(marketId);
+        _refundDust(collateral, escrow);
+        _flushLeftoverShares(marketId);
         emit MarketCreated(marketId, threshold, 0, close, canClose, MARKET_TYPE_STABILITY);
     }
 
@@ -1371,21 +1597,9 @@ contract GasPM {
                 RESOLVER.staticcall(abi.encodeWithSignature("preview(uint256)", mid));
 
             if (ok1 && ok2) {
-                (,,, bool resolved, bool outcome,, uint64 close,,,,) = abi.decode(
+                (,, bool resolved, bool outcome,, uint64 close,,,,) = abi.decode(
                     data1,
-                    (
-                        address,
-                        address,
-                        uint8,
-                        bool,
-                        bool,
-                        bool,
-                        uint64,
-                        uint256,
-                        uint256,
-                        uint256,
-                        string
-                    )
+                    (address, address, bool, bool, bool, uint64, uint256, uint256, uint256, string)
                 );
                 (uint256 value, bool condTrue, bool ready) =
                     abi.decode(data2, (uint256, bool, bool));
@@ -1460,7 +1674,7 @@ contract GasPM {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public {
+    ) public nonReentrant {
         assembly ("memory-safe") {
             // token.permit(owner_, address(this), value, deadline, v, r, s)
             let m := mload(0x40)
@@ -1489,7 +1703,7 @@ contract GasPM {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public {
+    ) public nonReentrant {
         assembly ("memory-safe") {
             // token.permit(owner_, address(this), nonce, deadline, allowed, v, r, s)
             let m := mload(0x40)
@@ -1544,6 +1758,109 @@ contract GasPM {
         }
     }
 
+    /// @dev Transfers ERC20 tokens using transfer (not transferFrom), reverts on failure.
+    function _safeTransfer(address token, address to, uint256 amount) internal {
+        assembly ("memory-safe") {
+            mstore(0x14, to)
+            mstore(0x34, amount)
+            mstore(0x00, 0xa9059cbb000000000000000000000000) // transfer(address,uint256)
+            let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
+            if iszero(and(eq(mload(0x00), 1), success)) {
+                if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                    mstore(0x00, 0x90b8ec18) // TransferFailed()
+                    revert(0x1c, 0x04)
+                }
+            }
+            mstore(0x34, 0)
+        }
+    }
+
+    /// @dev Returns the ERC20 balance of an account.
+    function _balanceOf(address token, address account) internal view returns (uint256 bal) {
+        assembly ("memory-safe") {
+            mstore(0x14, account)
+            mstore(0x00, 0x70a08231000000000000000000000000) // balanceOf(address)
+            if iszero(staticcall(gas(), token, 0x10, 0x24, 0x00, 0x20)) {
+                revert(0, 0)
+            }
+            bal := mload(0x00)
+        }
+    }
+
+    /// @dev Verifies returned marketId matches expected, returns swapOut (5th word) if present.
+    function _verifyMarketId(bytes memory ret, uint256 expected)
+        internal
+        pure
+        returns (uint256 swapOut)
+    {
+        uint256 returned;
+        assembly ("memory-safe") {
+            returned := mload(add(ret, 0x20))
+            // Only read 5th word if returndata has it (AndBuy variants return 5 words)
+            if gt(mload(ret), 0x9f) { swapOut := mload(add(ret, 0xa0)) }
+        }
+        if (returned != expected) revert MarketIdMismatch();
+    }
+
+    /// @dev Refunds any dust collateral (ETH or ERC20) to msg.sender.
+    /// @param collateral Token address (address(0) for ETH)
+    /// @param escrow ETH balance to preserve (reward funds). Ignored for ERC20.
+    function _refundDust(address collateral, uint256 escrow) internal {
+        if (collateral == address(0)) {
+            uint256 dust = address(this).balance - escrow;
+            if (dust != 0) _safeTransferETH(msg.sender, dust);
+        } else {
+            uint256 dust = _balanceOf(collateral, address(this));
+            if (dust != 0) _safeTransfer(collateral, msg.sender, dust);
+        }
+    }
+
+    /// @dev Forwards any leftover YES/NO shares from this contract to msg.sender.
+    function _flushLeftoverShares(uint256 marketId) internal {
+        uint256 noId = uint256(keccak256(abi.encodePacked("PMARKET:NO", marketId)));
+        uint256 yesLeft = _balanceOf6909(PAMM, address(this), marketId);
+        uint256 noLeft = _balanceOf6909(PAMM, address(this), noId);
+        if (yesLeft != 0) _transfer6909(PAMM, msg.sender, marketId, yesLeft);
+        if (noLeft != 0) _transfer6909(PAMM, msg.sender, noId, noLeft);
+    }
+
+    /// @dev Returns ERC6909 balance: balanceOf(account, id).
+    function _balanceOf6909(address token, address account, uint256 id)
+        internal
+        view
+        returns (uint256 bal)
+    {
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x00fdd58e00000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), account)
+            mstore(add(m, 0x24), id)
+            if iszero(staticcall(gas(), token, m, 0x44, 0x00, 0x20)) {
+                revert(0, 0)
+            }
+            bal := mload(0x00)
+        }
+    }
+
+    /// @dev Transfers ERC6909 tokens: transfer(receiver, id, amount).
+    function _transfer6909(address token, address to, uint256 id, uint256 amount) internal {
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x095bcdb600000000000000000000000000000000000000000000000000000000)
+            mstore(add(m, 0x04), to)
+            mstore(add(m, 0x24), id)
+            mstore(add(m, 0x44), amount)
+            let success := call(gas(), token, 0, m, 0x64, 0x00, 0x20)
+            if iszero(and(eq(mload(0x00), 1), success)) {
+                if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                    mstore(0x00, 0x90b8ec18) // TransferFailed()
+                    revert(0x1c, 0x04)
+                }
+            }
+        }
+    }
+
+    /// @dev Converts uint256 to decimal string. Gas-optimized assembly implementation.
     function _toString(uint256 value) internal pure returns (string memory result) {
         assembly ("memory-safe") {
             result := add(mload(0x40), 0x80)
