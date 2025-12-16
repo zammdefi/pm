@@ -23,6 +23,13 @@
             --blue: #3b82f6;
             --amber: #f59e0b;
             --yellow: #eab308;
+            --orange: #f97316;
+            --gray: #27272a;
+            --light-gray: #3f3f46;
+            --black: #09090b;
+
+            --spacing-xs: 0.25rem;
+            --spacing-sm: 0.5rem;
 
             --font-xs: 0.75rem;
             --font-sm: 0.875rem;
@@ -139,6 +146,7 @@
         .chart-section {
             padding: 1.5rem;
             border-bottom: 1px solid var(--border);
+            overflow: visible; /* Allow tooltips to extend beyond */
         }
 
         .chart-container {
@@ -146,9 +154,9 @@
             margin: 0 auto;
             background: var(--surface);
             border-radius: var(--radius);
-            height: 220px;
+            height: 260px;
             position: relative;
-            overflow: hidden;
+            overflow: visible; /* Allow tooltips to extend beyond container */
         }
 
         .chart-canvas { width: 100%; height: 100%; }
@@ -185,6 +193,62 @@
         .chart-tooltip-dot.twap { background: var(--blue); }
         .chart-tooltip-key { color: var(--text-muted); flex: 1; }
         .chart-tooltip-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        /* Prediction tooltip */
+        .pred-tooltip {
+            position: absolute;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.75rem;
+            font-size: var(--font-xs);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s, transform 0.15s;
+            z-index: 110;
+            min-width: 190px;
+            transform: translateY(5px);
+        }
+        .pred-tooltip.visible { opacity: 1; transform: translateY(0); }
+        .pred-tooltip-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .pred-tooltip-badge {
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 10px;
+        }
+        .pred-tooltip-title {
+            font-weight: 500;
+            color: var(--text);
+        }
+        .pred-tooltip-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.35rem;
+        }
+        .pred-tooltip-row:last-child { margin-bottom: 0; }
+        .pred-tooltip-label { color: var(--text-muted); }
+        .pred-tooltip-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+        .pred-tooltip-direction {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 11px;
+        }
+        .pred-tooltip-direction.up { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .pred-tooltip-direction.down { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .pred-tooltip-direction.neutral { background: rgba(161, 161, 170, 0.15); color: #a1a1aa; }
 
         @keyframes pulse {
             0%, 100% { transform: scale(1); opacity: 1; }
@@ -800,7 +864,7 @@
         @media (max-width: 768px) {
             .header { padding: 0.5rem 1rem; }
             .header-center { gap: 1rem; }
-            .chart-container { height: 180px; }
+            .chart-container { height: 220px; }
             .bets-section, .create-section, .info-section { padding: 1rem; }
             .bet-card, .create-card { padding: 1rem; }
             .modal {
@@ -815,10 +879,71 @@
         }
 
         @media (max-width: 480px) {
-            .header-center { display: none; }
+            .header {
+                flex-wrap: wrap;
+                justify-content: space-between;
+                gap: 0.5rem;
+            }
+            .header-center {
+                order: 3;
+                width: 100%;
+                justify-content: space-between;
+                gap: 0.25rem;
+                padding: 0.5rem 0 0;
+                border-top: 1px solid var(--border);
+                margin-top: 0.25rem;
+            }
+            .live-stat {
+                flex: 1;
+                min-width: 0;
+            }
+            .live-stat-label {
+                font-size: 9px;
+            }
+            .live-stat-value {
+                font-size: 11px;
+            }
+            /* Hide outlook on very small screens, keep essentials */
+            .live-stat:nth-child(4) {
+                display: none;
+            }
             .tagline { display: none; }
             .section-title { font-size: var(--font-base); }
             .logo { font-size: var(--font-base); }
+
+            /* Chart mobile optimizations */
+            .chart-section { padding: 0.75rem; }
+            .chart-container { height: 200px; border-radius: 8px; }
+            .chart-tooltip, .pred-tooltip {
+                font-size: 10px;
+                padding: 0.4rem;
+            }
+            .pred-tooltip {
+                min-width: 150px;
+                max-width: 170px;
+                pointer-events: auto; /* Allow tapping on mobile */
+            }
+            .pred-tooltip-header { gap: 0.25rem; margin-bottom: 0.25rem; padding-bottom: 0.25rem; }
+            .pred-tooltip-badge { padding: 0.1rem 0.35rem; font-size: 8px; }
+            .pred-tooltip-title { font-size: 10px; }
+            .pred-tooltip-direction { padding: 0.15rem 0.35rem; font-size: 9px; }
+            .pred-tooltip-row { margin-bottom: 0.15rem; font-size: 9px; }
+            .pred-tooltip-label { font-size: 9px; }
+            .pred-tooltip-value { font-size: 9px; }
+            /* Hide less critical rows on mobile */
+            .pred-tooltip-row:nth-child(5),
+            .pred-tooltip-row:nth-child(6) { display: none; }
+        }
+
+        @media (max-width: 360px) {
+            .header-center {
+                flex-wrap: wrap;
+                gap: 0.25rem 0.5rem;
+            }
+            .live-stat {
+                flex: 0 0 auto;
+            }
+            .chart-container { height: 180px; }
         }
 
         @media (max-width: 768px) {
@@ -951,6 +1076,10 @@
                 <div class="live-stat-value cyan" id="twapGas">--</div>
             </div>
             <div class="live-stat">
+                <div class="live-stat-label">Min</div>
+                <div class="live-stat-value" id="minGas">--</div>
+            </div>
+            <div class="live-stat">
                 <div class="live-stat-label">Outlook</div>
                 <div class="live-stat-value" id="predictionArrows" style="display:flex;gap:0.5rem;font-size:var(--font-sm);">
                     <span id="pred1H" title="Hourly prediction">1H --</span>
@@ -982,6 +1111,36 @@
                         <span class="chart-tooltip-dot twap"></span>
                         <span class="chart-tooltip-key">TWAP</span>
                         <span class="chart-tooltip-val" id="tooltipTwap">--</span>
+                    </div>
+                </div>
+                <div class="pred-tooltip" id="predTooltip">
+                    <div class="pred-tooltip-header">
+                        <span class="pred-tooltip-badge" id="predBadge">1H</span>
+                        <span class="pred-tooltip-title" id="predTitle">Hourly Market</span>
+                    </div>
+                    <div class="pred-tooltip-row">
+                        <span class="pred-tooltip-label">Predicted TWAP</span>
+                        <span class="pred-tooltip-value" id="predTwap">--</span>
+                    </div>
+                    <div class="pred-tooltip-row">
+                        <span class="pred-tooltip-label">Direction</span>
+                        <span class="pred-tooltip-direction up" id="predDirection">--</span>
+                    </div>
+                    <div class="pred-tooltip-row">
+                        <span class="pred-tooltip-label">Market TVL</span>
+                        <span class="pred-tooltip-value" id="predTvl">--</span>
+                    </div>
+                    <div class="pred-tooltip-row">
+                        <span class="pred-tooltip-label">Closes in</span>
+                        <span class="pred-tooltip-value" id="predCloses">--</span>
+                    </div>
+                    <div class="pred-tooltip-row" style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);">
+                        <span class="pred-tooltip-label">Implied remaining avg</span>
+                        <span class="pred-tooltip-value" id="predImpliedAvg">--</span>
+                    </div>
+                    <div class="pred-tooltip-row">
+                        <span class="pred-tooltip-label">vs Current spot</span>
+                        <span class="pred-tooltip-value" id="predVsSpot">--</span>
                     </div>
                 </div>
             </div>
@@ -1640,10 +1799,55 @@
         let chartState = {};
         let cachedGasData = { twap: 0, current: 0, startTime: 0 };
         let lastLoadedObsCount = 0; // Track for incremental loading
+        let lastCanvasSize = { width: 0, height: 0 }; // Track canvas size to avoid unnecessary resizes
+        let predictionMarkerPositions = []; // Store prediction marker hit areas for hover detection
+        let hoveredPrediction = null; // Currently hovered prediction market type
+        let priceChangeBadgeArea = null; // Store price change badge hit area for hover
+
+        // ======================== DOM CACHE ========================
+        // Cache frequently accessed DOM elements to avoid repeated lookups
+        const DOM = {};
+        function initDOMCache() {
+            DOM.liveGas = document.getElementById('liveGas');
+            DOM.twapGas = document.getElementById('twapGas');
+            DOM.minGas = document.getElementById('minGas');
+            DOM.maxGas = document.getElementById('maxGas');
+            DOM.extremeMax = document.getElementById('extremeMax');
+            DOM.extremeProgress = document.getElementById('extremeProgress');
+            DOM.extremePercent = document.getElementById('extremePercent');
+            DOM.hourlyCountdown = document.getElementById('hourlyCountdown');
+            DOM.dailyCountdown = document.getElementById('dailyCountdown');
+            DOM.weeklyCountdown = document.getElementById('weeklyCountdown');
+            DOM.extremeCountdown = document.getElementById('extremeCountdown');
+            DOM.totalPoolTvl = document.getElementById('totalPoolTvl');
+            DOM.totalOrderbookLiq = document.getElementById('totalOrderbookLiq');
+            DOM.activeMarketsCount = document.getElementById('activeMarketsCount');
+            DOM.gasChart = document.getElementById('gasChart');
+            DOM.chartTooltip = document.getElementById('chartTooltip');
+            DOM.predTooltip = document.getElementById('predTooltip');
+            DOM.connectBtn = document.getElementById('connectBtn');
+            DOM.createSection = document.getElementById('createSection');
+        }
 
         // ======================== INIT ========================
         async function init() {
+            initDOMCache();
             initEIP6963();
+
+            // Auto-reconnect wallet if previously connected
+            const savedWallet = localStorage.getItem('gaspm_wallet');
+            if (savedWallet) {
+                // Small delay to let EIP-6963 providers announce themselves
+                setTimeout(async () => {
+                    try {
+                        await connectWithWallet(savedWallet);
+                    } catch (e) {
+                        console.warn('Auto-reconnect failed:', e);
+                        localStorage.removeItem('gaspm_wallet');
+                    }
+                }, 100);
+            }
+
             await loadData();
             updateCountdowns();
             setInterval(updateCountdowns, 1000);
@@ -1654,11 +1858,19 @@
 
         function startPulseAnimation() {
             // Only animate pulse for small datasets; skip for large ones (too expensive)
-            setInterval(() => {
-                if (chartDataPoints.length > 0 && chartDataPoints.length <= 200 && cachedGasData.current && hoverIndex < 0) {
-                    drawChart(cachedGasData);
+            let lastPulseTime = 0;
+            const pulseInterval = 66; // ~15fps for pulse animation
+
+            function animatePulse(timestamp) {
+                if (timestamp - lastPulseTime >= pulseInterval) {
+                    if (chartDataPoints.length > 0 && chartDataPoints.length <= 200 && cachedGasData.current && hoverIndex < 0) {
+                        drawChart(cachedGasData);
+                    }
+                    lastPulseTime = timestamp;
                 }
-            }, 66);
+                requestAnimationFrame(animatePulse);
+            }
+            requestAnimationFrame(animatePulse);
         }
 
         // ======================== WALLET ========================
@@ -1693,10 +1905,14 @@
 
             for (const [uuid, { info, provider }] of eip6963Providers.entries()) {
                 if (!seenNames.has(info.name.toLowerCase())) {
+                    // Sanitize wallet name to prevent XSS
+                    const safeName = (info.name || 'Unknown').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+                    // Only allow data: or https: URLs for icons
+                    const iconUrl = info.icon && (info.icon.startsWith('data:') || info.icon.startsWith('https://')) ? info.icon : null;
                     detected.push({
                         key: `eip6963_${uuid}`,
-                        name: info.name,
-                        icon: info.icon ? `<img src="${info.icon}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
+                        name: safeName,
+                        icon: iconUrl ? `<img src="${iconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
                         getProvider: () => provider
                     });
                     seenNames.add(info.name.toLowerCase());
@@ -1801,8 +2017,8 @@
                 connectedAddress = await signer.getAddress();
                 connectedWalletProvider = walletProvider;
 
-                document.getElementById('connectBtn').textContent = connectedAddress.slice(0, 6) + '...' + connectedAddress.slice(-4);
-                document.getElementById('connectBtn').classList.add('connected');
+                DOM.connectBtn.textContent = connectedAddress.slice(0, 6) + '...' + connectedAddress.slice(-4);
+                DOM.connectBtn.classList.add('connected');
 
                 walletProvider.on('accountsChanged', () => window.location.reload());
                 walletProvider.on('chainChanged', () => window.location.reload());
@@ -1811,9 +2027,12 @@
                 const gasPm = new ethers.Contract(GASPM_ADDRESS, GASPM_ABI, provider);
                 const owner = await gasPm.owner();
                 isOwner = owner.toLowerCase() === connectedAddress.toLowerCase();
-                if (isOwner) document.getElementById('createSection').style.display = 'block';
+                if (isOwner) DOM.createSection.style.display = 'block';
 
                 await loadPositions();
+
+                // Save wallet preference for auto-reconnect on page refresh
+                localStorage.setItem('gaspm_wallet', walletKey);
 
             } catch (error) {
                 console.error('Connection failed:', error);
@@ -1835,11 +2054,14 @@
             connectedAddress = null;
             connectedWalletProvider = null;
             isOwner = false;
-            document.getElementById('connectBtn').textContent = 'Connect';
-            document.getElementById('connectBtn').classList.remove('connected');
-            document.getElementById('createSection').style.display = 'none';
+            DOM.connectBtn.textContent = 'Connect';
+            DOM.connectBtn.classList.remove('connected');
+            DOM.createSection.style.display = 'none';
             hidePositions();
             closeWalletModal();
+
+            // Clear saved wallet preference
+            localStorage.removeItem('gaspm_wallet');
         }
 
         // Check if error is a user rejection (wallet popup cancelled)
@@ -1881,7 +2103,7 @@
                 // Live gas from block (baseFeePerGas is in wei)
                 const liveWei = block.baseFeePerGas || 0n;
                 const liveGwei = Number(liveWei) / 1e9;
-                document.getElementById('liveGas').textContent = formatGwei(liveWei) + ' gwei';
+                DOM.liveGas.textContent = formatGwei(liveWei) + ' gwei';
 
                 // Decode oracle data (returns wei, convert to gwei)
                 let twapWei = 0n, maxWei = 0n, minWei = 0n, startTime = 0, obsCount = 0;
@@ -1919,14 +2141,15 @@
                 const twapGwei = Number(twapWei) / 1e9;
                 const maxGwei = Number(maxWei) / 1e9;
 
-                document.getElementById('twapGas').textContent = formatGwei(twapWei) + ' gwei';
-                document.getElementById('maxGas').textContent = formatGwei(maxWei) + ' gwei';
+                DOM.twapGas.textContent = formatGwei(twapWei) + ' gwei';
+                DOM.minGas.textContent = formatGwei(minWei) + ' gwei';
+                DOM.maxGas.textContent = formatGwei(maxWei) + ' gwei';
 
                 // Update extreme progress
-                document.getElementById('extremeMax').textContent = formatGwei(maxWei) + ' gwei';
+                DOM.extremeMax.textContent = formatGwei(maxWei) + ' gwei';
                 const pct = Math.min(100, (maxGwei / 100) * 100);
-                document.getElementById('extremeProgress').style.width = pct + '%';
-                document.getElementById('extremePercent').textContent = pct.toFixed(0) + '%';
+                DOM.extremeProgress.style.width = pct + '%';
+                DOM.extremePercent.textContent = pct.toFixed(0) + '%';
 
                 // Note: Start/Now values are set in updateCard() when markets are loaded
 
@@ -1987,9 +2210,6 @@
                     }
                 }
 
-                // Draw chart with actual on-chain data
-                drawChart(cachedGasData);
-
                 // Decode market infos
                 let marketInfos = [];
                 if (results[5].success) {
@@ -2000,8 +2220,11 @@
                     }
                 }
 
-                // Load markets using marketInfos
+                // Load markets using marketInfos (this also calls updatePredictions)
                 await loadMarkets(rpc, multicall, gasPmInterface, pammInterface, marketInfos, twapGwei);
+
+                // Draw chart AFTER markets loaded so predictions are available
+                drawChart(cachedGasData);
 
             } catch (e) {
                 console.error('Load failed:', e);
@@ -2280,9 +2503,9 @@
                 }
 
                 // Update global stats
-                document.getElementById('totalPoolTvl').textContent = formatEth(totalTvl);
-                document.getElementById('totalOrderbookLiq').textContent = totalOrderbookLiq > 0 ? formatEth(totalOrderbookLiq) : '--';
-                document.getElementById('activeMarketsCount').textContent = activeCount.toString();
+                DOM.totalPoolTvl.textContent = formatEth(totalTvl);
+                DOM.totalOrderbookLiq.textContent = totalOrderbookLiq > 0 ? formatEth(totalOrderbookLiq) : '--';
+                DOM.activeMarketsCount.textContent = activeCount.toString();
 
             } catch (e) {
                 console.error('Failed to load liquidity stats:', e);
@@ -2506,7 +2729,7 @@
                                 </button>
                             ` : ''}
                             ${hasLp ? `
-                                <button class="bet-btn up" style="width:100%;margin-top:0.5rem;" onclick="withdrawLP('${m.id}')">
+                                <button class="bet-btn up" style="width:100%;margin-top:0.5rem;" onclick="withdrawLP('${m.id}', ${hasWinnings})">
                                     <div class="bet-btn-label">Withdraw All</div>
                                 </button>
                             ` : ''}
@@ -2546,7 +2769,7 @@
             }
         }
 
-        async function withdrawLP(marketId) {
+        async function withdrawLP(marketId, hasDirectWinnings = false) {
             if (!signer) {
                 showToast('Connect Wallet', 'Please connect your wallet first', 'error', 3000);
                 return;
@@ -2583,12 +2806,12 @@
                     if (!approved) return;
                 }
 
-                // Use multicall to batch removeLiquidityToCollateral + claim in single tx
                 const deadline = Math.floor(Date.now() / 1000) + 600;
                 const pammInterface = new ethers.Interface(PAMM_ABI);
 
+                // Build calls array - removeLiquidityToCollateral already handles winning tokens from LP
+                // Only add claim if user has direct winning token holdings (from trades)
                 const calls = [
-                    // 1. Remove LP to get collateral + leftover YES/NO tokens
                     pammInterface.encodeFunctionData('removeLiquidityToCollateral', [
                         marketId,
                         FEE_TIER,
@@ -2598,10 +2821,13 @@
                         0, // minCollateralOut
                         connectedAddress,
                         deadline
-                    ]),
-                    // 2. Claim winning tokens for collateral
-                    pammInterface.encodeFunctionData('claim', [marketId, connectedAddress])
+                    ])
                 ];
+
+                // Only claim if user has direct winning tokens (not from LP)
+                if (hasDirectWinnings) {
+                    calls.push(pammInterface.encodeFunctionData('claim', [marketId, connectedAddress]));
+                }
 
                 await monitorTransaction(
                     pamm.multicall(calls),
@@ -2743,19 +2969,226 @@
 
         // ======================== CHART ========================
         let hoverIndex = -1; // Track hovered data point for crosshair
+        let resizeTimer = null; // For debouncing resize
+        let tooltipSpotEl, tooltipTwapEl, tooltipTimeEl; // Cache tooltip elements
 
         function setupChart() {
-            const canvas = document.getElementById('gasChart');
-            const tooltip = document.getElementById('chartTooltip');
+            const canvas = DOM.gasChart;
+            const tooltip = DOM.chartTooltip;
+            const predTooltip = DOM.predTooltip;
+
+            if (!canvas || !tooltip) {
+                console.error('Chart elements not found');
+                return;
+            }
+
+            // Cache tooltip sub-elements
+            tooltipSpotEl = document.getElementById('tooltipSpot');
+            tooltipTwapEl = document.getElementById('tooltipTwap');
+            tooltipTimeEl = document.getElementById('tooltipTime');
+
+            // Cache prediction tooltip elements
+            const predBadge = document.getElementById('predBadge');
+            const predTitle = document.getElementById('predTitle');
+            const predTwap = document.getElementById('predTwap');
+            const predDirection = document.getElementById('predDirection');
+            const predTvl = document.getElementById('predTvl');
+            const predCloses = document.getElementById('predCloses');
+            const predImpliedAvg = document.getElementById('predImpliedAvg');
+            const predVsSpot = document.getElementById('predVsSpot');
 
             canvas.addEventListener('mousemove', (e) => {
                 if (!chartState.data || !chartState.data.length) return;
 
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
-                const { data, rollingTwap, padding, width, height } = chartState;
+                const y = e.clientY - rect.top;
+                const { data, rollingTwap, padding, chartWidth, width, height } = chartState;
 
-                const idx = Math.round((x - padding) / (width - padding * 2) * (data.length - 1));
+                // Check if hovering over price change badge first
+                if (priceChangeBadgeArea) {
+                    const b = priceChangeBadgeArea;
+                    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+                        // Show price change tooltip using the chart tooltip
+                        tooltip.classList.remove('visible');
+                        if (predTooltip) predTooltip.classList.remove('visible');
+                        hoverIndex = -1;
+                        hoveredPrediction = null;
+
+                        // Format time span for display
+                        let timeDesc = '';
+                        if (b.timeSpan < 3600) {
+                            timeDesc = 'Last ' + Math.round(b.timeSpan / 60) + ' minutes';
+                        } else if (b.timeSpan < 86400) {
+                            const hrs = Math.round(b.timeSpan / 3600);
+                            timeDesc = 'Last ' + hrs + ' hour' + (hrs > 1 ? 's' : '');
+                        } else {
+                            const days = Math.round(b.timeSpan / 86400);
+                            timeDesc = 'Last ' + days + ' day' + (days > 1 ? 's' : '');
+                        }
+
+                        // Update tooltip content for price change
+                        tooltipTimeEl.textContent = timeDesc;
+                        tooltipSpotEl.textContent = b.firstVal.toFixed(2) + ' → ' + b.lastVal.toFixed(2) + ' gwei';
+                        const changeSign = b.change >= 0 ? '+' : '';
+                        tooltipTwapEl.textContent = changeSign + b.change.toFixed(2) + '% change';
+
+                        // Position tooltip near badge
+                        tooltip.style.left = (b.x + b.width + 10) + 'px';
+                        tooltip.style.top = (b.y) + 'px';
+                        tooltip.classList.add('visible');
+
+                        canvas.style.cursor = 'help';
+                        return;
+                    }
+                }
+
+                // Check if hovering over a prediction marker
+                let foundPrediction = null;
+                for (const marker of predictionMarkerPositions) {
+                    const dx = x - marker.x;
+                    const dy = y - marker.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < marker.radius) {
+                        foundPrediction = marker;
+                        break;
+                    }
+                }
+
+                if (foundPrediction && predTooltip) {
+                    // Hide chart tooltip, show prediction tooltip
+                    tooltip.classList.remove('visible');
+                    hoverIndex = -1;
+
+                    // Update prediction tooltip content
+                    const marketNames = { hourly: 'Hourly', daily: 'Daily', weekly: 'Weekly' };
+                    const isUp = foundPrediction.yesPrice > 0.5;
+                    const prob = Math.round(foundPrediction.yesPrice * 100);
+
+                    if (predBadge) {
+                        predBadge.textContent = foundPrediction.label;
+                        predBadge.style.background = foundPrediction.color;
+                        predBadge.style.color = '#18181b';
+                    }
+                    if (predTitle) predTitle.textContent = marketNames[foundPrediction.type] + ' Market';
+                    predTooltip.style.borderColor = foundPrediction.color;
+                    if (predTwap) predTwap.textContent = foundPrediction.predicted.toFixed(2) + ' gwei';
+
+                    // Direction indicator - neutral if close to 50/50 (within 5%)
+                    const isNeutral = prob >= 45 && prob <= 55;
+                    if (predDirection) {
+                        if (isNeutral) {
+                            predDirection.className = 'pred-tooltip-direction neutral';
+                            predDirection.innerHTML = `<span>↔</span><span>~50%</span> EVEN`;
+                        } else {
+                            predDirection.className = 'pred-tooltip-direction ' + (isUp ? 'up' : 'down');
+                            predDirection.innerHTML = `<span>${isUp ? '↑' : '↓'}</span><span>${isUp ? prob : 100 - prob}%</span> ${isUp ? 'UP' : 'DOWN'}`;
+                        }
+                    }
+
+                    // TVL - get from market if available
+                    const tvlEl = document.getElementById(`${foundPrediction.type}Tvl`);
+                    if (predTvl) predTvl.textContent = tvlEl ? tvlEl.textContent : '--';
+
+                    // Time to close
+                    const now = Math.floor(Date.now() / 1000);
+                    const remaining = foundPrediction.closeTime - now;
+                    if (predCloses) predCloses.textContent = formatTime(remaining);
+
+                    // Calculate implied remaining average base fee
+                    // Formula: predictedTwap = (currentTwap * elapsed + impliedAvg * remaining) / total
+                    // Solving: impliedAvg = (predictedTwap * total - currentTwap * elapsed) / remaining
+                    const marketDurations = { hourly: 3600, daily: 86400, weekly: 604800 };
+                    const totalDuration = marketDurations[foundPrediction.type] || 3600;
+                    const marketStart = foundPrediction.closeTime - totalDuration;
+                    const elapsed = Math.max(0, now - marketStart);
+                    const currentTwap = cachedGasData.twap;
+                    const currentSpot = cachedGasData.current;
+                    const predictedTwap = foundPrediction.predicted;
+
+                    if (remaining > 0 && elapsed > 0) {
+                        // Calculate implied average for remaining time
+                        const impliedAvg = (predictedTwap * totalDuration - currentTwap * elapsed) / remaining;
+
+                        // Sanity check: implied avg should be positive and within reasonable bounds
+                        if (impliedAvg > 0 && impliedAvg < currentTwap * 5) {
+                            if (predImpliedAvg) predImpliedAvg.textContent = impliedAvg.toFixed(2) + ' gwei';
+
+                            // Compare to current spot
+                            const spotDiff = impliedAvg - currentSpot;
+                            const spotDiffPct = (spotDiff / currentSpot * 100);
+                            const spotSign = spotDiff >= 0 ? '+' : '';
+                            const spotColor = spotDiff > 1 ? '#22c55e' : (spotDiff < -1 ? '#ef4444' : '#a1a1aa');
+                            if (predVsSpot) predVsSpot.innerHTML = `<span style="color:${spotColor}">${spotSign}${spotDiffPct.toFixed(1)}%</span> (${currentSpot.toFixed(1)} now)`;
+                        } else {
+                            if (predImpliedAvg) predImpliedAvg.textContent = '--';
+                            if (predVsSpot) predVsSpot.textContent = '--';
+                        }
+                    } else if (remaining <= 0) {
+                        if (predImpliedAvg) predImpliedAvg.textContent = 'Market closing';
+                        if (predVsSpot) predVsSpot.textContent = '--';
+                    } else {
+                        // Very early in period
+                        if (predImpliedAvg) predImpliedAvg.textContent = '~' + predictedTwap.toFixed(2) + ' gwei';
+                        if (predVsSpot) predVsSpot.textContent = 'Early in period';
+                    }
+
+                    // Position prediction tooltip - responsive
+                    const canvasWidth = canvas.width;
+                    const canvasHeight = canvas.height;
+                    const isMobileTooltip = canvasWidth < 400;
+                    // Mobile tooltip is more compact (hidden rows)
+                    const predTooltipWidth = isMobileTooltip ? 160 : 210;
+                    const predTooltipHeight = isMobileTooltip ? 100 : 180;
+                    let tooltipX, tooltipY;
+
+                    if (isMobileTooltip) {
+                        // On mobile, position to left of marker (prediction zone is on right)
+                        tooltipX = Math.max(5, x - predTooltipWidth - 10);
+                        // Center vertically on marker, but clamp to canvas
+                        tooltipY = Math.max(5, Math.min(y - predTooltipHeight / 2, canvasHeight - predTooltipHeight - 5));
+                    } else {
+                        // Desktop: position to left of marker to avoid going off right edge
+                        tooltipX = x - predTooltipWidth - 15;
+                        tooltipY = y - predTooltipHeight / 2;
+
+                        // If not enough room on left, try right
+                        if (tooltipX < 10) {
+                            tooltipX = x + 15;
+                        }
+                        // Clamp to canvas edges
+                        if (tooltipY + predTooltipHeight > canvasHeight) {
+                            tooltipY = canvasHeight - predTooltipHeight - 5;
+                        }
+                        if (tooltipY < 5) {
+                            tooltipY = 5;
+                        }
+                    }
+
+                    predTooltip.style.left = tooltipX + 'px';
+                    predTooltip.style.top = tooltipY + 'px';
+                    predTooltip.classList.add('visible');
+
+                    // Update hovered prediction state
+                    if (hoveredPrediction !== foundPrediction.type) {
+                        hoveredPrediction = foundPrediction.type;
+                        drawChart(cachedGasData); // Redraw with highlight
+                    }
+
+                    canvas.style.cursor = 'pointer';
+                    return;
+                }
+
+                // Not hovering over prediction - hide prediction tooltip
+                if (hoveredPrediction) {
+                    hoveredPrediction = null;
+                    drawChart(cachedGasData);
+                }
+                if (predTooltip) predTooltip.classList.remove('visible');
+                canvas.style.cursor = 'crosshair';
+
+                // Regular chart hover logic
+                const idx = Math.round((x - padding) / chartWidth * (data.length - 1));
                 const clampedIdx = Math.max(0, Math.min(idx, data.length - 1));
 
                 // Update hover index and redraw for crosshair
@@ -2769,8 +3202,8 @@
                     const twapVal = rollingTwap && rollingTwap[clampedIdx] ? rollingTwap[clampedIdx] : null;
 
                     // Update tooltip content
-                    document.getElementById('tooltipSpot').textContent = spotVal.toFixed(2) + ' gwei';
-                    document.getElementById('tooltipTwap').textContent = twapVal ? twapVal.toFixed(2) + ' gwei' : '--';
+                    tooltipSpotEl.textContent = spotVal.toFixed(2) + ' gwei';
+                    tooltipTwapEl.textContent = twapVal ? twapVal.toFixed(2) + ' gwei' : '--';
 
                     // Time display
                     let timeText = '';
@@ -2780,7 +3213,7 @@
                     } else if (clampedIdx === data.length - 1) {
                         timeText = 'Now';
                     }
-                    document.getElementById('tooltipTime').textContent = timeText;
+                    tooltipTimeEl.textContent = timeText;
 
                     // Position tooltip with edge clamping
                     const tooltipWidth = 160;
@@ -2809,40 +3242,193 @@
 
             canvas.addEventListener('mouseleave', () => {
                 tooltip.classList.remove('visible');
+                if (predTooltip) predTooltip.classList.remove('visible');
                 hoverIndex = -1;
+                hoveredPrediction = null;
+                canvas.style.cursor = 'default';
                 drawChart(cachedGasData); // Clear crosshair
             });
 
-            window.addEventListener('resize', () => { if (chartDataPoints.length) drawChart(cachedGasData); });
+            // Click handler for prediction markers - opens trade modal
+            canvas.addEventListener('click', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                // Check if clicking on a prediction marker
+                for (const marker of predictionMarkerPositions) {
+                    const dx = x - marker.x;
+                    const dy = y - marker.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < marker.radius) {
+                        // Open trade for this market (default to UP/YES)
+                        const isUp = marker.yesPrice > 0.5;
+                        openTrade(marker.type, isUp);
+                        return;
+                    }
+                }
+            });
+
+            // Touch support for mobile - full chart interaction
+            let touchTimeout = null;
+            let isTouchingChart = false;
+
+            function handleChartTouch(touchX, touchY, clientX, clientY) {
+                if (!chartState.data || !chartState.data.length) return false;
+
+                const { data, rollingTwap, padding, chartWidth, width, height } = chartState;
+
+                // Check if touching a prediction marker first
+                for (const marker of predictionMarkerPositions) {
+                    const dx = touchX - marker.x;
+                    const dy = touchY - marker.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < marker.radius) {
+                        hoveredPrediction = marker.type;
+                        if (cachedGasData) drawChart(cachedGasData);
+                        // Trigger mousemove to show prediction tooltip
+                        canvas.dispatchEvent(new MouseEvent('mousemove', { clientX, clientY }));
+                        return true;
+                    }
+                }
+
+                // Check if touching within chart area (not prediction zone)
+                if (touchX >= padding && touchX <= padding + chartWidth) {
+                    // Calculate data index from touch position
+                    const idx = Math.round((touchX - padding) / chartWidth * (data.length - 1));
+                    const clampedIdx = Math.max(0, Math.min(idx, data.length - 1));
+
+                    if (clampedIdx >= 0 && clampedIdx < data.length) {
+                        hoverIndex = clampedIdx;
+                        if (cachedGasData) drawChart(cachedGasData);
+
+                        const spotVal = data[clampedIdx];
+                        const twapVal = rollingTwap && rollingTwap[clampedIdx] ? rollingTwap[clampedIdx] : null;
+
+                        // Update tooltip content
+                        tooltipSpotEl.textContent = spotVal.toFixed(2) + ' gwei';
+                        tooltipTwapEl.textContent = twapVal ? twapVal.toFixed(2) + ' gwei' : '--';
+
+                        // Time display
+                        let timeText = '';
+                        if (chartState.timestamps && chartState.timestamps[clampedIdx]) {
+                            const date = new Date(chartState.timestamps[clampedIdx] * 1000);
+                            timeText = date.toLocaleString();
+                        } else if (clampedIdx === data.length - 1) {
+                            timeText = 'Now';
+                        }
+                        tooltipTimeEl.textContent = timeText;
+
+                        // Position tooltip - centered above touch point on mobile
+                        const tooltipWidth = 140;
+                        let tooltipX = Math.max(5, Math.min(touchX - tooltipWidth / 2, width - tooltipWidth - 5));
+                        let tooltipY = Math.max(5, touchY - 70);
+
+                        tooltip.style.left = tooltipX + 'px';
+                        tooltip.style.top = tooltipY + 'px';
+                        tooltip.classList.add('visible');
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            canvas.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+
+                // Clear any pending timeout
+                if (touchTimeout) clearTimeout(touchTimeout);
+
+                isTouchingChart = handleChartTouch(x, y, touch.clientX, touch.clientY);
+
+                if (isTouchingChart) {
+                    e.preventDefault(); // Prevent scroll while interacting
+                }
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', (e) => {
+                if (!isTouchingChart) return;
+
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+
+                handleChartTouch(x, y, touch.clientX, touch.clientY);
+                e.preventDefault();
+            }, { passive: false });
+
+            canvas.addEventListener('touchend', () => {
+                // Clear tooltip after a delay on touch release
+                if (touchTimeout) clearTimeout(touchTimeout);
+                touchTimeout = setTimeout(() => {
+                    tooltip.classList.remove('visible');
+                    if (predTooltip) predTooltip.classList.remove('visible');
+                    hoverIndex = -1;
+                    hoveredPrediction = null;
+                    isTouchingChart = false;
+                    if (cachedGasData) drawChart(cachedGasData);
+                }, 2500); // Keep tooltip visible for 2.5s after touch ends
+            });
+
+            // Debounced resize handler
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    if (chartDataPoints.length) drawChart(cachedGasData);
+                }, 150);
+            });
         }
+
+        // Cache canvas context
+        let chartCtx = null;
 
         function drawChart(gasData) {
             const { twap, current, startTime } = gasData;
 
-            const canvas = document.getElementById('gasChart');
-            const ctx = canvas.getContext('2d');
+            const canvas = DOM.gasChart;
+            if (!chartCtx) chartCtx = canvas.getContext('2d');
+            const ctx = chartCtx;
             const container = canvas.parentElement;
 
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
+            // Only resize canvas if dimensions actually changed (avoids clearing on every frame)
+            const newWidth = container.clientWidth;
+            const newHeight = container.clientHeight;
+            if (lastCanvasSize.width !== newWidth || lastCanvasSize.height !== newHeight) {
+                canvas.width = newWidth;
+                canvas.height = newHeight;
+                lastCanvasSize.width = newWidth;
+                lastCanvasSize.height = newHeight;
+            }
 
             const width = canvas.width;
             const height = canvas.height;
-            const padding = 40;
+
+            // Responsive padding based on screen width
+            const isMobile = width < 400;
+            const isSmall = width < 600;
+            const padding = isMobile ? 25 : (isSmall ? 32 : 40);
+            const paddingRight = isMobile ? 60 : (isSmall ? 80 : 100); // Extra space for prediction zone
+            const chartWidth = width - padding - paddingRight; // Chart area width
 
             // Clear
             ctx.fillStyle = '#18181b';
             ctx.fillRect(0, 0, width, height);
 
             // Use actual data points, or just current if no history
-            let data = chartDataPoints.length > 0 ? [...chartDataPoints] : [current];
-            let timestamps = chartTimestamps.length > 0 ? [...chartTimestamps] : [];
-            let cumulatives = chartCumulatives.length > 0 ? [...chartCumulatives] : [];
+            // Note: We reference arrays directly for pulse animation, only copy when data changes
+            let data = chartDataPoints.length > 0 ? chartDataPoints : [current];
+            let timestamps = chartTimestamps;
+            let cumulatives = chartCumulatives;
 
-            // Ensure current is last point
+            // Ensure current is last point (only modify if needed)
             if (data.length === 0 || data[data.length - 1] !== current) {
-                data.push(current);
-                timestamps.push(Math.floor(Date.now() / 1000));
+                data = [...data, current];
+                timestamps = [...timestamps, Math.floor(Date.now() / 1000)];
             }
 
             // Downsample for large datasets (keep max ~300 points for smooth rendering)
@@ -2886,17 +3472,35 @@
                 rollingTwap.push(twap);
             }
 
-            // Calculate Y range (include rolling TWAP and predictions in range calculation)
+            // Calculate Y range (include rolling TWAP but only reasonable predictions)
             const allValues = [...data, twap];
             if (rollingTwap.length > 0) allValues.push(...rollingTwap);
-            // Include predictions in range
-            if (markets.hourly?.predictedTwap) allValues.push(markets.hourly.predictedTwap);
-            if (markets.daily?.predictedTwap) allValues.push(markets.daily.predictedTwap);
-            if (markets.weekly?.predictedTwap) allValues.push(markets.weekly.predictedTwap);
+
+            // Calculate base range from actual data first
+            const dataMin = Math.min(...data);
+            const dataMax = Math.max(...data);
+            const dataRange = dataMax - dataMin;
+
+            // Only include predictions if they're within 3x of the data range
+            // This prevents extreme outliers from distorting the chart
+            const addPredictionIfReasonable = (pred) => {
+                if (!pred || pred <= 0) return;
+                // Check if prediction is within reasonable bounds (within 3x range of data)
+                const upperBound = dataMax + dataRange * 2;
+                const lowerBound = Math.max(0, dataMin - dataRange * 2);
+                if (pred >= lowerBound && pred <= upperBound) {
+                    allValues.push(pred);
+                }
+            };
+            addPredictionIfReasonable(markets.hourly?.predictedTwap);
+            addPredictionIfReasonable(markets.daily?.predictedTwap);
+            addPredictionIfReasonable(markets.weekly?.predictedTwap);
+
             let max = Math.max(...allValues) * 1.1;
             let min = Math.min(...allValues) * 0.9;
 
-            const range = max - min;
+            // Ensure non-zero range to prevent division by zero
+            const range = Math.max(max - min, 0.001);
             const gweiToY = (gwei) => padding + (height - padding * 2) * (1 - (gwei - min) / range);
 
             // Determine decimal places based on range
@@ -2909,19 +3513,20 @@
             };
             const decimals = getDecimals(range);
 
-            // Draw grid
+            // Draw grid - responsive Y-axis labels
+            const axisFontSize = isMobile ? 8 : (isSmall ? 9 : 10);
             ctx.strokeStyle = '#27272a';
             ctx.lineWidth = 1;
             for (let i = 0; i <= 4; i++) {
                 const y = padding + (height - padding * 2) * i / 4;
                 ctx.beginPath();
                 ctx.moveTo(padding, y);
-                ctx.lineTo(width - padding, y);
+                ctx.lineTo(padding + chartWidth, y);
                 ctx.stroke();
                 ctx.fillStyle = 'rgba(255,255,255,0.4)';
-                ctx.font = '10px Helvetica';
+                ctx.font = `${axisFontSize}px Helvetica`;
                 ctx.textAlign = 'right';
-                ctx.fillText((max - range * i / 4).toFixed(decimals), padding - 5, y + 4);
+                ctx.fillText((max - range * i / 4).toFixed(decimals), padding - (isMobile ? 3 : 5), y + 4);
             }
 
             // Draw time axis labels (X-axis)
@@ -2942,16 +3547,16 @@
                     }
                 };
 
-                // Draw 3-5 time labels evenly spaced
-                const numLabels = Math.min(5, data.length);
+                // Draw 3-5 time labels evenly spaced - responsive
+                const numLabels = isMobile ? Math.min(3, data.length) : Math.min(5, data.length);
                 ctx.fillStyle = 'rgba(255,255,255,0.4)';
-                ctx.font = '9px Helvetica';
+                ctx.font = `${axisFontSize}px Helvetica`;
                 ctx.textAlign = 'center';
                 for (let i = 0; i < numLabels; i++) {
                     const idx = Math.floor(i * (timestamps.length - 1) / (numLabels - 1));
-                    const x = padding + (width - padding * 2) * idx / Math.max(1, data.length - 1);
+                    const x = padding + chartWidth * idx / Math.max(1, data.length - 1);
                     const label = formatTime(timestamps[idx]);
-                    ctx.fillText(label, x, height - padding + 28);
+                    ctx.fillText(label, x, height - padding + (isMobile ? 18 : 28));
                 }
             }
 
@@ -2962,7 +3567,7 @@
                 ctx.setLineDash([]);
                 ctx.beginPath();
                 for (let i = 0; i < rollingTwap.length; i++) {
-                    const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                    const x = padding + chartWidth * i / Math.max(1, data.length - 1);
                     const y = gweiToY(rollingTwap[i]);
                     if (i === 0) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
@@ -2970,20 +3575,22 @@
                 ctx.stroke();
             }
 
-            // Draw current TWAP reference (final value as horizontal dashed line)
+            // Draw current TWAP reference (final value as horizontal dashed line) - responsive
             const twapY = gweiToY(twap);
             ctx.strokeStyle = '#3b82f6';
             ctx.lineWidth = 1;
             ctx.setLineDash([5, 5]);
             ctx.beginPath();
             ctx.moveTo(padding, twapY);
-            ctx.lineTo(width - padding, twapY);
+            ctx.lineTo(padding + chartWidth, twapY);
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.fillStyle = '#3b82f6';
-            ctx.font = '10px Helvetica';
+            ctx.font = `${axisFontSize}px Helvetica`;
             ctx.textAlign = 'left';
-            ctx.fillText('TWAP ' + twap.toFixed(decimals), width - padding + 5, twapY + 4);
+            // On mobile, show just value; on desktop show "TWAP" label
+            const twapLabel = isMobile ? twap.toFixed(decimals) : ('TWAP ' + twap.toFixed(decimals));
+            ctx.fillText(twapLabel, padding + chartWidth + (isMobile ? 3 : 5), twapY + 4);
 
             // Draw line chart connecting data points (spot prices)
             if (data.length > 0) {
@@ -2991,7 +3598,7 @@
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 for (let i = 0; i < data.length; i++) {
-                    const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                    const x = padding + chartWidth * i / Math.max(1, data.length - 1);
                     const y = gweiToY(data[i]);
                     if (i === 0) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
@@ -3006,11 +3613,11 @@
                 ctx.beginPath();
                 ctx.moveTo(padding, height - padding);
                 for (let i = 0; i < data.length; i++) {
-                    const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                    const x = padding + chartWidth * i / Math.max(1, data.length - 1);
                     const y = gweiToY(data[i]);
                     ctx.lineTo(x, y);
                 }
-                ctx.lineTo(width - padding, height - padding);
+                ctx.lineTo(padding + chartWidth, height - padding);
                 ctx.closePath();
                 ctx.fill();
 
@@ -3026,7 +3633,7 @@
                     const pointSize = data.length > 50 ? 2 : (data.length > 20 ? 3 : 4);
                     ctx.fillStyle = '#22c55e';
                     for (let i = 0; i < data.length; i++) {
-                        const x = padding + (width - padding * 2) * i / Math.max(1, data.length - 1);
+                        const x = padding + chartWidth * i / Math.max(1, data.length - 1);
                         const y = gweiToY(data[i]);
                         ctx.beginPath();
                         ctx.arc(x, y, i === data.length - 1 ? 6 : pointSize, 0, Math.PI * 2);
@@ -3037,7 +3644,7 @@
                 // Draw min/max markers (subtle, just small indicators)
                 if (data.length > 3) {
                     // Max marker - small diamond
-                    const maxX = padding + (width - padding * 2) * maxIdx / Math.max(1, data.length - 1);
+                    const maxX = padding + chartWidth * maxIdx / Math.max(1, data.length - 1);
                     const maxY = gweiToY(maxVal);
                     if (maxIdx !== data.length - 1) { // Don't mark if it's the current point
                         ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
@@ -3052,7 +3659,7 @@
 
                     // Min marker - small diamond (only if significantly different position)
                     if (Math.abs(minIdx - maxIdx) > 2 && minIdx !== data.length - 1) {
-                        const minX = padding + (width - padding * 2) * minIdx / Math.max(1, data.length - 1);
+                        const minX = padding + chartWidth * minIdx / Math.max(1, data.length - 1);
                         const minY = gweiToY(minVal);
                         ctx.fillStyle = 'rgba(100, 100, 100, 0.6)';
                         ctx.beginPath();
@@ -3067,7 +3674,7 @@
 
                 // Draw crosshair on hover
                 if (hoverIndex >= 0 && hoverIndex < data.length) {
-                    const hoverX = padding + (width - padding * 2) * hoverIndex / Math.max(1, data.length - 1);
+                    const hoverX = padding + chartWidth * hoverIndex / Math.max(1, data.length - 1);
                     const hoverY = gweiToY(data[hoverIndex]);
 
                     // Vertical line
@@ -3097,33 +3704,35 @@
                     }
                 }
 
-                // Pulsing live point (outer glow)
-                const lastX = padding + (width - padding * 2);
+                // Pulsing live point (outer glow) - responsive
+                const lastX = padding + chartWidth;
                 const lastY = gweiToY(data[data.length - 1]);
                 const pulseTime = Date.now() / 1000;
                 const pulseScale = 1 + 0.3 * Math.sin(pulseTime * 3);
+                const pulseRadius = isMobile ? 8 : 12;
                 ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
                 ctx.beginPath();
-                ctx.arc(lastX, lastY, 12 * pulseScale, 0, Math.PI * 2);
+                ctx.arc(lastX, lastY, pulseRadius * pulseScale, 0, Math.PI * 2);
                 ctx.fill();
 
                 // White center on current point
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
-                ctx.arc(lastX, lastY, 2, 0, Math.PI * 2);
+                ctx.arc(lastX, lastY, isMobile ? 1.5 : 2, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Current value label (next to live point)
+                // Current value label (next to live point) - responsive
                 const currentLabel = data[data.length - 1].toFixed(decimals);
-                ctx.font = 'bold 10px Helvetica';
+                ctx.font = `bold ${axisFontSize}px Helvetica`;
                 ctx.textAlign = 'left';
                 ctx.fillStyle = '#22c55e';
-                const labelY = lastY < padding + 30 ? lastY + 18 : lastY - 12;
-                ctx.fillText(currentLabel, lastX + 10, labelY);
+                const labelOffset = isMobile ? 12 : 18;
+                const labelY = lastY < padding + 30 ? lastY + labelOffset : lastY - (isMobile ? 8 : 12);
+                ctx.fillText(currentLabel, lastX + (isMobile ? 6 : 10), labelY);
             }
 
             // Price change badge (top-left, inside chart with subtle background)
-            if (data.length > 1) {
+            if (data.length > 1 && timestamps.length > 1) {
                 const firstVal = data[0];
                 const lastVal = data[data.length - 1];
                 const change = ((lastVal - firstVal) / firstVal) * 100;
@@ -3131,63 +3740,133 @@
                 const changeSign = change >= 0 ? '+' : '';
                 const changeText = changeSign + change.toFixed(1) + '%';
 
-                ctx.font = 'bold 10px Helvetica';
-                const textWidth = ctx.measureText(changeText).width;
+                // Calculate time period for context
+                const timeSpan = timestamps[timestamps.length - 1] - timestamps[0];
+                let periodLabel = '';
+                if (timeSpan < 3600) {
+                    periodLabel = Math.round(timeSpan / 60) + 'm';
+                } else if (timeSpan < 86400) {
+                    periodLabel = Math.round(timeSpan / 3600) + 'h';
+                } else {
+                    periodLabel = Math.round(timeSpan / 86400) + 'd';
+                }
 
-                // Draw subtle pill background - top left, above chart area
-                const pillX = 8;
-                const pillY = 12;
-                const pillPadX = 6;
-                const pillPadY = 4;
+                // Responsive badge sizing
+                const badgeFontBold = isMobile ? 8 : (isSmall ? 9 : 10);
+                const badgeFontSmall = isMobile ? 7 : (isSmall ? 8 : 9);
+                ctx.font = `bold ${badgeFontBold}px Helvetica`;
+                const changeWidth = ctx.measureText(changeText).width;
+                ctx.font = `${badgeFontSmall}px Helvetica`;
+                const periodWidth = ctx.measureText(periodLabel).width;
+                const totalWidth = changeWidth + periodWidth + (isMobile ? 4 : 6);
+
+                // Draw subtle pill background - top left, above chart area - responsive
+                const pillX = isMobile ? 4 : 8;
+                const pillY = isMobile ? 10 : 12;
+                const pillPadX = isMobile ? 4 : 6;
+                const pillPadY = isMobile ? 3 : 4;
+                const pillHeight = isMobile ? 13 : 16;
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
                 ctx.beginPath();
-                ctx.roundRect(pillX - pillPadX, pillY - pillPadY - 8, textWidth + pillPadX * 2, 16, 4);
+                ctx.roundRect(pillX - pillPadX, pillY - pillPadY - (isMobile ? 6 : 8), totalWidth + pillPadX * 2, pillHeight, 4);
                 ctx.fill();
 
-                // Draw text
+                // Draw change percentage
                 ctx.textAlign = 'left';
+                ctx.font = `bold ${badgeFontBold}px Helvetica`;
                 ctx.fillStyle = changeColor;
                 ctx.fillText(changeText, pillX, pillY);
+
+                // Draw period label
+                ctx.font = `${badgeFontSmall}px Helvetica`;
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.fillText(periodLabel, pillX + changeWidth + (isMobile ? 3 : 4), pillY);
+
+                // Store hit area for hover detection
+                priceChangeBadgeArea = {
+                    x: pillX - pillPadX,
+                    y: pillY - pillPadY - (isMobile ? 6 : 8),
+                    width: totalWidth + pillPadX * 2,
+                    height: pillHeight,
+                    change,
+                    firstVal,
+                    lastVal,
+                    timeSpan,
+                    periodLabel
+                };
+            } else {
+                priceChangeBadgeArea = null;
             }
 
-            // Legend - top-right corner, above chart area
-            ctx.font = '9px Helvetica';
+            // Legend - top-right corner, above chart area - responsive
+            const legendFontSize = isMobile ? 7 : (isSmall ? 8 : 9);
+            ctx.font = `${legendFontSize}px Helvetica`;
             ctx.textAlign = 'right';
-            const legendY = 12; // Above the chart padding area
+            const legendY = isMobile ? 10 : 12;
+            const legendSpacing = isMobile ? 30 : 40;
             ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
-            ctx.fillText('● Spot', width - 85, legendY);
+            ctx.fillText('● Spot', width - legendSpacing * 2 - 5, legendY);
             ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
-            ctx.fillText('― TWAP', width - 45, legendY);
+            ctx.fillText('― TWAP', width - legendSpacing - 5, legendY);
             ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
             ctx.fillText('◆ Pred', width - 5, legendY);
 
             // Draw prediction markers for each market
-            drawPredictionMarkers(ctx, width, height, padding, gweiToY, timestamps, decimals);
+            drawPredictionMarkers(ctx, width, height, padding, chartWidth, gweiToY, timestamps, decimals);
 
-            // Observation count (bottom-left) - show original count, not downsampled
+            // Observation count (bottom-left) - show original count, not downsampled - responsive
             const originalCount = chartDataPoints.length || 1;
             ctx.textAlign = 'left';
             ctx.fillStyle = 'rgba(255,255,255,0.3)';
-            ctx.font = '9px Helvetica';
-            ctx.fillText(`${originalCount} obs`, padding, height - padding + 12);
+            ctx.font = `${legendFontSize}px Helvetica`;
+            ctx.fillText(`${originalCount} obs`, padding, height - padding + (isMobile ? 8 : 12));
 
             // Store state for tooltips (include rolling TWAP for tooltip display)
-            chartState = { data, rollingTwap, padding, min, max, width, height, twap, current, timestamps, downsampleFactor };
+            chartState = { data, rollingTwap, padding, chartWidth, min, max, width, height, twap, current, timestamps, downsampleFactor };
         }
 
         /**
          * Draw prediction markers on the chart for each market's close time
          */
-        function drawPredictionMarkers(ctx, width, height, padding, gweiToY, timestamps, decimals) {
+        function drawPredictionMarkers(ctx, width, height, padding, chartWidth, gweiToY, timestamps, decimals) {
+            // Clear previous marker positions for hover detection
+            predictionMarkerPositions = [];
+
             if (!timestamps || timestamps.length < 2) return;
 
-            const now = Math.floor(Date.now() / 1000);
             const firstTime = timestamps[0];
             const lastTime = timestamps[timestamps.length - 1];
             const timeRange = lastTime - firstTime;
             if (timeRange <= 0) return;
 
-            const chartWidth = width - padding * 2;
+            // Responsive sizing based on canvas width
+            const isMobile = width < 400;
+            const isSmall = width < 600;
+
+            const chartRightEdge = padding + chartWidth;
+
+            // Draw "NOW" separator line - vertical dashed line at chart edge
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(chartRightEdge, padding);
+            ctx.lineTo(chartRightEdge, height - padding);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // "NOW" label at top
+            ctx.font = isMobile ? 'bold 7px Helvetica' : 'bold 9px Helvetica';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.textAlign = 'center';
+            ctx.fillText('NOW', chartRightEdge, padding - (isMobile ? 4 : 6));
+
+            // Subtle gradient overlay for prediction zone
+            const predZoneGradient = ctx.createLinearGradient(chartRightEdge, 0, width, 0);
+            predZoneGradient.addColorStop(0, 'rgba(255, 255, 255, 0.02)');
+            predZoneGradient.addColorStop(1, 'rgba(255, 255, 255, 0.05)');
+            ctx.fillStyle = predZoneGradient;
+            ctx.fillRect(chartRightEdge, padding, width - chartRightEdge - 5, height - padding * 2);
 
             // Colors for each market type
             const marketColors = {
@@ -3202,124 +3881,283 @@
                 weekly: '1W'
             };
 
-            // Draw predictions for each market
-            ['hourly', 'daily', 'weekly'].forEach(type => {
+            // Animation time for pulse effect
+            const pulseTime = Date.now() / 1000;
+
+            // Draw predictions for each market (reverse order so hourly renders on top)
+            ['weekly', 'daily', 'hourly'].forEach(type => {
                 const market = markets[type];
                 if (!market || !market.predictedTwap || !market.close) return;
 
                 const closeTime = market.close;
                 const predicted = market.predictedTwap;
                 const yesPrice = market.yesPrice;
+                const isHourly = type === 'hourly';
 
                 // Calculate X position: extend chart to show future predictions
-                // Scale future times relative to the existing chart
-                const timeOffset = closeTime - lastTime; // seconds into future
-                const futureExtend = Math.min(timeOffset / timeRange, 0.3); // max 30% extension
+                const timeOffset = closeTime - lastTime;
+                const futureExtend = Math.min(timeOffset / timeRange, 0.35);
 
                 // Position: right edge + proportional future offset
                 const xPos = padding + chartWidth + futureExtend * chartWidth;
 
                 // Only draw if within canvas bounds
-                if (xPos > width - 10) return;
+                if (xPos > width - (isMobile ? 8 : 15)) return;
 
-                const yPos = gweiToY(predicted);
+                // Calculate Y position - raw for line, clamped for marker/labels
+                const rawYPos = gweiToY(predicted);
+                // Clamp marker position to ensure labels fit (but line uses raw position)
+                const minY = padding + (isMobile ? 25 : 35);
+                const maxY = height - padding - (isMobile ? 30 : 45);
+                const markerYPos = Math.max(minY, Math.min(rawYPos, maxY));
+
                 const color = marketColors[type];
                 const label = marketLabels[type];
 
-                // Draw connecting dashed line from current TWAP to prediction
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 1;
-                ctx.setLineDash([4, 4]);
-                ctx.globalAlpha = 0.5;
+                // Draw connecting line from current TWAP to ACTUAL prediction position (not clamped)
+                // Gradient line that fades toward prediction
+                const lineGradient = ctx.createLinearGradient(chartRightEdge, 0, xPos, 0);
+                lineGradient.addColorStop(0, color);
+                lineGradient.addColorStop(1, color + '80'); // 50% opacity at end
+                ctx.strokeStyle = lineGradient;
+                ctx.lineWidth = isHourly ? 2 : 1;
+                ctx.setLineDash([6, 4]);
                 ctx.beginPath();
-                ctx.moveTo(padding + chartWidth, gweiToY(cachedGasData.twap));
-                ctx.lineTo(xPos, yPos);
+                ctx.moveTo(chartRightEdge, gweiToY(cachedGasData.twap));
+                ctx.lineTo(xPos, rawYPos); // Use raw position for accurate line direction
                 ctx.stroke();
                 ctx.setLineDash([]);
-                ctx.globalAlpha = 1;
+
+                // Marker size (hourly is larger and more prominent) - responsive
+                // Increased sizes on mobile for better visibility
+                const markerSize = isMobile
+                    ? (isHourly ? 9 : 6)
+                    : (isSmall ? (isHourly ? 9 : 7) : (isHourly ? 10 : 7));
+
+                // Draw glow effect for markers - more prominent on mobile for visibility
+                const glowSize = isMobile
+                    ? (isHourly ? (markerSize + 8 + Math.sin(pulseTime * 3) * 3) : (markerSize + 5))
+                    : (isHourly ? (markerSize + 8 + Math.sin(pulseTime * 3) * 3) : (markerSize + 4));
+                const glowGradient = ctx.createRadialGradient(xPos, markerYPos, 0, xPos, markerYPos, glowSize);
+                glowGradient.addColorStop(0, color + '40');
+                glowGradient.addColorStop(1, color + '00');
+                ctx.fillStyle = glowGradient;
+                ctx.beginPath();
+                ctx.arc(xPos, markerYPos, glowSize, 0, Math.PI * 2);
+                ctx.fill();
 
                 // Draw prediction diamond marker
                 ctx.fillStyle = color;
                 ctx.beginPath();
-                ctx.moveTo(xPos, yPos - 8);
-                ctx.lineTo(xPos + 6, yPos);
-                ctx.lineTo(xPos, yPos + 8);
-                ctx.lineTo(xPos - 6, yPos);
+                ctx.moveTo(xPos, markerYPos - markerSize);
+                ctx.lineTo(xPos + markerSize * 0.7, markerYPos);
+                ctx.lineTo(xPos, markerYPos + markerSize);
+                ctx.lineTo(xPos - markerSize * 0.7, markerYPos);
                 ctx.closePath();
                 ctx.fill();
 
                 // Draw border
                 ctx.strokeStyle = '#18181b';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // Inner highlight
+                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(xPos, markerYPos - markerSize + 2);
+                ctx.lineTo(xPos + markerSize * 0.5, markerYPos);
+                ctx.stroke();
+
+                // Hover highlight ring
+                if (hoveredPrediction === type) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(xPos, markerYPos, markerSize + 6, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // Extra glow on hover
+                    const hoverGlow = ctx.createRadialGradient(xPos, markerYPos, markerSize, xPos, markerYPos, markerSize + 20);
+                    hoverGlow.addColorStop(0, color + '60');
+                    hoverGlow.addColorStop(1, color + '00');
+                    ctx.fillStyle = hoverGlow;
+                    ctx.beginPath();
+                    ctx.arc(xPos, markerYPos, markerSize + 20, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Draw pill-style label badge - responsive sizing
+                // On mobile, show value inline with label for better visibility
+                // Use at least 2 decimals for small values (<1 gwei) to avoid misleading rounding
+                const valueDecimals = predicted < 1 ? Math.max(2, decimals) : (decimals > 1 ? 1 : decimals);
+                const valueText = predicted.toFixed(valueDecimals);
+                const timeText = formatCloseTime(closeTime);
+
+                const pillFontSize = isMobile ? 9 : (isSmall ? 9 : 10);
+                const combinedLabel = isMobile ? `${label} ${valueText}` : label;
+                ctx.font = `bold ${pillFontSize}px Helvetica`;
+                const labelWidth = ctx.measureText(combinedLabel).width;
+                const pillWidth = isMobile ? Math.max(labelWidth + 10, 45) : Math.max(labelWidth + 12, 28);
+                const pillHeight = isMobile ? 16 : (isSmall ? 16 : 18);
+                const pillX = xPos - pillWidth / 2;
+                const pillY = markerYPos - markerSize - pillHeight - (isMobile ? 3 : 6);
+
+                // Pill background
+                ctx.fillStyle = color + 'E0';
+                ctx.beginPath();
+                ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 4);
+                ctx.fill();
+
+                // Pill border
+                ctx.strokeStyle = color;
                 ctx.lineWidth = 1;
                 ctx.stroke();
 
-                // Draw label with predicted value
-                ctx.font = 'bold 9px Helvetica';
+                // Label text (on mobile includes value, on desktop just label)
+                ctx.fillStyle = '#18181b';
+                ctx.font = `bold ${pillFontSize}px Helvetica`;
                 ctx.textAlign = 'center';
-                ctx.fillStyle = color;
-                ctx.fillText(label, xPos, yPos - 14);
+                ctx.fillText(combinedLabel, xPos, pillY + (isMobile ? 12 : 13));
 
-                // Draw predicted value
-                ctx.font = '8px Helvetica';
-                ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                ctx.fillText(predicted.toFixed(1), xPos, yPos + 20);
+                // Close time label (below pill) - hide on mobile to reduce clutter
+                if (!isMobile) {
+                    ctx.font = isSmall ? '8px Helvetica' : '9px Helvetica';
+                    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                    ctx.fillText(timeText, xPos, pillY + pillHeight + 10);
+                }
 
-                // Draw odds indicator (small bar showing UP probability)
-                const barWidth = 20;
-                const barHeight = 3;
+                // Predicted value (below marker) - on mobile just show "gwei" since value is in pill
+                const valueFontSize = isMobile
+                    ? (isHourly ? 10 : 9)
+                    : (isSmall ? (isHourly ? 10 : 9) : (isHourly ? 11 : 10));
+                ctx.font = isHourly ? `bold ${valueFontSize}px Helvetica` : `${valueFontSize}px Helvetica`;
+                ctx.fillStyle = isHourly ? '#fff' : 'rgba(255,255,255,0.8)';
+                // On mobile, value is already in the pill label
+                if (isMobile) {
+                    ctx.fillText('gwei', xPos, markerYPos + markerSize + 10);
+                } else {
+                    ctx.fillText(valueText + ' gwei', xPos, markerYPos + markerSize + 16);
+                }
+
+                // Draw odds indicator bar - responsive sizing
+                const barWidth = isMobile
+                    ? (isHourly ? 26 : 18)
+                    : (isSmall ? (isHourly ? 26 : 20) : (isHourly ? 32 : 24));
+                const barHeight = isMobile ? 4 : (isHourly ? 5 : 4);
                 const barX = xPos - barWidth / 2;
-                const barY = yPos + 24;
+                const barY = markerYPos + markerSize + (isMobile ? 14 : 22);
 
-                // Background bar
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                ctx.fillRect(barX, barY, barWidth, barHeight);
+                // Bar background with rounded ends
+                ctx.fillStyle = 'rgba(255,255,255,0.15)';
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barWidth, barHeight, 2);
+                ctx.fill();
 
-                // Fill based on YES odds
-                ctx.fillStyle = yesPrice > 0.5 ? '#22c55e' : '#ef4444';
-                ctx.fillRect(barX, barY, barWidth * yesPrice, barHeight);
+                // Fill based on YES odds - neutral gray if near 50/50
+                const yesPct = Math.round(yesPrice * 100);
+                const isNeutralOdds = yesPct >= 45 && yesPct <= 55;
+                const oddsColor = isNeutralOdds ? '#71717a' : (yesPrice > 0.5 ? '#22c55e' : '#ef4444');
+                ctx.fillStyle = oddsColor;
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barWidth * yesPrice, barHeight, 2);
+                ctx.fill();
+
+                // Odds percentage label for hourly - hide on mobile to reduce clutter
+                if (isHourly && !isMobile) {
+                    ctx.font = isSmall ? '7px Helvetica' : '8px Helvetica';
+                    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                    if (isNeutralOdds) {
+                        ctx.fillText('~50% EVEN', xPos, barY + barHeight + 10);
+                    } else {
+                        ctx.fillText(yesPct + '% UP', xPos, barY + barHeight + 10);
+                    }
+                }
+
+                // Store marker position for hover detection
+                // Hit area is the entire prediction card region (pill to odds bar)
+                // Larger hit radius on mobile for easier touch targets
+                const hitRadius = isMobile
+                    ? (isHourly ? 28 : 22)
+                    : (isHourly ? 35 : 28);
+                predictionMarkerPositions.push({
+                    type,
+                    x: xPos,
+                    y: markerYPos,
+                    radius: hitRadius,
+                    predicted,
+                    yesPrice,
+                    noPrice: market.noPrice,
+                    closeTime,
+                    color,
+                    label
+                });
             });
         }
 
+        // Format close time for display
+        function formatCloseTime(timestamp) {
+            const date = new Date(timestamp * 1000);
+            const hours = date.getHours();
+            const minutes = date.getMinutes();
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const h = hours % 12 || 12;
+            const m = minutes.toString().padStart(2, '0');
+            return h + ':' + m + ' ' + ampm;
+        }
+
         // ======================== COUNTDOWNS ========================
+        // Cache next period timestamps to avoid creating Date objects every second
+        let cachedPeriods = { nextHour: 0, nextDay: 0, nextWeek: 0 };
+
         function updateCountdowns() {
             const now = Math.floor(Date.now() / 1000);
 
             // Hourly
             if (markets.hourly) {
-                document.getElementById('hourlyCountdown').textContent = formatTime(markets.hourly.close - now);
+                DOM.hourlyCountdown.textContent = formatTime(markets.hourly.close - now);
             } else {
-                const nextHour = new Date();
-                nextHour.setUTCMinutes(60, 0, 0);
-                document.getElementById('hourlyCountdown').textContent = formatTime(Math.floor(nextHour.getTime() / 1000) - now);
+                if (cachedPeriods.nextHour <= now) {
+                    const nextHour = new Date();
+                    nextHour.setUTCMinutes(60, 0, 0);
+                    cachedPeriods.nextHour = Math.floor(nextHour.getTime() / 1000);
+                }
+                DOM.hourlyCountdown.textContent = formatTime(cachedPeriods.nextHour - now);
             }
 
             // Daily
             if (markets.daily) {
-                document.getElementById('dailyCountdown').textContent = formatTime(markets.daily.close - now);
+                DOM.dailyCountdown.textContent = formatTime(markets.daily.close - now);
             } else {
-                const tomorrow = new Date();
-                tomorrow.setUTCHours(24, 0, 0, 0);
-                document.getElementById('dailyCountdown').textContent = formatTime(Math.floor(tomorrow.getTime() / 1000) - now);
+                if (cachedPeriods.nextDay <= now) {
+                    const tomorrow = new Date();
+                    tomorrow.setUTCHours(24, 0, 0, 0);
+                    cachedPeriods.nextDay = Math.floor(tomorrow.getTime() / 1000);
+                }
+                DOM.dailyCountdown.textContent = formatTime(cachedPeriods.nextDay - now);
             }
 
             // Weekly
             if (markets.weekly) {
-                document.getElementById('weeklyCountdown').textContent = formatTime(markets.weekly.close - now);
+                DOM.weeklyCountdown.textContent = formatTime(markets.weekly.close - now);
             } else {
-                const sun = new Date();
-                sun.setUTCDate(sun.getUTCDate() + (7 - sun.getUTCDay()));
-                sun.setUTCHours(0, 0, 0, 0);
-                document.getElementById('weeklyCountdown').textContent = formatTime(Math.floor(sun.getTime() / 1000) - now);
+                if (cachedPeriods.nextWeek <= now) {
+                    const sun = new Date();
+                    sun.setUTCDate(sun.getUTCDate() + (7 - sun.getUTCDay()));
+                    sun.setUTCHours(0, 0, 0, 0);
+                    cachedPeriods.nextWeek = Math.floor(sun.getTime() / 1000);
+                }
+                DOM.weeklyCountdown.textContent = formatTime(cachedPeriods.nextWeek - now);
             }
 
             // Extreme
             if (markets.extreme) {
                 const remaining = markets.extreme.close - now;
                 if (remaining <= 0) {
-                    document.getElementById('extremeCountdown').textContent = 'Ended';
+                    DOM.extremeCountdown.textContent = 'Ended';
                 } else {
                     const days = Math.floor(remaining / 86400);
-                    document.getElementById('extremeCountdown').textContent = days + ' days';
+                    DOM.extremeCountdown.textContent = days + ' days';
                 }
             }
         }
@@ -3368,7 +4206,7 @@
             }
 
             try {
-                const rpc = provider || new ethers.JsonRpcProvider('https://1rpc.io/eth');
+                const rpc = provider || await getRpcProvider();
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
                 const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, rpc);
 
@@ -3456,9 +4294,10 @@
 
                 // Process and display orders
                 const formatOrder = (order) => {
-                    // Price = collateral / shares
-                    const price = Number(order.collateral) / Number(order.shares);
-                    const size = Number(order.shares) / 1e18;
+                    // Price = collateral / shares (guard against zero shares)
+                    const shares = Number(order.shares);
+                    const price = shares > 0 ? Number(order.collateral) / shares : 0;
+                    const size = shares / 1e18;
                     return { price, size, order };
                 };
 
@@ -3560,12 +4399,38 @@
             // Calculate order details
             const shares = Number(order.shares) / 1e18;
             const collateral = Number(order.collateral) / 1e18;
+            if (shares <= 0) {
+                showStatus('Invalid order (zero shares)', 'error');
+                return;
+            }
             const price = collateral / shares;
 
             // isBid means it's a BID order in the orderbook (maker wants to buy)
             // If user clicks a BID, they are selling shares to the maker
             // If user clicks an ASK, they are buying shares from the maker
             const userIsBuying = !isBid;
+
+            // Validate user has sufficient balance
+            if (userIsBuying) {
+                // Check ETH balance
+                const ethBal = await provider.getBalance(connectedAddress);
+                if (order.collateral > ethBal) {
+                    const needed = collateral.toFixed(4);
+                    const have = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
+                    showStatus(`Insufficient ETH. Need ${needed}, have ${have}`, 'error');
+                    return;
+                }
+            } else {
+                // Check shares balance
+                const userShares = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                if (order.shares > userShares) {
+                    const needed = shares.toFixed(4);
+                    const have = parseFloat(ethers.formatEther(userShares)).toFixed(4);
+                    showStatus(`Insufficient shares. Need ${needed}, have ${have}`, 'error');
+                    return;
+                }
+            }
+
             const actionText = userIsBuying ?
                 `Buy ${shares.toFixed(4)} shares for ${collateral.toFixed(4)} ETH (${price.toFixed(4)} ETH/share)?` :
                 `Sell ${shares.toFixed(4)} shares for ${collateral.toFixed(4)} ETH (${price.toFixed(4)} ETH/share)?`;
@@ -4080,6 +4945,17 @@
                 return;
             }
 
+            // For sell orders, validate user has enough shares
+            if (!limitIsBuy) {
+                const userShares = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                const sharesNeeded = ethers.parseEther(shares.toString());
+                if (sharesNeeded > userShares) {
+                    const available = parseFloat(ethers.formatEther(userShares)).toFixed(4);
+                    showStatus(`Insufficient shares. You have ${available}`, 'error');
+                    return;
+                }
+            }
+
             try {
                 // For sell orders, need approval
                 if (!limitIsBuy) {
@@ -4204,7 +5080,7 @@
                 listEl.innerHTML = orders.map(o => {
                     const shares = Number(o.shares) / 1e18;
                     const collateral = Number(o.collateral) / 1e18;
-                    const price = collateral / shares;
+                    const price = shares > 0 ? collateral / shares : 0;
                     const side = o.isBuy ? 'BUY' : 'SELL';
                     const sideColor = o.isBuy ? 'var(--green)' : 'var(--red)';
                     const shareType = o.isYes ? 'YES' : 'NO';
@@ -4868,22 +5744,24 @@
                 const etherscanLink = `<a href="https://etherscan.io/tx/${txHash}" target="_blank">View on Etherscan</a>`;
                 updateToast(toastId, submitted.title, `${submitted.body}<br>${etherscanLink}`, 'pending');
 
-                // Wait for confirmation using RPC provider (more reliable than wallet's tx.wait)
-                const rpc = provider || await getRpcProvider();
+                // Wait for confirmation using dedicated RPC provider (more reliable than wallet's provider)
+                const rpc = await getRpcProvider();
                 const receipt = await Promise.race([
                     rpc.waitForTransaction(txHash, 1, 60000), // 1 confirmation, 60s timeout
                     new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 65000))
                 ]);
 
-                if (receipt && receipt.status === 1) {
+                // Use Number() to handle BigInt or string status values
+                if (receipt && Number(receipt.status) === 1) {
                     updateToast(toastId, success.title, `${success.body}${success.body ? '<br>' : ''}${etherscanLink}`, 'success', 5000);
                     if (onSuccess) await onSuccess(receipt);
                     return receipt;
-                } else if (receipt && receipt.status === 0) {
+                } else if (receipt && Number(receipt.status) === 0) {
                     updateToast(toastId, error.title, `Transaction reverted<br>${etherscanLink}`, 'error', 8000);
                     throw new Error('Transaction reverted');
                 } else {
                     // Timeout or null receipt - tx may still be pending or succeeded
+                    console.warn('Unexpected receipt state:', receipt);
                     updateToast(toastId, 'Check Status', `Transaction may have succeeded<br>${etherscanLink}`, 'info', 10000);
                     if (onSuccess) await onSuccess(null);
                     return null;
@@ -5069,8 +5947,13 @@
          * - Time remaining until market close
          */
         function calculatePredictedTwap(currentTwap, startTwap, yesPrice, marketClose, marketStart) {
+            // Safety check - if no valid TWAP data, return 0 (will skip drawing)
+            if (!currentTwap || currentTwap <= 0) return 0;
+
             const now = Math.floor(Date.now() / 1000);
             const totalDuration = marketClose - marketStart;
+            if (totalDuration <= 0) return currentTwap; // Invalid duration, use current
+
             const elapsed = Math.max(0, now - marketStart);
             const elapsedRatio = Math.min(1, elapsed / totalDuration);
 
