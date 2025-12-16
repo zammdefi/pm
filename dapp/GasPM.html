@@ -593,15 +593,33 @@
 
         .modal-close:hover { color: var(--text); }
 
-        /* Orderbook */
+        /* Orderbook - CEX/Polymarket Style */
         .orderbook {
             margin-bottom: 1rem;
             background: var(--bg);
             border-radius: var(--radius);
             overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        .orderbook-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0.75rem;
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+        }
+        .orderbook-title-text {
+            font-size: var(--font-xs);
+            font-weight: 600;
+            color: var(--text);
+        }
+        .orderbook-depth-info {
+            font-size: 9px;
+            color: var(--text-muted);
         }
         .orderbook-body {
-            max-height: 180px;
+            max-height: 220px;
             overflow-y: auto;
         }
         .orderbook-side {
@@ -610,52 +628,107 @@
         }
         .orderbook-side.asks {
             flex-direction: column-reverse;
-            border-bottom: 1px solid var(--border);
-        }
-        .orderbook-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            padding: 0.375rem 0.75rem;
-            font-size: var(--font-xs);
-            font-variant-numeric: tabular-nums;
-            cursor: pointer;
-            transition: background 0.1s;
         }
         .orderbook-header {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            padding: 0.5rem 0.75rem;
-            background: var(--surface-2);
-            font-size: 10px;
+            grid-template-columns: 2fr 1.2fr 1.2fr;
+            padding: 0.4rem 0.75rem;
+            background: var(--surface);
+            font-size: 9px;
             color: var(--text-dim);
             text-transform: uppercase;
-            letter-spacing: 0.03em;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 1;
         }
+        .orderbook-header span:last-child { text-align: right; }
+        .orderbook-row {
+            display: grid;
+            grid-template-columns: 2fr 1.2fr 1.2fr;
+            padding: 0.35rem 0.75rem;
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            cursor: pointer;
+            transition: background 0.1s;
+            position: relative;
+        }
+        .orderbook-row::before {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: var(--depth, 0%);
+            opacity: 0.15;
+            pointer-events: none;
+            transition: width 0.2s;
+        }
+        .orderbook-row.ask::before { background: var(--red); }
+        .orderbook-row.bid::before { background: var(--green); }
         .orderbook-row:hover { background: var(--surface-2); }
+        .orderbook-row:hover::before { opacity: 0.25; }
         .orderbook-row.ask { color: var(--red); }
         .orderbook-row.bid { color: var(--green); }
-        .orderbook-row .price { font-weight: 600; }
-        .orderbook-row .size { color: var(--text-muted); }
-        .orderbook-row .total { color: var(--text-dim); text-align: right; }
+        .orderbook-row .price { font-weight: 600; z-index: 1; }
+        .orderbook-row .size { color: var(--text); z-index: 1; }
+        .orderbook-row .total { color: var(--text-muted); text-align: right; z-index: 1; }
+        .orderbook-row.mine { background: rgba(59, 130, 246, 0.1); }
+        .orderbook-row.mine::after {
+            content: 'YOU';
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 8px;
+            background: var(--blue);
+            color: white;
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-weight: 600;
+        }
         .orderbook-empty {
-            padding: 1rem;
+            padding: 1.5rem 1rem;
             text-align: center;
             color: var(--text-dim);
             font-size: var(--font-xs);
         }
         .orderbook-spread {
             display: flex;
-            justify-content: center;
-            padding: 0.375rem;
-            background: var(--surface);
-            font-size: 10px;
-            color: var(--text-dim);
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 0.75rem;
+            background: var(--surface-2);
+            font-size: 11px;
             border-top: 1px solid var(--border);
             border-bottom: 1px solid var(--border);
         }
-        .orderbook-row.better-deal { background: var(--green-dim); }
-        .orderbook-row.better-deal:hover { background: rgba(34, 197, 94, 0.25); }
-        .orderbook-row.better-deal .price { color: var(--blue); }
+        .orderbook-spread-left {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .orderbook-spread-price {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text);
+        }
+        .orderbook-spread-label {
+            font-size: 9px;
+            color: var(--text-dim);
+        }
+        .orderbook-spread-right {
+            text-align: right;
+            font-size: 10px;
+        }
+        .orderbook-spread-pct {
+            color: var(--text-muted);
+        }
+        .orderbook-row.better-deal { background: rgba(34, 197, 94, 0.1); }
+        .orderbook-row.better-deal:hover { background: rgba(34, 197, 94, 0.2); }
+        .orderbook-row.better-deal .price { color: var(--green); }
+        .orderbook-row.better-deal::before { background: var(--green); opacity: 0.2; }
 
         .trade-input-group { margin-bottom: 1rem; }
 
@@ -930,9 +1003,6 @@
             .pred-tooltip-row { margin-bottom: 0.15rem; font-size: 9px; }
             .pred-tooltip-label { font-size: 9px; }
             .pred-tooltip-value { font-size: 9px; }
-            /* Hide less critical rows on mobile */
-            .pred-tooltip-row:nth-child(5),
-            .pred-tooltip-row:nth-child(6) { display: none; }
         }
 
         @media (max-width: 360px) {
@@ -1003,6 +1073,10 @@
         .mode-toggle-btn.active-limit {
             background: #8b5cf6;
             color: var(--text);
+        }
+        .mode-toggle-btn.active-swap {
+            background: #06b6d4;
+            color: var(--bg);
         }
 
         /* LP mode toggle */
@@ -1119,28 +1193,24 @@
                         <span class="pred-tooltip-title" id="predTitle">Hourly Market</span>
                     </div>
                     <div class="pred-tooltip-row">
-                        <span class="pred-tooltip-label">Predicted TWAP</span>
-                        <span class="pred-tooltip-value" id="predTwap">--</span>
-                    </div>
-                    <div class="pred-tooltip-row">
-                        <span class="pred-tooltip-label">Direction</span>
+                        <span class="pred-tooltip-label">Odds</span>
                         <span class="pred-tooltip-direction up" id="predDirection">--</span>
                     </div>
                     <div class="pred-tooltip-row">
-                        <span class="pred-tooltip-label">Market TVL</span>
-                        <span class="pred-tooltip-value" id="predTvl">--</span>
+                        <span class="pred-tooltip-label">Threshold</span>
+                        <span class="pred-tooltip-value" id="predThreshold">--</span>
+                    </div>
+                    <div class="pred-tooltip-row">
+                        <span class="pred-tooltip-label">Predicted</span>
+                        <span class="pred-tooltip-value" id="predTwap">--</span>
                     </div>
                     <div class="pred-tooltip-row">
                         <span class="pred-tooltip-label">Closes in</span>
                         <span class="pred-tooltip-value" id="predCloses">--</span>
                     </div>
-                    <div class="pred-tooltip-row" style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);">
-                        <span class="pred-tooltip-label">Implied remaining avg</span>
-                        <span class="pred-tooltip-value" id="predImpliedAvg">--</span>
-                    </div>
                     <div class="pred-tooltip-row">
-                        <span class="pred-tooltip-label">vs Current spot</span>
-                        <span class="pred-tooltip-value" id="predVsSpot">--</span>
+                        <span class="pred-tooltip-label">TVL</span>
+                        <span class="pred-tooltip-value" id="predTvl">--</span>
                     </div>
                 </div>
             </div>
@@ -1182,7 +1252,7 @@
                         </div>
                         <div class="gas-compare-arrow" id="hourlyArrow">--</div>
                         <div class="gas-compare-point">
-                            <div class="gas-compare-label">Now</div>
+                            <div class="gas-compare-label">TWAP</div>
                             <div class="gas-compare-value" id="hourlyNow">--</div>
                         </div>
                     </div>
@@ -1227,7 +1297,7 @@
                         </div>
                         <div class="gas-compare-arrow" id="dailyArrow">--</div>
                         <div class="gas-compare-point">
-                            <div class="gas-compare-label">Now</div>
+                            <div class="gas-compare-label">TWAP</div>
                             <div class="gas-compare-value" id="dailyNow">--</div>
                         </div>
                     </div>
@@ -1272,7 +1342,7 @@
                         </div>
                         <div class="gas-compare-arrow" id="weeklyArrow">--</div>
                         <div class="gas-compare-point">
-                            <div class="gas-compare-label">Now</div>
+                            <div class="gas-compare-label">TWAP</div>
                             <div class="gas-compare-value" id="weeklyNow">--</div>
                         </div>
                     </div>
@@ -1415,7 +1485,7 @@
             <div class="info-text">
                 <strong>Hourly, Daily &amp; Weekly:</strong> Bet on whether the gas TWAP (time-weighted average) will be higher when the market closes compared to when it was created. UP wins if TWAP increased, DOWN wins if it stayed the same or decreased.<br><br>
                 <strong>100 Gwei Challenge:</strong> Bet on whether gas will spike to 100 gwei before the deadline. If it touches 100 gwei at any point, YES wins and the market can resolve early. If the deadline passes without reaching 100 gwei, NO wins.<br><br>
-                <strong>Trading:</strong> Prices reflect implied probability. If UP shows 30%, it costs ~0.30 ETH to win 1 ETH if UP wins. Losing shares pay nothing. Trade anytime or hold to resolution.
+                <strong>Trading:</strong> Price = Probability. If UP shows 30%, one share costs ~0.30 ETH and pays 1 ETH if UP wins (3.3x return). Losing shares pay nothing. Trade anytime or hold to resolution. Use limit orders to set your own odds.
             </div>
         </section>
 
@@ -1458,58 +1528,110 @@
                 <div class="modal-title" id="tradeTitle">Trade Shares</div>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
+            <!-- YES/NO Side Toggle -->
+            <div style="display:flex;gap:4px;margin-bottom:0.75rem;">
+                <button id="sideYesBtn" class="mode-toggle-btn" onclick="switchTradeSide(true)" style="flex:1;padding:0.5rem;">
+                    <span id="sideYesLabel">YES</span>
+                    <span id="sideYesOdds" style="opacity:0.7;margin-left:4px;font-size:11px;">--</span>
+                </button>
+                <button id="sideNoBtn" class="mode-toggle-btn" onclick="switchTradeSide(false)" style="flex:1;padding:0.5rem;">
+                    <span id="sideNoLabel">NO</span>
+                    <span id="sideNoOdds" style="opacity:0.7;margin-left:4px;font-size:11px;">--</span>
+                </button>
+            </div>
             <div class="status-message" id="tradeStatus"></div>
-            <!-- Buy/Sell/LP Toggle -->
+            <!-- Mode Toggle: Trade, Swap, Limit, LP -->
             <div class="mode-toggle">
-                <button id="buyModeBtn" class="mode-toggle-btn active-buy" onclick="setTradeMode('buy')">Buy</button>
-                <button id="sellModeBtn" class="mode-toggle-btn" onclick="setTradeMode('sell')">Sell</button>
+                <button id="tradeModeBtn" class="mode-toggle-btn active-buy" onclick="setTradeMode('trade')">Trade</button>
+                <button id="swapModeBtn" class="mode-toggle-btn" onclick="setTradeMode('swap')">Swap</button>
                 <button id="limitModeBtn" class="mode-toggle-btn" onclick="setTradeMode('limit')">Limit</button>
                 <button id="lpModeBtn" class="mode-toggle-btn" onclick="setTradeMode('lp')">LP</button>
-                <button id="mintModeBtn" class="mode-toggle-btn" onclick="setTradeMode('mint')">Mint</button>
+            </div>
+            <!-- Trade Direction Toggle (Buy/Sell) - shown only in Trade mode -->
+            <div id="tradeDirectionToggle" class="mode-toggle" style="margin-top:4px;">
+                <button id="buyDirBtn" class="mode-toggle-btn active-buy" onclick="setTradeDirection('buy')" style="flex:1;">Buy with ETH</button>
+                <button id="sellDirBtn" class="mode-toggle-btn" onclick="setTradeDirection('sell')" style="flex:1;">Sell for ETH</button>
+            </div>
+            <!-- Swap Direction Toggle (YES↔NO) - shown only in Swap mode -->
+            <div id="swapDirectionToggle" class="mode-toggle" style="margin-top:4px;display:none;">
+                <button id="yesToNoBtn" class="mode-toggle-btn active-buy" onclick="setSwapDirection(true)" style="flex:1;">YES → NO</button>
+                <button id="noToYesBtn" class="mode-toggle-btn" onclick="setSwapDirection(false)" style="flex:1;">NO → YES</button>
             </div>
             <!-- Position Display -->
             <div id="tradePositionDisplay" style="background:var(--surface-2);padding:0.75rem;margin-bottom:1rem;font-size:var(--font-xs);border-radius:var(--radius);">
-                <div style="color:var(--text-dim);margin-bottom:4px;">Your Position</div>
-                <div style="display:flex;gap:1.5rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="color:var(--text-dim);">Your Position</span>
+                    <span id="positionValue" style="color:var(--text);font-weight:600;">--</span>
+                </div>
+                <div style="display:flex;gap:1.5rem;margin-bottom:6px;">
                     <span style="color:var(--green);">YES: <span id="tradeModalYes">0</span></span>
                     <span style="color:var(--red);">NO: <span id="tradeModalNo">0</span></span>
                     <span style="color:var(--blue);">LP: <span id="tradeModalLP">0</span></span>
                 </div>
+                <div id="positionPnL" style="display:none;padding-top:6px;border-top:1px solid var(--border);">
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="color:var(--text-dim);">If <span id="positionOutcome">YES</span> wins</span>
+                        <span id="positionPayout" style="color:var(--green);">+0 ETH</span>
+                    </div>
+                </div>
             </div>
             <!-- Orderbook -->
             <div class="orderbook" id="orderbookContainer">
+                <div class="orderbook-title">
+                    <span class="orderbook-title-text"><span id="orderbookShareType">YES</span> Order Book</span>
+                    <span class="orderbook-depth-info">Depth: <span id="orderbookTotalDepth">--</span> ETH</span>
+                </div>
                 <div class="orderbook-header">
-                    <span>Price</span>
+                    <span>Price <span style="font-weight:400;opacity:0.7">(= Odds)</span></span>
                     <span>Size</span>
                     <span>Total</span>
                 </div>
                 <div class="orderbook-body">
+                    <div id="asksLabel" class="orderbook-section-label" style="display:flex;justify-content:space-between;padding:2px 8px;background:rgba(239,68,68,0.1);font-size:9px;color:var(--red);">
+                        <span>ASKS (Sellers)</span>
+                        <span style="opacity:0.7;">Click to buy from</span>
+                    </div>
                     <div class="orderbook-side asks" id="orderbookAsks">
-                        <!-- Asks (sell orders) populate here -->
+                        <!-- Asks (sell orders) - sorted high to low, displayed reversed -->
                     </div>
                     <div class="orderbook-spread" id="orderbookSpread">
-                        Spread: --
+                        <div class="orderbook-spread-left">
+                            <div class="orderbook-spread-price" id="spreadMidPrice">--</div>
+                            <div class="orderbook-spread-label">Pool Price (<span id="spreadOddsPct">--%</span> <span id="spreadOutcome">YES</span>)</div>
+                        </div>
+                        <div class="orderbook-spread-right">
+                            <div id="spreadBidAsk" style="color:var(--text);">-- / --</div>
+                            <div class="orderbook-spread-pct">Spread: <span id="spreadPct">--%</span></div>
+                        </div>
+                    </div>
+                    <div id="bidsLabel" class="orderbook-section-label" style="display:flex;justify-content:space-between;padding:2px 8px;background:rgba(34,197,94,0.1);font-size:9px;color:var(--green);">
+                        <span>BIDS (Buyers)</span>
+                        <span style="opacity:0.7;">Click to sell to</span>
                     </div>
                     <div class="orderbook-side bids" id="orderbookBids">
-                        <!-- Bids (buy orders) populate here -->
+                        <!-- Bids (buy orders) - sorted high to low -->
                     </div>
                 </div>
                 <div class="orderbook-empty" id="orderbookEmpty" style="display:none;">
-                    No limit orders yet
+                    <div style="margin-bottom:8px;">No limit orders yet</div>
+                    <div style="font-size:10px;color:var(--text-muted);">Place a limit order or trade against the pool</div>
                 </div>
             </div>
-            <div class="trade-input-group">
+            <div class="trade-input-group" id="tradeInputGroup">
                 <div class="trade-label">
                     <span id="tradeInputLabel">Amount (ETH)</span>
                     <span>Balance: <span id="tradeBalance">--</span> <span id="tradeBalanceUnit">ETH</span></span>
                 </div>
                 <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
-                    <input type="number" class="trade-input" id="tradeAmount" placeholder="0.01" step="0.001" min="0" oninput="currentTradeMode === 'lp' ? updateLpPreview() : (currentTradeMode === 'mint' ? updateMintPreview() : updatePreview())" style="flex:1;background:transparent;border:none;border-radius:0;">
+                    <input type="number" class="trade-input" id="tradeAmount" placeholder="0.01" step="0.001" min="0" oninput="handleTradeInput()" style="flex:1;background:transparent;border:none;border-radius:0;">
                     <button onclick="setMaxTrade()" style="padding:0.5rem 1rem;background:var(--surface-2);border:none;border-left:1px solid var(--border);color:var(--green);font-weight:600;cursor:pointer;font-size:var(--font-xs);">MAX</button>
                 </div>
             </div>
             <!-- Trade Section (Buy/Sell) -->
             <div id="tradeSection">
+                <div id="tradeExplainer" style="font-size:var(--font-xs);color:var(--text-muted);margin-bottom:0.75rem;padding:0.5rem;background:var(--bg);border-radius:var(--radius);">
+                    Buy or sell shares for ETH. Orders route through the orderbook and AMM for the best price.
+                </div>
                 <!-- Slippage Settings -->
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;padding:0.5rem;background:var(--surface-2);border-radius:var(--radius);">
                     <span style="font-size:var(--font-xs);color:var(--text-dim);">Slippage</span>
@@ -1526,8 +1648,12 @@
                         <span id="previewShares">--</span>
                     </div>
                     <div class="trade-preview-row">
-                        <span>Price per share</span>
+                        <span>Avg. price <span style="opacity:0.6">(= odds)</span></span>
                         <span id="previewPrice">--</span>
+                    </div>
+                    <div class="trade-preview-row" id="previewOddsRow" style="display:none;">
+                        <span style="color:var(--text-dim);">Implied probability</span>
+                        <span id="previewOdds" style="font-weight:600;">--</span>
                     </div>
                     <div class="trade-preview-row">
                         <span id="previewPayoutLabel">Potential payout</span>
@@ -1582,13 +1708,55 @@
                         <span id="lpPreview">--</span>
                     </div>
                     <div class="trade-preview-row">
-                        <span>New pool share</span>
-                        <span id="lpPoolShare">--%</span>
+                        <span>Your share after</span>
+                        <span><span id="lpPoolShare">--%</span> <span id="lpShareChange" style="font-size:10px;color:var(--text-muted);"></span></span>
                     </div>
                 </div>
                 <div id="lpWarning" style="display:none;font-size:var(--font-xs);color:var(--amber);padding:0.5rem;background:rgba(245,158,11,0.1);border-radius:var(--radius);margin-bottom:0.75rem;">
                 </div>
                 <button class="trade-submit" id="lpSubmit" style="background:var(--blue);" onclick="executeLp()">Deposit Liquidity</button>
+            </div>
+            <!-- Swap Section (YES↔NO) -->
+            <div id="swapSection" style="display:none;">
+                <div id="swapExplainer" style="font-size:var(--font-xs);color:var(--text-muted);margin-bottom:0.75rem;padding:0.5rem;background:var(--bg);border-radius:var(--radius);">
+                    Swap shares directly via the pool. No ETH needed - trade one outcome for the other.
+                </div>
+                <!-- Slippage for Swap -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;padding:0.5rem;background:var(--surface-2);border-radius:var(--radius);">
+                    <span style="font-size:var(--font-xs);color:var(--text-muted);">Slippage</span>
+                    <div style="display:flex;gap:4px;">
+                        <button id="swapSlip05" class="slip-btn slip-active" onclick="setSwapSlippage(0.5)">0.5%</button>
+                        <button id="swapSlip1" class="slip-btn" onclick="setSwapSlippage(1)">1%</button>
+                        <button id="swapSlip2" class="slip-btn" onclick="setSwapSlippage(2)">2%</button>
+                    </div>
+                </div>
+                <div class="trade-preview">
+                    <div class="trade-preview-row">
+                        <span id="swapGiveLabel">You give (YES)</span>
+                        <span id="swapGive">-- shares</span>
+                    </div>
+                    <div class="trade-preview-row" style="border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:4px;">
+                        <span>Pool Rate</span>
+                        <span id="swapPoolRate">1 YES = -- NO</span>
+                    </div>
+                    <div class="trade-preview-row" style="font-weight:600;font-size:1.05em;">
+                        <span id="swapReceiveLabel">You receive (NO)</span>
+                        <span id="swapReceive" style="color:var(--green);">-- shares</span>
+                    </div>
+                    <div class="trade-preview-row">
+                        <span>Swap Fee (0.3%)</span>
+                        <span id="swapFee">-- shares</span>
+                    </div>
+                    <div class="trade-preview-row">
+                        <span>Price Impact</span>
+                        <span id="swapImpact">--%</span>
+                    </div>
+                    <div class="trade-preview-row" style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;">
+                        <span>Min. Receive (<span id="swapSlipDisplay">0.5%</span> slip)</span>
+                        <span id="swapMinReceive">-- shares</span>
+                    </div>
+                </div>
+                <button class="trade-submit buy-down" id="swapSubmit" onclick="executeSwap()">Swap YES → NO</button>
             </div>
             <!-- Mint & List Section -->
             <div id="mintSection" style="display:none;">
@@ -1632,23 +1800,46 @@
             <!-- Limit Order Section -->
             <div id="limitSection" style="display:none;">
                 <div id="limitExplainer" style="font-size:var(--font-xs);color:var(--text-muted);margin-bottom:0.75rem;padding:0.5rem;background:var(--bg);border-radius:var(--radius);">
-                    Place a limit order at your price. Order stays open until filled or market closes.
+                    <span id="limitExplainerText"><strong>Buy Limit:</strong> Bid below pool price to get better odds. Your ETH is escrowed until filled or cancelled.</span>
                 </div>
                 <div class="lp-toggle" style="margin-bottom:0.75rem;">
                     <button id="limitBuyBtn" class="lp-toggle-btn active-add" onclick="setLimitSide('buy')">Buy Order</button>
                     <button id="limitSellBtn" class="lp-toggle-btn" onclick="setLimitSide('sell')">Sell Order</button>
                 </div>
                 <div style="margin-bottom:0.75rem;">
-                    <label style="font-size:var(--font-xs);color:var(--text-muted);display:block;margin-bottom:4px;">Limit Price (ETH per share)</label>
-                    <input type="number" id="limitPrice" placeholder="0.50" step="0.01" min="0.01" max="0.99"
-                        style="width:100%;padding:0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:var(--font-base);"
-                        oninput="updateLimitPreview()">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <label style="font-size:var(--font-xs);color:var(--text-muted);">Limit Price (ETH = Odds %)</label>
+                        <span style="font-size:var(--font-xs);color:var(--text-dim);">Pool: <span id="limitPoolPrice">--</span></span>
+                    </div>
+                    <div style="display:flex;gap:4px;">
+                        <div style="flex:1;display:flex;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+                            <input type="number" id="limitPrice" placeholder="0.50" step="0.01" min="0.01" max="0.99"
+                                style="flex:1;padding:0.75rem;background:transparent;border:none;color:var(--text);font-size:var(--font-base);"
+                                oninput="updateLimitPreview()">
+                        </div>
+                        <button onclick="adjustLimitPrice(-0.01)" style="padding:0.5rem 0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--red);font-weight:600;cursor:pointer;font-size:var(--font-sm);">-1%</button>
+                        <button onclick="adjustLimitPrice(0.01)" style="padding:0.5rem 0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--green);font-weight:600;cursor:pointer;font-size:var(--font-sm);">+1%</button>
+                        <button onclick="setLimitPriceToPool()" style="padding:0.5rem 0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--blue);font-weight:600;cursor:pointer;font-size:10px;">POOL</button>
+                    </div>
+                    <div id="limitOddsHelper" style="margin-top:6px;font-size:var(--font-xs);padding:0.5rem;background:var(--surface);border-radius:var(--radius);display:none;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="color:var(--text);">= <strong id="limitOddsValue">50%</strong> implied odds</span>
+                            <span id="limitOddsVsPool" style="color:var(--text-muted);">--</span>
+                        </div>
+                        <div id="limitReturnInfo" style="margin-top:4px;color:var(--green);"></div>
+                    </div>
                 </div>
                 <div style="margin-bottom:0.75rem;">
-                    <label style="font-size:var(--font-xs);color:var(--text-muted);display:block;margin-bottom:4px;">Shares</label>
-                    <input type="number" id="limitShares" placeholder="1.0" step="0.1" min="0.01"
-                        style="width:100%;padding:0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:var(--font-base);"
-                        oninput="updateLimitPreview()">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <label style="font-size:var(--font-xs);color:var(--text-muted);">Shares</label>
+                        <span style="font-size:var(--font-xs);color:var(--text-muted);">Balance: <span id="limitBalance">--</span> <span id="limitBalanceUnit">ETH</span></span>
+                    </div>
+                    <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+                        <input type="number" id="limitShares" placeholder="1.0" step="0.1" min="0.01"
+                            style="flex:1;padding:0.75rem;background:transparent;border:none;color:var(--text);font-size:var(--font-base);"
+                            oninput="updateLimitPreview()">
+                        <button onclick="setMaxLimitShares()" style="padding:0.5rem 1rem;background:var(--surface-2);border:none;border-left:1px solid var(--border);color:var(--green);font-weight:600;cursor:pointer;font-size:var(--font-xs);">MAX</button>
+                    </div>
                 </div>
                 <div class="trade-preview">
                     <div class="trade-preview-row">
@@ -1656,12 +1847,12 @@
                         <span id="limitCost">-- ETH</span>
                     </div>
                     <div class="trade-preview-row">
-                        <span>If filled, you get</span>
+                        <span id="limitReceiveLabel">If filled, you get</span>
                         <span id="limitReceive">-- shares</span>
                     </div>
-                    <div class="trade-preview-row">
-                        <span>vs AMM price</span>
-                        <span id="limitVsAmm">--</span>
+                    <div class="trade-preview-row" id="limitProfitRow">
+                        <span id="limitProfitLabel">If you win</span>
+                        <span id="limitProfit" style="color:var(--green);">--</span>
                     </div>
                     <div class="trade-preview-row">
                         <span>Expires</span>
@@ -1752,7 +1943,9 @@
         const ZAMM_ABI = [
             'function balanceOf(address owner, uint256 id) public view returns (uint256)',
             'function isOperator(address owner, address operator) public view returns (bool)',
-            'function setOperator(address operator, bool approved) public returns (bool)'
+            'function setOperator(address operator, bool approved) public returns (bool)',
+            'function pools(uint256 poolId) view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast, uint256 price0CumulativeLast, uint256 price1CumulativeLast, uint256 kLast, uint256 supply)',
+            'function swapExactIn(tuple(uint256 id0, uint256 id1, address token0, address token1, uint256 feeOrHook) poolKey, uint256 amountIn, uint256 amountOutMin, bool zeroForOne, address to, uint256 deadline) returns (uint256 amountOut)'
         ];
 
         const PMROUTER_ABI = [
@@ -2023,11 +2216,12 @@
                 walletProvider.on('accountsChanged', () => window.location.reload());
                 walletProvider.on('chainChanged', () => window.location.reload());
 
-                // Check if owner
+                // Check if owner (for reference, but creation is now public)
                 const gasPm = new ethers.Contract(GASPM_ADDRESS, GASPM_ABI, provider);
                 const owner = await gasPm.owner();
                 isOwner = owner.toLowerCase() === connectedAddress.toLowerCase();
-                if (isOwner) DOM.createSection.style.display = 'block';
+                // Show create section to all connected users (creation is public)
+                DOM.createSection.style.display = 'block';
 
                 await loadPositions();
 
@@ -2221,7 +2415,7 @@
                 }
 
                 // Load markets using marketInfos (this also calls updatePredictions)
-                await loadMarkets(rpc, multicall, gasPmInterface, pammInterface, marketInfos, twapGwei);
+                await loadMarkets(rpc, multicall, gasPmInterface, pammInterface, marketInfos, twapGwei, liveGwei);
 
                 // Draw chart AFTER markets loaded so predictions are available
                 drawChart(cachedGasData);
@@ -2231,7 +2425,7 @@
             }
         }
 
-        async function loadMarkets(rpc, multicall, gasPmInterface, pammInterface, marketInfos, twapGwei) {
+        async function loadMarkets(rpc, multicall, gasPmInterface, pammInterface, marketInfos, twapGwei, liveGwei) {
             // Reset markets on each load to handle expiry
             markets = { hourly: null, daily: null, weekly: null, extreme: null };
             resolvedMarkets = [];
@@ -2390,18 +2584,18 @@
                         // Daily: expired within last day or closes within next day
                         // Weekly: expired within last week or closes within next week
                         if (timeToClose <= 3600 && timeToClose > -3600 && !markets.hourly) {
-                            markets.hourly = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve };
+                            markets.hourly = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve, tvl: Number(collateralLocked) / 1e18 };
                             updateCard('hourly', startGwei, twapGwei, yesPrice, noPrice, needsResolve);
                         } else if (timeToClose <= 86400 && timeToClose > -86400 && !markets.daily) {
-                            markets.daily = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve };
+                            markets.daily = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve, tvl: Number(collateralLocked) / 1e18 };
                             updateCard('daily', startGwei, twapGwei, yesPrice, noPrice, needsResolve);
                         } else if (timeToClose <= 604800 && timeToClose > -604800 && !markets.weekly) {
-                            markets.weekly = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve };
+                            markets.weekly = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve, tvl: Number(collateralLocked) / 1e18 };
                             updateCard('weekly', startGwei, twapGwei, yesPrice, noPrice, needsResolve);
                         }
                     } else if (desc.includes('spikes to') || desc.includes('Gas spikes')) {
                         if (!markets.extreme) {
-                            markets.extreme = { id: info.marketId, close, yesPrice, noPrice, needsResolve, conditionMet: info.conditionMet };
+                            markets.extreme = { id: info.marketId, close, yesPrice, noPrice, needsResolve, conditionMet: info.conditionMet, tvl: Number(collateralLocked) / 1e18 };
                             document.getElementById('extremeYesOdds').textContent = formatOdds(yesPrice);
                             document.getElementById('extremeNoOdds').textContent = formatOdds(noPrice);
                             document.getElementById('extremeYesPrice').textContent = formatEth(yesPrice, '');
@@ -2992,10 +3186,9 @@
             const predTitle = document.getElementById('predTitle');
             const predTwap = document.getElementById('predTwap');
             const predDirection = document.getElementById('predDirection');
+            const predThreshold = document.getElementById('predThreshold');
             const predTvl = document.getElementById('predTvl');
             const predCloses = document.getElementById('predCloses');
-            const predImpliedAvg = document.getElementById('predImpliedAvg');
-            const predVsSpot = document.getElementById('predVsSpot');
 
             canvas.addEventListener('mousemove', (e) => {
                 if (!chartState.data || !chartState.data.length) return;
@@ -3070,76 +3263,53 @@
                         predBadge.style.background = foundPrediction.color;
                         predBadge.style.color = '#18181b';
                     }
-                    if (predTitle) predTitle.textContent = marketNames[foundPrediction.type] + ' Market';
+                    if (predTitle) predTitle.textContent = marketNames[foundPrediction.type] + ' Prediction';
                     predTooltip.style.borderColor = foundPrediction.color;
-                    if (predTwap) predTwap.textContent = foundPrediction.predicted.toFixed(2) + ' gwei';
 
-                    // Direction indicator - neutral if close to 50/50 (within 5%)
+                    // Get market data for threshold
+                    const marketData = markets[foundPrediction.type];
+                    const threshold = marketData?.startGwei || 0;
+                    const predicted = foundPrediction.predicted;
+                    const aboveThreshold = predicted > threshold;
+
+                    // Direction/Odds indicator - shows market sentiment
                     const isNeutral = prob >= 45 && prob <= 55;
                     if (predDirection) {
                         if (isNeutral) {
                             predDirection.className = 'pred-tooltip-direction neutral';
-                            predDirection.innerHTML = `<span>↔</span><span>~50%</span> EVEN`;
+                            predDirection.innerHTML = `~50% EVEN`;
                         } else {
                             predDirection.className = 'pred-tooltip-direction ' + (isUp ? 'up' : 'down');
-                            predDirection.innerHTML = `<span>${isUp ? '↑' : '↓'}</span><span>${isUp ? prob : 100 - prob}%</span> ${isUp ? 'UP' : 'DOWN'}`;
+                            predDirection.innerHTML = `${isUp ? prob : 100 - prob}% ${isUp ? 'UP' : 'DOWN'}`;
                         }
                     }
 
-                    // TVL - get from market if available
-                    const tvlEl = document.getElementById(`${foundPrediction.type}Tvl`);
-                    if (predTvl) predTvl.textContent = tvlEl ? tvlEl.textContent : '--';
+                    // Threshold - what the market is betting against
+                    if (predThreshold) {
+                        predThreshold.textContent = threshold.toFixed(3) + ' gwei';
+                    }
+
+                    // Predicted value with above/below indicator
+                    if (predTwap) {
+                        const arrow = aboveThreshold ? '↑' : '↓';
+                        const color = aboveThreshold ? '#22c55e' : '#ef4444';
+                        predTwap.innerHTML = `<span style="color:${color}">${arrow}</span> ${predicted.toFixed(3)} gwei`;
+                    }
 
                     // Time to close
                     const now = Math.floor(Date.now() / 1000);
                     const remaining = foundPrediction.closeTime - now;
                     if (predCloses) predCloses.textContent = formatTime(remaining);
 
-                    // Calculate implied remaining average base fee
-                    // Formula: predictedTwap = (currentTwap * elapsed + impliedAvg * remaining) / total
-                    // Solving: impliedAvg = (predictedTwap * total - currentTwap * elapsed) / remaining
-                    const marketDurations = { hourly: 3600, daily: 86400, weekly: 604800 };
-                    const totalDuration = marketDurations[foundPrediction.type] || 3600;
-                    const marketStart = foundPrediction.closeTime - totalDuration;
-                    const elapsed = Math.max(0, now - marketStart);
-                    const currentTwap = cachedGasData.twap;
-                    const currentSpot = cachedGasData.current;
-                    const predictedTwap = foundPrediction.predicted;
-
-                    if (remaining > 0 && elapsed > 0) {
-                        // Calculate implied average for remaining time
-                        const impliedAvg = (predictedTwap * totalDuration - currentTwap * elapsed) / remaining;
-
-                        // Sanity check: implied avg should be positive and within reasonable bounds
-                        if (impliedAvg > 0 && impliedAvg < currentTwap * 5) {
-                            if (predImpliedAvg) predImpliedAvg.textContent = impliedAvg.toFixed(2) + ' gwei';
-
-                            // Compare to current spot
-                            const spotDiff = impliedAvg - currentSpot;
-                            const spotDiffPct = (spotDiff / currentSpot * 100);
-                            const spotSign = spotDiff >= 0 ? '+' : '';
-                            const spotColor = spotDiff > 1 ? '#22c55e' : (spotDiff < -1 ? '#ef4444' : '#a1a1aa');
-                            if (predVsSpot) predVsSpot.innerHTML = `<span style="color:${spotColor}">${spotSign}${spotDiffPct.toFixed(1)}%</span> (${currentSpot.toFixed(1)} now)`;
-                        } else {
-                            if (predImpliedAvg) predImpliedAvg.textContent = '--';
-                            if (predVsSpot) predVsSpot.textContent = '--';
-                        }
-                    } else if (remaining <= 0) {
-                        if (predImpliedAvg) predImpliedAvg.textContent = 'Market closing';
-                        if (predVsSpot) predVsSpot.textContent = '--';
-                    } else {
-                        // Very early in period
-                        if (predImpliedAvg) predImpliedAvg.textContent = '~' + predictedTwap.toFixed(2) + ' gwei';
-                        if (predVsSpot) predVsSpot.textContent = 'Early in period';
-                    }
+                    // TVL
+                    if (predTvl) predTvl.textContent = marketData?.tvl ? formatEth(marketData.tvl) : '--';
 
                     // Position prediction tooltip - responsive
                     const canvasWidth = canvas.width;
                     const canvasHeight = canvas.height;
                     const isMobileTooltip = canvasWidth < 400;
-                    // Mobile tooltip is more compact (hidden rows)
-                    const predTooltipWidth = isMobileTooltip ? 160 : 210;
-                    const predTooltipHeight = isMobileTooltip ? 100 : 180;
+                    const predTooltipWidth = isMobileTooltip ? 150 : 180;
+                    const predTooltipHeight = isMobileTooltip ? 130 : 150;
                     let tooltipX, tooltipY;
 
                     if (isMobileTooltip) {
@@ -3587,10 +3757,10 @@
             ctx.setLineDash([]);
             ctx.fillStyle = '#3b82f6';
             ctx.font = `${axisFontSize}px Helvetica`;
-            ctx.textAlign = 'left';
-            // On mobile, show just value; on desktop show "TWAP" label
+            ctx.textAlign = 'right';
+            // Position TWAP label BEFORE prediction zone to avoid overlap with diamonds
             const twapLabel = isMobile ? twap.toFixed(decimals) : ('TWAP ' + twap.toFixed(decimals));
-            ctx.fillText(twapLabel, padding + chartWidth + (isMobile ? 3 : 5), twapY + 4);
+            ctx.fillText(twapLabel, padding + chartWidth - (isMobile ? 3 : 5), twapY + 4);
 
             // Draw line chart connecting data points (spot prices)
             if (data.length > 0) {
@@ -3735,7 +3905,7 @@
             if (data.length > 1 && timestamps.length > 1) {
                 const firstVal = data[0];
                 const lastVal = data[data.length - 1];
-                const change = ((lastVal - firstVal) / firstVal) * 100;
+                const change = firstVal > 0 ? ((lastVal - firstVal) / firstVal) * 100 : 0;
                 const changeColor = change >= 0 ? '#22c55e' : '#ef4444';
                 const changeSign = change >= 0 ? '+' : '';
                 const changeText = changeSign + change.toFixed(1) + '%';
@@ -3901,14 +4071,14 @@
                 // Position: right edge + proportional future offset
                 const xPos = padding + chartWidth + futureExtend * chartWidth;
 
-                // Only draw if within canvas bounds
-                if (xPos > width - (isMobile ? 8 : 15)) return;
+                // Only draw if within canvas bounds (allow close to edge for predictions)
+                if (xPos > width - 5) return;
 
-                // Calculate Y position - raw for line, clamped for marker/labels
+                // Calculate Y position - use raw position for accurate placement
                 const rawYPos = gweiToY(predicted);
-                // Clamp marker position to ensure labels fit (but line uses raw position)
-                const minY = padding + (isMobile ? 25 : 35);
-                const maxY = height - padding - (isMobile ? 30 : 45);
+                // Only clamp to prevent going off canvas, not for label fitting
+                const minY = padding + 5;
+                const maxY = height - padding - 5;
                 const markerYPos = Math.max(minY, Math.min(rawYPos, maxY));
 
                 const color = marketColors[type];
@@ -3928,16 +4098,15 @@
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                // Marker size (hourly is larger and more prominent) - responsive
-                // Increased sizes on mobile for better visibility
+                // Marker size - larger on mobile for visibility, smaller on desktop for precision
                 const markerSize = isMobile
-                    ? (isHourly ? 9 : 6)
-                    : (isSmall ? (isHourly ? 9 : 7) : (isHourly ? 10 : 7));
+                    ? (isHourly ? 10 : 7)
+                    : (isSmall ? (isHourly ? 7 : 5) : (isHourly ? 8 : 5));
 
-                // Draw glow effect for markers - more prominent on mobile for visibility
+                // Draw glow effect for markers - more prominent on mobile
                 const glowSize = isMobile
-                    ? (isHourly ? (markerSize + 8 + Math.sin(pulseTime * 3) * 3) : (markerSize + 5))
-                    : (isHourly ? (markerSize + 8 + Math.sin(pulseTime * 3) * 3) : (markerSize + 4));
+                    ? (isHourly ? (markerSize + 8 + Math.sin(pulseTime * 3) * 3) : (markerSize + 6))
+                    : (isHourly ? (markerSize + 6 + Math.sin(pulseTime * 3) * 2) : (markerSize + 3));
                 const glowGradient = ctx.createRadialGradient(xPos, markerYPos, 0, xPos, markerYPos, glowSize);
                 glowGradient.addColorStop(0, color + '40');
                 glowGradient.addColorStop(1, color + '00');
@@ -3987,99 +4156,92 @@
                     ctx.fill();
                 }
 
-                // Draw pill-style label badge - responsive sizing
-                // On mobile, show value inline with label for better visibility
-                // Use at least 2 decimals for small values (<1 gwei) to avoid misleading rounding
+                // Draw pill-style label badge - only on desktop to reduce mobile clutter
                 const valueDecimals = predicted < 1 ? Math.max(2, decimals) : (decimals > 1 ? 1 : decimals);
                 const valueText = predicted.toFixed(valueDecimals);
                 const timeText = formatCloseTime(closeTime);
 
-                const pillFontSize = isMobile ? 9 : (isSmall ? 9 : 10);
-                const combinedLabel = isMobile ? `${label} ${valueText}` : label;
-                ctx.font = `bold ${pillFontSize}px Helvetica`;
-                const labelWidth = ctx.measureText(combinedLabel).width;
-                const pillWidth = isMobile ? Math.max(labelWidth + 10, 45) : Math.max(labelWidth + 12, 28);
-                const pillHeight = isMobile ? 16 : (isSmall ? 16 : 18);
-                const pillX = xPos - pillWidth / 2;
-                const pillY = markerYPos - markerSize - pillHeight - (isMobile ? 3 : 6);
-
-                // Pill background
-                ctx.fillStyle = color + 'E0';
-                ctx.beginPath();
-                ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 4);
-                ctx.fill();
-
-                // Pill border
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 1;
-                ctx.stroke();
-
-                // Label text (on mobile includes value, on desktop just label)
-                ctx.fillStyle = '#18181b';
-                ctx.font = `bold ${pillFontSize}px Helvetica`;
-                ctx.textAlign = 'center';
-                ctx.fillText(combinedLabel, xPos, pillY + (isMobile ? 12 : 13));
-
-                // Close time label (below pill) - hide on mobile to reduce clutter
                 if (!isMobile) {
+                    const pillFontSize = isSmall ? 9 : 10;
+                    ctx.font = `bold ${pillFontSize}px Helvetica`;
+                    const labelWidth = ctx.measureText(label).width;
+                    const pillWidth = Math.max(labelWidth + 12, 28);
+                    const pillHeight = isSmall ? 16 : 18;
+                    const pillX = xPos - pillWidth / 2;
+                    const pillY = markerYPos - markerSize - pillHeight - 6;
+
+                    // Pill background
+                    ctx.fillStyle = color + 'E0';
+                    ctx.beginPath();
+                    ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 4);
+                    ctx.fill();
+
+                    // Pill border
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    // Label text
+                    ctx.fillStyle = '#18181b';
+                    ctx.font = `bold ${pillFontSize}px Helvetica`;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(label, xPos, pillY + 13);
+
+                    // Close time label (below pill)
                     ctx.font = isSmall ? '8px Helvetica' : '9px Helvetica';
                     ctx.fillStyle = 'rgba(255,255,255,0.6)';
                     ctx.fillText(timeText, xPos, pillY + pillHeight + 10);
                 }
 
-                // Predicted value (below marker) - on mobile just show "gwei" since value is in pill
-                const valueFontSize = isMobile
-                    ? (isHourly ? 10 : 9)
-                    : (isSmall ? (isHourly ? 10 : 9) : (isHourly ? 11 : 10));
-                ctx.font = isHourly ? `bold ${valueFontSize}px Helvetica` : `${valueFontSize}px Helvetica`;
-                ctx.fillStyle = isHourly ? '#fff' : 'rgba(255,255,255,0.8)';
-                // On mobile, value is already in the pill label
-                if (isMobile) {
-                    ctx.fillText('gwei', xPos, markerYPos + markerSize + 10);
-                } else {
+                // Predicted value (below marker) - skip on mobile since value is in pill
+                if (!isMobile) {
+                    const valueFontSize = isSmall ? (isHourly ? 10 : 9) : (isHourly ? 11 : 10);
+                    ctx.font = isHourly ? `bold ${valueFontSize}px Helvetica` : `${valueFontSize}px Helvetica`;
+                    ctx.fillStyle = isHourly ? '#fff' : 'rgba(255,255,255,0.8)';
                     ctx.fillText(valueText + ' gwei', xPos, markerYPos + markerSize + 16);
                 }
 
-                // Draw odds indicator bar - responsive sizing
-                const barWidth = isMobile
-                    ? (isHourly ? 26 : 18)
-                    : (isSmall ? (isHourly ? 26 : 20) : (isHourly ? 32 : 24));
-                const barHeight = isMobile ? 4 : (isHourly ? 5 : 4);
-                const barX = xPos - barWidth / 2;
-                const barY = markerYPos + markerSize + (isMobile ? 14 : 22);
+                // Draw odds indicator bar - only for hourly on mobile to reduce clutter
+                if (!isMobile || isHourly) {
+                    const barWidth = isMobile
+                        ? 24
+                        : (isSmall ? (isHourly ? 26 : 20) : (isHourly ? 32 : 24));
+                    const barHeight = isMobile ? 4 : (isHourly ? 5 : 4);
+                    const barX = xPos - barWidth / 2;
+                    const barY = markerYPos + markerSize + (isMobile ? 6 : 22);
 
-                // Bar background with rounded ends
-                ctx.fillStyle = 'rgba(255,255,255,0.15)';
-                ctx.beginPath();
-                ctx.roundRect(barX, barY, barWidth, barHeight, 2);
-                ctx.fill();
+                    // Bar background with rounded ends
+                    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+                    ctx.beginPath();
+                    ctx.roundRect(barX, barY, barWidth, barHeight, 2);
+                    ctx.fill();
 
-                // Fill based on YES odds - neutral gray if near 50/50
-                const yesPct = Math.round(yesPrice * 100);
-                const isNeutralOdds = yesPct >= 45 && yesPct <= 55;
-                const oddsColor = isNeutralOdds ? '#71717a' : (yesPrice > 0.5 ? '#22c55e' : '#ef4444');
-                ctx.fillStyle = oddsColor;
-                ctx.beginPath();
-                ctx.roundRect(barX, barY, barWidth * yesPrice, barHeight, 2);
-                ctx.fill();
+                    // Fill based on YES odds - neutral gray if near 50/50
+                    const yesPct = Math.round(yesPrice * 100);
+                    const isNeutralOdds = yesPct >= 45 && yesPct <= 55;
+                    const oddsColor = isNeutralOdds ? '#71717a' : (yesPrice > 0.5 ? '#22c55e' : '#ef4444');
+                    ctx.fillStyle = oddsColor;
+                    ctx.beginPath();
+                    ctx.roundRect(barX, barY, barWidth * yesPrice, barHeight, 2);
+                    ctx.fill();
 
-                // Odds percentage label for hourly - hide on mobile to reduce clutter
-                if (isHourly && !isMobile) {
-                    ctx.font = isSmall ? '7px Helvetica' : '8px Helvetica';
-                    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                    if (isNeutralOdds) {
-                        ctx.fillText('~50% EVEN', xPos, barY + barHeight + 10);
-                    } else {
-                        ctx.fillText(yesPct + '% UP', xPos, barY + barHeight + 10);
+                    // Odds percentage label for hourly - hide on mobile to reduce clutter
+                    if (isHourly && !isMobile) {
+                        ctx.font = isSmall ? '7px Helvetica' : '8px Helvetica';
+                        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                        if (isNeutralOdds) {
+                            ctx.fillText('~50% EVEN', xPos, barY + barHeight + 10);
+                        } else {
+                            ctx.fillText(yesPct + '% UP', xPos, barY + barHeight + 10);
+                        }
                     }
                 }
 
                 // Store marker position for hover detection
-                // Hit area is the entire prediction card region (pill to odds bar)
                 // Larger hit radius on mobile for easier touch targets
                 const hitRadius = isMobile
-                    ? (isHourly ? 28 : 22)
-                    : (isHourly ? 35 : 28);
+                    ? (isHourly ? 40 : 30)
+                    : (isHourly ? 25 : 18);
                 predictionMarkerPositions.push({
                     type,
                     x: xPos,
@@ -4176,11 +4338,12 @@
         // ======================== TRADING ========================
         async function openTrade(type, isYes) {
             const market = markets[type];
-            if (!market) { alert('No active market'); return; }
-            if (!connectedAddress) { alert('Connect wallet first'); return; }
+            if (!market) { showStatus('No active market', 'error'); return; }
+            if (!connectedAddress) { showStatus('Connect wallet first', 'error'); return; }
 
-            currentTrade = { type, isYes, marketId: market.id };
-            currentTradeMode = 'buy';
+            currentTrade = { type, isYes, marketId: market.id, tvl: market.tvl || 0 };
+            currentTradeMode = 'trade';
+            currentTradeDirection = 'buy';
 
             // Load user position and orderbook in parallel
             await Promise.all([
@@ -4188,15 +4351,70 @@
                 loadOrderbook(market.id, isYes)
             ]);
 
-            const label = isYes ? (type === 'extreme' ? 'YES' : 'UP') : (type === 'extreme' ? 'NO' : 'DOWN');
-            document.getElementById('tradeTitle').textContent = 'Trade ' + label;
+            // Update side toggle labels based on market type
+            const yesLabel = type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = type === 'extreme' ? 'NO' : 'DOWN';
+            document.getElementById('sideYesLabel').textContent = yesLabel;
+            document.getElementById('sideNoLabel').textContent = noLabel;
 
-            // Reset to buy mode
-            setTradeMode('buy');
+            // Update odds on both buttons
+            updateSideOdds(market);
+
+            // Update active side button
+            updateSideButtons(isYes);
+
+            document.getElementById('tradeTitle').textContent = market.name || type;
+
+            // Reset to trade mode with buy direction
+            setTradeMode('trade');
 
             document.getElementById('tradeAmount').value = '';
             updatePreview();
             document.getElementById('tradeModal').classList.add('active');
+        }
+
+        function updateSideOdds(market) {
+            // Show both YES and NO odds on the side buttons
+            const yesOdds = market.yesPrice ? (market.yesPrice * 100).toFixed(0) + '%' : '--';
+            const noOdds = market.noPrice ? (market.noPrice * 100).toFixed(0) + '%' : '--';
+            document.getElementById('sideYesOdds').textContent = yesOdds;
+            document.getElementById('sideNoOdds').textContent = noOdds;
+        }
+
+        function updateSideButtons(isYes) {
+            const yesBtn = document.getElementById('sideYesBtn');
+            const noBtn = document.getElementById('sideNoBtn');
+
+            if (isYes) {
+                yesBtn.className = 'mode-toggle-btn active-buy';
+                noBtn.className = 'mode-toggle-btn';
+            } else {
+                yesBtn.className = 'mode-toggle-btn';
+                noBtn.className = 'mode-toggle-btn active-sell';
+            }
+        }
+
+        async function switchTradeSide(isYes) {
+            if (currentTrade.isYes === isYes) return; // Already on this side
+
+            currentTrade.isYes = isYes;
+            updateSideButtons(isYes);
+
+            // Reload orderbook for new side
+            await loadOrderbook(currentTrade.marketId, isYes);
+
+            // Update position value display
+            const yesShares = parseFloat(ethers.formatEther(currentUserPosition.yesBalance || 0n));
+            const noShares = parseFloat(ethers.formatEther(currentUserPosition.noBalance || 0n));
+            updatePositionValue(yesShares, noShares);
+
+            // Update trade mode labels and preview
+            setTradeMode(currentTradeMode);
+
+            // Update limit balance if in limit mode
+            if (currentTradeMode === 'limit') {
+                updateLimitBalance();
+            }
         }
 
         async function loadUserPosition(marketId) {
@@ -4216,27 +4434,92 @@
                     pamm.poolKey(marketId, FEE_TIER)
                 ]);
 
+                // Store yesId and noId in currentTrade for swap functionality
+                // YES shares have ID = marketId, NO shares have ID from getNoId
+                currentTrade.yesId = marketId;
+                currentTrade.noId = noId;
+
                 // Compute pool ID (LP token ID) = keccak256(abi.encode(id0, id1, token0, token1, feeOrHook))
                 const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
                     ['uint256', 'uint256', 'address', 'address', 'uint256'],
                     [poolKey.id0, poolKey.id1, poolKey.token0, poolKey.token1, poolKey.feeOrHook]
                 ));
 
-                const [yesBal, noBal, lpBal] = await Promise.all([
+                const [yesBal, noBal, lpBal, poolData] = await Promise.all([
                     pamm.balanceOf(connectedAddress, marketId),
                     pamm.balanceOf(connectedAddress, noId),
-                    zamm.balanceOf(connectedAddress, poolId)
+                    zamm.balanceOf(connectedAddress, poolId),
+                    zamm.pools(poolId)
                 ]);
-                currentUserPosition = { yesBalance: yesBal, noBalance: noBal, lpBalance: lpBal, poolId };
+                // poolData: [reserve0, reserve1, blockTimestampLast, price0CumulativeLast, price1CumulativeLast, kLast, supply]
+                currentUserPosition = { yesBalance: yesBal, noBalance: noBal, lpBalance: lpBal, poolId, lpTotalSupply: poolData[6] };
             } catch (e) {
                 console.error('Failed to load position:', e);
                 currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n };
             }
 
             // Update modal display
-            document.getElementById('tradeModalYes').textContent = parseFloat(ethers.formatEther(currentUserPosition.yesBalance)).toFixed(4);
-            document.getElementById('tradeModalNo').textContent = parseFloat(ethers.formatEther(currentUserPosition.noBalance)).toFixed(4);
+            const yesShares = parseFloat(ethers.formatEther(currentUserPosition.yesBalance));
+            const noShares = parseFloat(ethers.formatEther(currentUserPosition.noBalance));
+            document.getElementById('tradeModalYes').textContent = yesShares.toFixed(4);
+            document.getElementById('tradeModalNo').textContent = noShares.toFixed(4);
             document.getElementById('tradeModalLP').textContent = parseFloat(ethers.formatEther(currentUserPosition.lpBalance)).toFixed(4);
+
+            // Update position value and P&L display
+            updatePositionValue(yesShares, noShares);
+        }
+
+        function updatePositionValue(yesShares, noShares) {
+            const positionValueEl = document.getElementById('positionValue');
+            const positionPnLEl = document.getElementById('positionPnL');
+            const positionOutcomeEl = document.getElementById('positionOutcome');
+            const positionPayoutEl = document.getElementById('positionPayout');
+
+            // Get pool price from orderbook state
+            const ammPrice = currentOrderbook.ammPrice || 0;
+
+            if (yesShares === 0 && noShares === 0) {
+                positionValueEl.textContent = 'No position';
+                positionPnLEl.style.display = 'none';
+                return;
+            }
+
+            // Current value based on pool price
+            // For the side we're trading (currentTrade.isYes), ammPrice is the price
+            // YES value = yesShares * yesPrice, NO value = noShares * (1 - yesPrice)
+            const yesPrice = currentTrade.isYes ? ammPrice : (1 - ammPrice);
+            const noPrice = currentTrade.isYes ? (1 - ammPrice) : ammPrice;
+            const currentValue = (yesShares * yesPrice) + (noShares * noPrice);
+
+            if (ammPrice > 0 && currentValue > 0) {
+                positionValueEl.textContent = `≈ ${currentValue.toFixed(4)} ETH`;
+            } else {
+                positionValueEl.textContent = '--';
+            }
+
+            // Show P&L section
+            if (yesShares > 0 || noShares > 0) {
+                positionPnLEl.style.display = 'block';
+
+                // Determine the larger position
+                if (yesShares >= noShares) {
+                    positionOutcomeEl.textContent = currentTrade.isYes ? 'YES' : 'UP';
+                    positionOutcomeEl.style.color = 'var(--green)';
+                    const payout = yesShares;
+                    const profit = payout - currentValue;
+                    positionPayoutEl.textContent = `${payout.toFixed(4)} ETH`;
+                    positionPayoutEl.style.color = profit >= 0 ? 'var(--green)' : 'var(--red)';
+                } else {
+                    positionOutcomeEl.textContent = currentTrade.isYes ? 'NO' : 'DOWN';
+                    positionOutcomeEl.style.color = 'var(--red)';
+                    const payout = noShares;
+                    const profit = payout - currentValue;
+                    positionPayoutEl.textContent = `${payout.toFixed(4)} ETH`;
+                    positionPayoutEl.style.color = profit >= 0 ? 'var(--green)' : 'var(--red)';
+                }
+            } else {
+                positionPnLEl.style.display = 'none';
+            }
         }
 
         let currentOrderbook = { bids: [], asks: [], bidHashes: [], askHashes: [], ammPrice: 0, rYes: 0n, rNo: 0n };
@@ -4251,7 +4534,13 @@
             // Clear and show loading state
             asksContainer.innerHTML = '<div class="orderbook-empty">Loading...</div>';
             bidsContainer.innerHTML = '';
-            spreadEl.textContent = 'Spread: --';
+            document.getElementById('spreadMidPrice').textContent = '--';
+            document.getElementById('spreadOddsPct').textContent = '--';
+            document.getElementById('spreadBidAsk').textContent = '-- / --';
+            document.getElementById('spreadPct').textContent = '--%';
+            document.getElementById('orderbookShareType').textContent = isYes ? 'YES' : 'NO';
+            document.getElementById('spreadOutcome').textContent = isYes ? 'YES' : 'NO';
+            document.getElementById('orderbookTotalDepth').textContent = '--';
 
             try {
                 const rpc = provider || await getRpcProvider();
@@ -4294,15 +4583,28 @@
 
                 // Process and display orders
                 const formatOrder = (order) => {
-                    // Price = collateral / shares (guard against zero shares)
-                    const shares = Number(order.shares);
-                    const price = shares > 0 ? Number(order.collateral) / shares : 0;
+                    // Price = collateral / shares (guard against zero/invalid values)
+                    const shares = Number(order.shares || 0);
+                    const collateral = Number(order.collateral || 0);
+                    if (shares <= 0 || isNaN(shares) || isNaN(collateral)) {
+                        return null; // Invalid order
+                    }
+                    const price = collateral / shares;
                     const size = shares / 1e18;
                     return { price, size, order };
                 };
 
-                const bids = currentOrderbook.bids.map(o => formatOrder(o)).sort((a, b) => b.price - a.price);
-                const asks = currentOrderbook.asks.map(o => formatOrder(o)).sort((a, b) => a.price - b.price);
+                // Smart decimal formatting for small values
+                const formatSize = (size) => {
+                    if (size >= 1) return size.toFixed(2);
+                    if (size >= 0.01) return size.toFixed(4);
+                    if (size >= 0.0001) return size.toFixed(6);
+                    return size.toExponential(2);
+                };
+
+                // Filter out invalid orders (null) before sorting
+                const bids = currentOrderbook.bids.map(o => formatOrder(o)).filter(o => o !== null).sort((a, b) => b.price - a.price);
+                const asks = currentOrderbook.asks.map(o => formatOrder(o)).filter(o => o !== null).sort((a, b) => a.price - b.price);
 
                 // Clear containers
                 asksContainer.innerHTML = '';
@@ -4311,8 +4613,47 @@
                 bodyEl.style.display = 'block';
                 emptyEl.style.display = 'none';
 
-                // Render asks (sell orders) - displayed in reverse (lowest at bottom)
-                // Asks that are cheaper than AMM are better deals for buyers
+                // Get section labels for showing/hiding
+                const asksLabel = document.getElementById('asksLabel');
+                const bidsLabel = document.getElementById('bidsLabel');
+                const orderbookHeader = document.querySelector('.orderbook-header');
+                const hasOrders = bids.length > 0 || asks.length > 0;
+
+                // Show/hide orderbook structure based on whether orders exist
+                if (hasOrders) {
+                    asksLabel.style.display = 'flex';
+                    bidsLabel.style.display = 'flex';
+                    orderbookHeader.style.display = 'grid';
+                } else {
+                    // No orders - hide the asks/bids structure, show clean pool-only view
+                    asksLabel.style.display = 'none';
+                    bidsLabel.style.display = 'none';
+                    orderbookHeader.style.display = 'none';
+                }
+
+                // Calculate max cumulative for depth bar scaling
+                const totalAskDepth = asks.reduce((sum, a) => sum + a.size, 0);
+                const totalBidDepth = bids.reduce((sum, b) => sum + b.size, 0);
+                const maxDepth = Math.max(totalAskDepth, totalBidDepth, 0.01);
+
+                // Update total depth display and title based on order availability
+                const totalDepthEth = (totalAskDepth * ammPrice) + (totalBidDepth * ammPrice);
+                const depthInfo = document.querySelector('.orderbook-depth-info');
+                const titleText = document.querySelector('.orderbook-title-text');
+
+                if (hasOrders) {
+                    document.getElementById('orderbookTotalDepth').textContent = totalDepthEth > 0 ? formatSize(totalDepthEth) : '--';
+                    depthInfo.style.display = 'block';
+                    titleText.innerHTML = `<span id="orderbookShareType">${isYes ? 'YES' : 'NO'}</span> Order Book`;
+                } else {
+                    // No orders - show simpler title
+                    depthInfo.style.display = 'none';
+                    titleText.innerHTML = `<span id="orderbookShareType">${isYes ? 'YES' : 'NO'}</span> Pool`;
+                }
+
+                // Get user's address for highlighting their orders
+                const userAddr = connectedAddress ? connectedAddress.toLowerCase() : '';
+
                 // Calculate cumulative depth for asks (from lowest price up)
                 let askCumulative = 0;
                 const asksWithCumulative = asks.map(a => {
@@ -4320,15 +4661,30 @@
                     return { ...a, cumulative: askCumulative };
                 });
 
-                // Render asks (sell orders) - note: asks are displayed in reverse order
-                // So we need to reverse the cumulative calculation for display
+                // Render asks (sell orders) - displayed in reverse order (lowest at bottom near spread)
                 asksWithCumulative.forEach((a, idx) => {
                     const row = document.createElement('div');
                     const isBetterDeal = ammPrice > 0 && a.price < ammPrice;
-                    row.className = 'orderbook-row ask' + (isBetterDeal ? ' better-deal' : '');
-                    row.innerHTML = `<span class="price">${a.price.toFixed(4)}${isBetterDeal ? ' ★' : ''}</span><span class="size">${a.size.toFixed(4)}</span><span class="total">${a.cumulative.toFixed(2)}</span>`;
-                    row.title = isBetterDeal ? `Better than AMM (${ammPrice.toFixed(4)}) - Click to fill` : `Click to fill`;
+                    const isUserOrder = userAddr && a.order.owner && a.order.owner.toLowerCase() === userAddr;
+                    row.className = 'orderbook-row ask' + (isBetterDeal ? ' better-deal' : '') + (isUserOrder ? ' mine' : '');
+
+                    // Depth bar width based on cumulative size
+                    const depthPct = Math.min((a.cumulative / maxDepth) * 100, 100);
+                    row.style.setProperty('--depth-width', depthPct + '%');
+                    row.style.cssText += `; --depth-width: ${depthPct}%`;
+
+                    const oddsStr = (a.price * 100).toFixed(0) + '%';
+                    const priceStr = a.price.toFixed(3);
+                    row.innerHTML = `
+                        <span class="price">${priceStr} <span style="opacity:0.6">(${oddsStr})</span>${isBetterDeal ? ' <span style="color:var(--green)">★</span>' : ''}</span>
+                        <span class="size">${formatSize(a.size)}</span>
+                        <span class="total">${formatSize(a.cumulative)}</span>
+                    `;
+                    row.title = `${oddsStr} implied odds | ${formatSize(a.size)} shares @ ${priceStr} ETH${isBetterDeal ? ' | Better than pool!' : ''}`;
                     row.onclick = () => fillOrderFromBook(a.order, false, idx);
+
+                    // Set depth bar width via inline style on pseudo-element
+                    row.style.setProperty('--depth', depthPct + '%');
                     asksContainer.appendChild(row);
                 });
 
@@ -4340,44 +4696,75 @@
                 });
 
                 // Render bids (buy orders)
-                // Bids that are higher than AMM are better deals for sellers
                 bidsWithCumulative.forEach((b, idx) => {
                     const row = document.createElement('div');
                     const isBetterDeal = ammPrice > 0 && b.price > ammPrice;
-                    row.className = 'orderbook-row bid' + (isBetterDeal ? ' better-deal' : '');
-                    row.innerHTML = `<span class="price">${b.price.toFixed(4)}${isBetterDeal ? ' ★' : ''}</span><span class="size">${b.size.toFixed(4)}</span><span class="total">${b.cumulative.toFixed(2)}</span>`;
-                    row.title = isBetterDeal ? `Better than AMM (${ammPrice.toFixed(4)}) - Click to fill` : `Click to fill`;
+                    const isUserOrder = userAddr && b.order.owner && b.order.owner.toLowerCase() === userAddr;
+                    row.className = 'orderbook-row bid' + (isBetterDeal ? ' better-deal' : '') + (isUserOrder ? ' mine' : '');
+
+                    // Depth bar width
+                    const depthPct = Math.min((b.cumulative / maxDepth) * 100, 100);
+
+                    const oddsStr = (b.price * 100).toFixed(0) + '%';
+                    const priceStr = b.price.toFixed(3);
+                    row.innerHTML = `
+                        <span class="price">${priceStr} <span style="opacity:0.6">(${oddsStr})</span>${isBetterDeal ? ' <span style="color:var(--green)">★</span>' : ''}</span>
+                        <span class="size">${formatSize(b.size)}</span>
+                        <span class="total">${formatSize(b.cumulative)}</span>
+                    `;
+                    row.title = `${oddsStr} implied odds | ${formatSize(b.size)} shares @ ${priceStr} ETH${isBetterDeal ? ' | Better than pool!' : ''}`;
                     row.onclick = () => fillOrderFromBook(b.order, true, idx);
+
+                    // Set depth bar width
+                    row.style.setProperty('--depth', depthPct + '%');
                     bidsContainer.appendChild(row);
                 });
 
-                // Show AMM price in spread area if no orders
-                if (bids.length === 0 && asks.length === 0) {
-                    if (ammPrice > 0) {
-                        spreadEl.textContent = `AMM: ${ammPrice.toFixed(4)} ETH`;
-                    } else {
-                        bodyEl.style.display = 'none';
-                        emptyEl.style.display = 'block';
-                        emptyEl.textContent = 'No liquidity';
-                    }
-                    return;
-                }
+                // Update spread area with new element structure
+                const spreadMidPrice = document.getElementById('spreadMidPrice');
+                const spreadOddsPct = document.getElementById('spreadOddsPct');
+                const spreadOutcome = document.getElementById('spreadOutcome');
+                const spreadBidAsk = document.getElementById('spreadBidAsk');
+                const spreadPct = document.getElementById('spreadPct');
 
-                // Calculate and display spread with AMM reference
+                // Calculate best bid/ask
                 const bestAsk = asks.length > 0 ? asks[0].price : null;
                 const bestBid = bids.length > 0 ? bids[0].price : null;
 
-                if (bestAsk && bestBid) {
-                    const spread = ((bestAsk - bestBid) / bestAsk * 100).toFixed(1);
-                    spreadEl.innerHTML = ammPrice > 0 ?
-                        `AMM: ${ammPrice.toFixed(4)} | Spread: ${spread}%` :
-                        `Spread: ${spread}%`;
-                } else if (ammPrice > 0) {
-                    const ref = bestAsk ? `Ask: ${bestAsk.toFixed(4)}` : bestBid ? `Bid: ${bestBid.toFixed(4)}` : '';
-                    spreadEl.textContent = `AMM: ${ammPrice.toFixed(4)} | ${ref}`;
+                // Update pool price display (mid-market or AMM price)
+                if (ammPrice > 0) {
+                    spreadMidPrice.textContent = ammPrice.toFixed(3) + ' ETH';
+                    spreadOddsPct.textContent = (ammPrice * 100).toFixed(0) + '%';
+                    spreadOutcome.textContent = isYes ? 'YES' : 'NO';
+                    spreadOutcome.style.color = isYes ? 'var(--green)' : 'var(--red)';
+                } else if (bestAsk && bestBid) {
+                    const midPrice = (bestAsk + bestBid) / 2;
+                    spreadMidPrice.textContent = midPrice.toFixed(3) + ' ETH';
+                    spreadOddsPct.textContent = (midPrice * 100).toFixed(0) + '%';
                 } else {
-                    spreadEl.textContent = bestAsk ? `Best Ask: ${bestAsk.toFixed(4)}` :
-                                          bestBid ? `Best Bid: ${bestBid.toFixed(4)}` : '--';
+                    spreadMidPrice.textContent = '--';
+                    spreadOddsPct.textContent = '--';
+                }
+
+                // Update bid/ask display
+                if (bestBid && bestAsk) {
+                    spreadBidAsk.innerHTML = `<span style="color:var(--green)">${bestBid.toFixed(3)}</span> / <span style="color:var(--red)">${bestAsk.toFixed(3)}</span>`;
+                    const spread = ((bestAsk - bestBid) / bestAsk * 100).toFixed(1);
+                    spreadPct.textContent = spread + '%';
+                } else if (bestBid) {
+                    spreadBidAsk.innerHTML = `<span style="color:var(--green)">${bestBid.toFixed(3)}</span> / --`;
+                    spreadPct.textContent = '--';
+                } else if (bestAsk) {
+                    spreadBidAsk.innerHTML = `-- / <span style="color:var(--red)">${bestAsk.toFixed(3)}</span>`;
+                    spreadPct.textContent = '--';
+                } else if (ammPrice > 0) {
+                    // No orders, just pool
+                    spreadBidAsk.textContent = 'Pool only';
+                    spreadPct.textContent = '0%';
+                } else {
+                    bodyEl.style.display = 'none';
+                    emptyEl.style.display = 'block';
+                    return;
                 }
 
             } catch (e) {
@@ -4386,13 +4773,13 @@
                 bidsContainer.innerHTML = '';
                 bodyEl.style.display = 'none';
                 emptyEl.style.display = 'block';
-                emptyEl.textContent = 'Failed to load orderbook';
+                emptyEl.innerHTML = '<div>Failed to load orderbook</div><div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Check console for details</div>';
             }
         }
 
         async function fillOrderFromBook(order, isBid, idx) {
             if (!signer) {
-                alert('Connect wallet to fill orders');
+                showStatus('Connect wallet to fill orders', 'error');
                 return;
             }
 
@@ -4492,6 +4879,7 @@
 
         function setSlippage(pct) {
             if (!pct || pct <= 0) pct = 0.5;
+            if (pct > 50) pct = 50; // Cap at 50% for safety
             slippageTolerance = pct;
 
             // Update button states
@@ -4507,94 +4895,190 @@
             updatePreview();
         }
 
+        function setSwapSlippage(pct) {
+            if (!pct || pct <= 0) pct = 0.5;
+            if (pct > 50) pct = 50; // Cap at 50% for safety
+            slippageTolerance = pct;
+
+            // Update swap slippage button states
+            document.getElementById('swapSlip05').className = pct === 0.5 ? 'slip-btn slip-active' : 'slip-btn';
+            document.getElementById('swapSlip1').className = pct === 1 ? 'slip-btn slip-active' : 'slip-btn';
+            document.getElementById('swapSlip2').className = pct === 2 ? 'slip-btn slip-active' : 'slip-btn';
+
+            // Update display
+            document.getElementById('swapSlipDisplay').textContent = pct + '%';
+
+            updateSwapPreview();
+        }
+
+        // Track current trade direction (buy/sell) and swap direction (yesToNo)
+        let currentTradeDirection = 'buy';
+        let currentSwapDirection = true; // true = YES→NO, false = NO→YES
+
         function setTradeMode(mode) {
             currentTradeMode = mode;
 
-            const buyBtn = document.getElementById('buyModeBtn');
-            const sellBtn = document.getElementById('sellModeBtn');
+            const tradeBtn = document.getElementById('tradeModeBtn');
+            const swapBtn = document.getElementById('swapModeBtn');
             const limitBtn = document.getElementById('limitModeBtn');
             const lpBtn = document.getElementById('lpModeBtn');
-            const mintBtn = document.getElementById('mintModeBtn');
             const submitBtn = document.getElementById('tradeSubmit');
             const tradeSection = document.getElementById('tradeSection');
             const lpSection = document.getElementById('lpSection');
-            const mintSection = document.getElementById('mintSection');
+            const swapSection = document.getElementById('swapSection');
             const limitSection = document.getElementById('limitSection');
             const yourOrdersSection = document.getElementById('yourOrdersSection');
             const orderbookContainer = document.getElementById('orderbookContainer');
+            const tradeDirectionToggle = document.getElementById('tradeDirectionToggle');
+            const swapDirectionToggle = document.getElementById('swapDirectionToggle');
+            const tradeInputGroup = document.getElementById('tradeInputGroup');
             const label = currentTrade.isYes ? (currentTrade.type === 'extreme' ? 'YES' : 'UP') : (currentTrade.type === 'extreme' ? 'NO' : 'DOWN');
 
-            // Reset all buttons using CSS classes
-            buyBtn.className = 'mode-toggle-btn';
-            sellBtn.className = 'mode-toggle-btn';
+            // Reset all mode buttons
+            tradeBtn.className = 'mode-toggle-btn';
+            swapBtn.className = 'mode-toggle-btn';
             limitBtn.className = 'mode-toggle-btn';
             lpBtn.className = 'mode-toggle-btn';
-            mintBtn.className = 'mode-toggle-btn';
+
+            // Hide direction toggles by default
+            tradeDirectionToggle.style.display = 'none';
+            swapDirectionToggle.style.display = 'none';
 
             // Hide your orders section by default
             yourOrdersSection.style.display = 'none';
 
-            if (mode === 'buy') {
-                buyBtn.className = 'mode-toggle-btn active-buy';
+            if (mode === 'trade') {
+                tradeBtn.className = 'mode-toggle-btn ' + (currentTradeDirection === 'buy' ? 'active-buy' : 'active-sell');
+                tradeDirectionToggle.style.display = 'flex';
                 tradeSection.style.display = 'block';
                 lpSection.style.display = 'none';
-                mintSection.style.display = 'none';
+                if (swapSection) swapSection.style.display = 'none';
                 limitSection.style.display = 'none';
                 orderbookContainer.style.display = 'block';
-                document.getElementById('tradeInputLabel').textContent = 'Amount (ETH)';
-                document.getElementById('tradeBalanceUnit').textContent = 'ETH';
-                document.getElementById('previewSharesLabel').textContent = 'You receive';
-                document.getElementById('previewPayoutLabel').textContent = 'Payout if win';
-                submitBtn.textContent = 'Buy ' + label;
-                submitBtn.className = 'trade-submit ' + (currentTrade.isYes ? 'buy-up' : 'buy-down');
-            } else if (mode === 'sell') {
-                sellBtn.className = 'mode-toggle-btn active-sell';
-                tradeSection.style.display = 'block';
+                tradeInputGroup.style.display = 'block';
+                // Apply direction-specific settings
+                setTradeDirection(currentTradeDirection, true);
+            } else if (mode === 'swap') {
+                swapBtn.className = 'mode-toggle-btn active-swap';
+                swapDirectionToggle.style.display = 'flex';
+                tradeSection.style.display = 'none';
                 lpSection.style.display = 'none';
-                mintSection.style.display = 'none';
+                if (swapSection) swapSection.style.display = 'block';
                 limitSection.style.display = 'none';
-                orderbookContainer.style.display = 'block';
-                document.getElementById('tradeInputLabel').textContent = 'Shares to sell';
-                document.getElementById('tradeBalanceUnit').textContent = 'shares';
-                document.getElementById('previewSharesLabel').textContent = 'You receive';
-                document.getElementById('previewPayoutLabel').textContent = 'Min receive';
-                submitBtn.textContent = 'Sell ' + label;
-                submitBtn.className = 'trade-submit buy-down';
+                orderbookContainer.style.display = 'none';
+                tradeInputGroup.style.display = 'block';
+                // Sync swap slippage buttons with current slippage
+                document.getElementById('swapSlip05').className = slippageTolerance === 0.5 ? 'slip-btn slip-active' : 'slip-btn';
+                document.getElementById('swapSlip1').className = slippageTolerance === 1 ? 'slip-btn slip-active' : 'slip-btn';
+                document.getElementById('swapSlip2').className = slippageTolerance === 2 ? 'slip-btn slip-active' : 'slip-btn';
+                document.getElementById('swapSlipDisplay').textContent = slippageTolerance + '%';
+                // Apply swap direction settings
+                setSwapDirection(currentSwapDirection, true);
             } else if (mode === 'limit') {
                 limitBtn.className = 'mode-toggle-btn active-limit';
                 tradeSection.style.display = 'none';
                 lpSection.style.display = 'none';
-                mintSection.style.display = 'none';
+                if (swapSection) swapSection.style.display = 'none';
                 limitSection.style.display = 'block';
                 orderbookContainer.style.display = 'block';
                 yourOrdersSection.style.display = 'block';
+                tradeInputGroup.style.display = 'none';
+                // Set smart default price and shares
+                setSmartDefaultPrice();
+                if (!document.getElementById('limitShares').value) {
+                    document.getElementById('limitShares').value = '1.0';
+                }
+                updateLimitBalance();
                 updateLimitPreview();
                 refreshUserOrders();
             } else if (mode === 'lp') {
                 lpBtn.className = 'mode-toggle-btn active-lp';
                 tradeSection.style.display = 'none';
                 lpSection.style.display = 'block';
-                mintSection.style.display = 'none';
+                if (swapSection) swapSection.style.display = 'none';
                 limitSection.style.display = 'none';
                 orderbookContainer.style.display = 'none';
+                tradeInputGroup.style.display = 'block';
                 document.getElementById('tradeInputLabel').textContent = currentLpMode === 'add' ? 'ETH to deposit' : 'LP to withdraw';
                 document.getElementById('tradeBalanceUnit').textContent = currentLpMode === 'add' ? 'ETH' : 'LP';
                 updateLpPreview();
-            } else if (mode === 'mint') {
-                mintBtn.className = 'mode-toggle-btn active-mint';
-                tradeSection.style.display = 'none';
-                lpSection.style.display = 'none';
-                mintSection.style.display = 'block';
-                limitSection.style.display = 'none';
-                orderbookContainer.style.display = 'none';
-                document.getElementById('tradeInputLabel').textContent = 'ETH to mint';
-                document.getElementById('tradeBalanceUnit').textContent = 'ETH';
-                updateMintPreview();
             }
 
             loadBalance();
             document.getElementById('tradeAmount').value = '';
-            if (mode !== 'lp' && mode !== 'mint' && mode !== 'limit') updatePreview();
+            if (mode === 'trade') updatePreview();
+            if (mode === 'swap') updateSwapPreview();
+        }
+
+        function setTradeDirection(direction, skipModeUpdate = false) {
+            currentTradeDirection = direction;
+            const buyDirBtn = document.getElementById('buyDirBtn');
+            const sellDirBtn = document.getElementById('sellDirBtn');
+            const tradeBtn = document.getElementById('tradeModeBtn');
+            const submitBtn = document.getElementById('tradeSubmit');
+            const label = currentTrade.isYes ? (currentTrade.type === 'extreme' ? 'YES' : 'UP') : (currentTrade.type === 'extreme' ? 'NO' : 'DOWN');
+
+            buyDirBtn.className = 'mode-toggle-btn' + (direction === 'buy' ? ' active-buy' : '');
+            sellDirBtn.className = 'mode-toggle-btn' + (direction === 'sell' ? ' active-sell' : '');
+            tradeBtn.className = 'mode-toggle-btn ' + (direction === 'buy' ? 'active-buy' : 'active-sell');
+
+            if (direction === 'buy') {
+                document.getElementById('tradeInputLabel').textContent = 'Amount (ETH)';
+                document.getElementById('tradeBalanceUnit').textContent = 'ETH';
+                document.getElementById('previewSharesLabel').textContent = 'You receive';
+                document.getElementById('previewPayoutLabel').textContent = 'Payout if win';
+                submitBtn.textContent = 'Buy ' + label;
+                submitBtn.className = 'trade-submit ' + (currentTrade.isYes ? 'buy-up' : 'buy-down');
+            } else {
+                document.getElementById('tradeInputLabel').textContent = 'Shares to sell';
+                document.getElementById('tradeBalanceUnit').textContent = 'shares';
+                document.getElementById('previewSharesLabel').textContent = 'You receive';
+                document.getElementById('previewPayoutLabel').textContent = 'Min receive';
+                submitBtn.textContent = 'Sell ' + label;
+                submitBtn.className = 'trade-submit buy-down';
+            }
+
+            loadBalance();
+            document.getElementById('tradeAmount').value = '';
+            updatePreview();
+        }
+
+        function setSwapDirection(yesToNo, skipUpdate = false) {
+            currentSwapDirection = yesToNo;
+            const yesToNoBtn = document.getElementById('yesToNoBtn');
+            const noToYesBtn = document.getElementById('noToYesBtn');
+
+            // Use market-appropriate labels (YES/NO for extreme, UP/DOWN for hourly)
+            const yesLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+            const fromShare = yesToNo ? yesLabel : noLabel;
+            const toShare = yesToNo ? noLabel : yesLabel;
+
+            yesToNoBtn.className = 'mode-toggle-btn' + (yesToNo ? ' active-buy' : '');
+            noToYesBtn.className = 'mode-toggle-btn' + (!yesToNo ? ' active-sell' : '');
+            yesToNoBtn.textContent = yesLabel + ' → ' + noLabel;
+            noToYesBtn.textContent = noLabel + ' → ' + yesLabel;
+
+            // Update input labels
+            document.getElementById('tradeInputLabel').textContent = fromShare + ' shares to swap';
+            document.getElementById('tradeBalanceUnit').textContent = fromShare;
+
+            // Update swap preview labels
+            const swapGiveLabel = document.getElementById('swapGiveLabel');
+            const swapReceiveLabel = document.getElementById('swapReceiveLabel');
+            const swapSubmit = document.getElementById('swapSubmit');
+            const swapPoolRate = document.getElementById('swapPoolRate');
+            if (swapGiveLabel) swapGiveLabel.textContent = 'You give (' + fromShare + ')';
+            if (swapReceiveLabel) swapReceiveLabel.textContent = 'You receive (' + toShare + ')';
+            if (swapPoolRate) swapPoolRate.textContent = '1 ' + fromShare + ' = -- ' + toShare;
+            if (swapSubmit) {
+                swapSubmit.textContent = 'Swap ' + fromShare + ' → ' + toShare;
+                swapSubmit.className = 'trade-submit ' + (yesToNo ? 'buy-down' : 'buy-up');
+            }
+
+            loadBalance();
+            document.getElementById('tradeAmount').value = '';
+            if (!skipUpdate) updateSwapPreview();
         }
 
         function setLpMode(mode) {
@@ -4639,8 +5123,12 @@
             // Calculate pool metrics
             const rYesNum = Number(rYes) / 1e18;
             const rNoNum = Number(rNo) / 1e18;
-            const poolTvl = (rYesNum + rNoNum) / 2; // ETH value (YES + NO = 2 * collateral)
-            const totalLpSupply = Math.sqrt(rYesNum * rNoNum); // LP = sqrt(rYes * rNo)
+            // Use actual TVL from market data if available, otherwise approximate
+            const poolTvl = currentTrade.tvl > 0 ? currentTrade.tvl : (rYesNum + rNoNum) / 2;
+            // Use actual LP supply from ZAMM pools() if available, otherwise estimate
+            const totalLpSupply = currentUserPosition.lpTotalSupply
+                ? Number(currentUserPosition.lpTotalSupply) / 1e18
+                : Math.sqrt(rYesNum * rNoNum);
 
             // Pool price (YES probability)
             const yesPrice = rYesNum > 0 && rNoNum > 0 ? rNoNum / (rYesNum + rNoNum) : 0.5;
@@ -4657,7 +5145,7 @@
             // Current user position value and share
             if (userLp > 0 && totalLpSupply > 0) {
                 const userShare = userLp / totalLpSupply;
-                const positionValue = userShare * poolTvl * 2; // Value in ETH terms
+                const positionValue = userShare * poolTvl; // Value in ETH terms (collateral backing their LP)
                 document.getElementById('lpPositionValue').textContent = formatEth(positionValue);
                 document.getElementById('lpCurrentShare').textContent = (userShare * 100).toFixed(2) + '%';
             } else {
@@ -4671,6 +5159,7 @@
             if (amt === 0) {
                 document.getElementById('lpPreview').textContent = '--';
                 document.getElementById('lpPoolShare').textContent = '--%';
+                document.getElementById('lpShareChange').textContent = '';
                 return;
             }
 
@@ -4678,6 +5167,8 @@
                 // New pool - first LP
                 document.getElementById('lpPreview').textContent = amt.toFixed(4) + ' LP tokens';
                 document.getElementById('lpPoolShare').textContent = '100%';
+                document.getElementById('lpShareChange').textContent = '(+100%)';
+                document.getElementById('lpShareChange').style.color = 'var(--green)';
                 return;
             }
 
@@ -4688,10 +5179,14 @@
                 const estLp = (amt / poolTvl) * totalLpSupply;
                 const newTotalLp = totalLpSupply + estLp;
                 const newUserLp = userLp + estLp;
+                const currentShare = totalLpSupply > 0 ? (userLp / totalLpSupply) * 100 : 0;
                 const newShare = (newUserLp / newTotalLp) * 100;
+                const shareDelta = newShare - currentShare;
 
                 document.getElementById('lpPreview').textContent = estLp.toFixed(4) + ' LP tokens';
                 document.getElementById('lpPoolShare').textContent = newShare.toFixed(2) + '%';
+                document.getElementById('lpShareChange').textContent = shareDelta > 0 ? `(+${shareDelta.toFixed(2)}%)` : '';
+                document.getElementById('lpShareChange').style.color = 'var(--green)';
 
                 // Show IL warning for imbalanced pools
                 if (yesPrice < 0.2 || yesPrice > 0.8) {
@@ -4703,6 +5198,7 @@
                 if (amt > userLp) {
                     document.getElementById('lpPreview').textContent = 'Exceeds balance';
                     document.getElementById('lpPoolShare').textContent = '--%';
+                    document.getElementById('lpShareChange').textContent = '';
                     return;
                 }
 
@@ -4720,10 +5216,14 @@
                 document.getElementById('lpPreview').textContent = ethOut.toFixed(4) + ' ETH';
 
                 // Calculate new share
+                const currentShare = totalLpSupply > 0 ? (userLp / totalLpSupply) * 100 : 0;
                 const newUserLp = userLp - amt;
                 const newTotalLp = totalLpSupply - amt;
                 const newShare = newTotalLp > 0 ? (newUserLp / newTotalLp) * 100 : 0;
+                const shareDelta = newShare - currentShare;
                 document.getElementById('lpPoolShare').textContent = newShare.toFixed(2) + '%';
+                document.getElementById('lpShareChange').textContent = shareDelta !== 0 ? `(${shareDelta.toFixed(2)}%)` : '';
+                document.getElementById('lpShareChange').style.color = shareDelta < 0 ? 'var(--red)' : 'var(--text-muted)';
 
                 // Show leftover warning if pool is imbalanced
                 if (leftoverYes > 0.0001 || leftoverNo > 0.0001) {
@@ -4733,6 +5233,207 @@
                     warningEl.textContent = '⚠️ Pool imbalanced. You\'ll also receive ~' + leftover + ' shares (can\'t merge).';
                     warningEl.style.display = 'block';
                 }
+            }
+        }
+
+        // ======================== SWAP (YES ↔ NO) ========================
+        function updateSwapPreview() {
+            const amt = parseFloat(document.getElementById('tradeAmount').value) || 0;
+            const rYes = currentOrderbook.rYes || 0n;
+            const rNo = currentOrderbook.rNo || 0n;
+
+            // Use market-appropriate labels for defaults (default to YES/NO if type unknown)
+            const yesLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+            const fromLabel = currentSwapDirection ? yesLabel : noLabel;
+            const toLabel = currentSwapDirection ? noLabel : yesLabel;
+
+            // Update labels
+            document.getElementById('swapGiveLabel').textContent = `You give (${fromLabel})`;
+            document.getElementById('swapReceiveLabel').textContent = `You receive (${toLabel})`;
+
+            if (rYes === 0n || rNo === 0n || amt === 0) {
+                document.getElementById('swapGive').textContent = amt > 0 ? `${amt.toFixed(4)} shares` : '-- shares';
+                document.getElementById('swapPoolRate').textContent = `1 ${fromLabel} = -- ${toLabel}`;
+                document.getElementById('swapReceive').textContent = '-- shares';
+                document.getElementById('swapFee').textContent = '-- shares';
+                document.getElementById('swapImpact').textContent = '--%';
+                document.getElementById('swapMinReceive').textContent = '-- shares';
+                return;
+            }
+
+            const rYesNum = Number(rYes) / 1e18;
+            const rNoNum = Number(rNo) / 1e18;
+
+            // Current rate from pool (constant product)
+            // YES → NO: rate = rNo / rYes
+            // NO → YES: rate = rYes / rNo
+            const spotRate = currentSwapDirection ? (rNoNum / rYesNum) : (rYesNum / rNoNum);
+
+            // Calculate swap output using constant product formula
+            // ZAMM applies fee BEFORE swap: amtInAfterFee = amtIn * (1 - fee)
+            // Then: amtOut = (amtInAfterFee * reserveOut) / (reserveIn + amtInAfterFee)
+            const fee = 0.003; // 0.3% fee (30 bps)
+            const amtIn = amt;
+            const feeAmount = amtIn * fee;
+            let reserveIn, reserveOut;
+
+            if (currentSwapDirection) {
+                // YES → NO
+                reserveIn = rYesNum;
+                reserveOut = rNoNum;
+            } else {
+                // NO → YES
+                reserveIn = rNoNum;
+                reserveOut = rYesNum;
+            }
+
+            const amtInWithFee = amtIn * (1 - fee);
+            const amtOut = (amtInWithFee * reserveOut) / (reserveIn + amtInWithFee);
+
+            // Price impact (difference between spot rate and effective rate)
+            const effectiveRate = amtOut / amtIn;
+            const priceImpact = ((spotRate - effectiveRate) / spotRate) * 100;
+
+            // Min receive with slippage
+            const slippage = slippageTolerance / 100;
+            const minReceive = amtOut * (1 - slippage);
+
+            // Update all display elements
+            document.getElementById('swapGive').textContent = `${amtIn.toFixed(4)} shares`;
+            document.getElementById('swapPoolRate').textContent = `1 ${fromLabel} = ${spotRate.toFixed(4)} ${toLabel}`;
+            document.getElementById('swapReceive').textContent = `${amtOut.toFixed(4)} ${toLabel}`;
+            document.getElementById('swapFee').textContent = `${feeAmount.toFixed(4)} ${fromLabel}`;
+            document.getElementById('swapImpact').textContent = priceImpact.toFixed(2) + '%';
+            document.getElementById('swapMinReceive').textContent = `${minReceive.toFixed(4)} ${toLabel}`;
+
+            // Color impact based on severity
+            const impactEl = document.getElementById('swapImpact');
+            if (priceImpact > 5) {
+                impactEl.style.color = 'var(--red)';
+            } else if (priceImpact > 1) {
+                impactEl.style.color = 'var(--amber)';
+            } else {
+                impactEl.style.color = 'var(--text)';
+            }
+        }
+
+        async function executeSwap() {
+            if (!signer || !connectedAddress) {
+                await connectWallet();
+                if (!signer || !connectedAddress) return;
+            }
+
+            const amt = parseFloat(document.getElementById('tradeAmount').value) || 0;
+            if (amt <= 0) {
+                showStatus('Enter amount to swap', 'error');
+                return;
+            }
+
+            // Validate market is selected
+            if (!currentTrade.marketId || !currentTrade.yesId || !currentTrade.noId) {
+                showStatus('Please select a market first', 'error');
+                return;
+            }
+
+            // Validate pool has liquidity
+            if (!currentOrderbook.rYes || !currentOrderbook.rNo ||
+                currentOrderbook.rYes === 0n || currentOrderbook.rNo === 0n) {
+                showStatus('Pool has no liquidity', 'error');
+                return;
+            }
+
+            // Validate user has enough shares to swap
+            const amtWei = ethers.parseEther(amt.toString());
+            const sourceBalance = currentSwapDirection ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+            if (!sourceBalance || amtWei > sourceBalance) {
+                const available = sourceBalance ? parseFloat(ethers.formatEther(sourceBalance)).toFixed(4) : '0';
+                const yesLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'YES' : 'UP';
+                const noLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+                const fromLabel = currentSwapDirection ? yesLabel : noLabel;
+                showStatus(`Insufficient ${fromLabel}. You have ${available}`, 'error');
+                return;
+            }
+
+            const submitBtn = document.getElementById('swapSubmit');
+            const yesLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = !currentTrade.type || currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+            const fromLabel = currentSwapDirection ? yesLabel : noLabel;
+            const toLabel = currentSwapDirection ? noLabel : yesLabel;
+
+            try {
+                submitBtn.disabled = true;
+
+                // Check approval using proper system
+                const approved = await checkAndRequestApprovals('swap');
+                if (!approved) {
+                    submitBtn.disabled = false;
+                    return;
+                }
+
+                const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, signer);
+                const amtWei = ethers.parseEther(amt.toString());
+
+                // Get market IDs from current trade
+                const yesId = BigInt(currentTrade.yesId);
+                const noId = BigInt(currentTrade.noId);
+
+                // Build pool key - YES/NO shares both use PAMM as token address
+                // Pool is ordered with smaller ID first
+                const id0 = yesId < noId ? yesId : noId;
+                const id1 = yesId < noId ? noId : yesId;
+                const poolKey = {
+                    id0: id0,
+                    id1: id1,
+                    token0: PAMM_ADDRESS,
+                    token1: PAMM_ADDRESS,
+                    feeOrHook: FEE_TIER  // 30 bps = 0.3% fee tier
+                };
+
+                // zeroForOne: true if swapping token0 for token1
+                // If YES is token0 (id0) and we're swapping YES→NO, then zeroForOne = true
+                // If NO is token0 (id0) and we're swapping NO→YES, then zeroForOne = true
+                const yesIsToken0 = yesId === id0;
+                const zeroForOne = currentSwapDirection ? yesIsToken0 : !yesIsToken0;
+
+                // Calculate minimum output with slippage
+                const slippage = slippageTolerance / 100;
+                const rYesNum = Number(currentOrderbook.rYes) / 1e18;
+                const rNoNum = Number(currentOrderbook.rNo) / 1e18;
+                const reserveIn = currentSwapDirection ? rYesNum : rNoNum;
+                const reserveOut = currentSwapDirection ? rNoNum : rYesNum;
+                const amtInWithFee = amt * 0.997;
+                const expectedOut = (reserveIn + amtInWithFee) > 0
+                    ? (amtInWithFee * reserveOut) / (reserveIn + amtInWithFee)
+                    : 0;
+                const minOut = Math.max(0, expectedOut * (1 - slippage));
+                const minOutWei = ethers.parseEther(minOut.toFixed(18));
+
+                // Deadline: 20 minutes from now
+                const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+
+                await monitorTransaction(
+                    zamm.swapExactIn(poolKey, amtWei, minOutWei, zeroForOne, connectedAddress, deadline),
+                    {
+                        pending: { title: `Swap ${fromLabel} → ${toLabel}`, body: 'Confirm in your wallet...' },
+                        submitted: { title: `Swap ${fromLabel} → ${toLabel}`, body: 'Waiting for confirmation...' },
+                        success: { title: 'Swap Complete!', body: `Swapped ${amt.toFixed(4)} ${fromLabel} → ${expectedOut.toFixed(4)} ${toLabel}` },
+                        error: { title: 'Swap Failed', body: '' },
+                        onSuccess: async () => {
+                            document.getElementById('tradeAmount').value = '';
+                            updateSwapPreview();
+                            await loadUserPosition(currentTrade.marketId);
+                            await loadOrderbook(currentTrade.marketId, currentTrade.isYes);
+                        }
+                    }
+                );
+
+            } catch (err) {
+                if (!isUserRejection(err)) {
+                    console.error('Swap failed:', err);
+                }
+            } finally {
+                submitBtn.disabled = false;
             }
         }
 
@@ -4848,8 +5549,8 @@
                         success: { title: 'Mint & List Success!', body: `Keeping ${amt} ${keepSide} shares, listed ${amt} at ${limitPrice.toFixed(2)}` },
                         error: { title: 'Mint & List Failed', body: '' },
                         onSuccess: async () => {
-                            await loadUserPosition();
-                            await loadOrderbook(marketId, currentTrade.isYes);
+                            await loadUserPosition(currentTrade.marketId);
+                            await loadOrderbook(currentTrade.marketId, currentTrade.isYes);
                             document.getElementById('tradeAmount').value = '';
                             document.getElementById('mintLimitPrice').value = '';
                             updateMintPreview();
@@ -4864,27 +5565,120 @@
         }
 
         // ======================== LIMIT ORDERS ========================
+
+        async function updateLimitBalance() {
+            const balEl = document.getElementById('limitBalance');
+            const unitEl = document.getElementById('limitBalanceUnit');
+
+            if (!provider || !connectedAddress) {
+                balEl.textContent = '--';
+                return;
+            }
+
+            try {
+                if (limitIsBuy) {
+                    // Buy order: need ETH
+                    const bal = await provider.getBalance(connectedAddress);
+                    balEl.textContent = parseFloat(ethers.formatEther(bal)).toFixed(4);
+                    unitEl.textContent = 'ETH';
+                } else {
+                    // Sell order: need shares
+                    const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                    balEl.textContent = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
+                    unitEl.textContent = currentTrade.isYes ? 'YES' : 'NO';
+                }
+            } catch (e) {
+                balEl.textContent = '--';
+            }
+        }
+
+        function adjustLimitPrice(delta) {
+            const input = document.getElementById('limitPrice');
+            const current = parseFloat(input.value) || currentOrderbook.ammPrice || 0.5;
+            const newPrice = Math.max(0.01, Math.min(0.99, current + delta));
+            input.value = newPrice.toFixed(2);
+            updateLimitPreview();
+        }
+
+        function setLimitPriceToPool() {
+            const ammPrice = currentOrderbook.ammPrice;
+            if (ammPrice > 0) {
+                document.getElementById('limitPrice').value = ammPrice.toFixed(2);
+                updateLimitPreview();
+            }
+        }
+
+        function setSmartDefaultPrice() {
+            const ammPrice = currentOrderbook.ammPrice;
+            if (ammPrice > 0) {
+                // Buy: bid 2% below pool, Sell: ask 2% above pool
+                const spread = 0.02;
+                const defaultPrice = limitIsBuy
+                    ? Math.max(0.01, ammPrice - spread)
+                    : Math.min(0.99, ammPrice + spread);
+                document.getElementById('limitPrice').value = defaultPrice.toFixed(2);
+
+                // Update pool price display
+                document.getElementById('limitPoolPrice').textContent = ammPrice.toFixed(2) + ' (' + (ammPrice * 100).toFixed(0) + '%)';
+            }
+        }
+
+        function setMaxLimitShares() {
+            if (limitIsBuy) {
+                // For buy orders, max is based on ETH balance and price
+                const price = parseFloat(document.getElementById('limitPrice').value) || 0;
+                if (price > 0 && provider && connectedAddress) {
+                    provider.getBalance(connectedAddress).then(bal => {
+                        const ethBal = parseFloat(ethers.formatEther(bal));
+                        const maxShares = ethBal / price;
+                        document.getElementById('limitShares').value = Math.floor(maxShares * 100) / 100;
+                        updateLimitPreview();
+                    });
+                }
+            } else {
+                // For sell orders, max is share balance
+                const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                const shares = parseFloat(ethers.formatEther(sharesBal || 0n));
+                document.getElementById('limitShares').value = Math.floor(shares * 10000) / 10000;
+                updateLimitPreview();
+            }
+        }
+
         function setLimitSide(side) {
             limitIsBuy = (side === 'buy');
             const buyBtn = document.getElementById('limitBuyBtn');
             const sellBtn = document.getElementById('limitSellBtn');
             const submitBtn = document.getElementById('limitSubmit');
             const costLabel = document.getElementById('limitCostLabel');
+            const receiveLabel = document.getElementById('limitReceiveLabel');
+            const profitLabel = document.getElementById('limitProfitLabel');
+            const explainerText = document.getElementById('limitExplainerText');
             const label = currentTrade.isYes ? (currentTrade.type === 'extreme' ? 'YES' : 'UP') : (currentTrade.type === 'extreme' ? 'NO' : 'DOWN');
 
             if (limitIsBuy) {
                 buyBtn.className = 'lp-toggle-btn active-add';
                 sellBtn.className = 'lp-toggle-btn';
                 costLabel.textContent = 'You escrow';
+                receiveLabel.textContent = 'If filled, you get';
+                profitLabel.textContent = 'If you win';
                 submitBtn.textContent = 'Place Buy Order';
                 submitBtn.style.background = 'var(--green)';
+                explainerText.innerHTML = `<strong>Buy Limit:</strong> Bid below pool to get better odds. Your ETH is escrowed until filled.`;
             } else {
                 buyBtn.className = 'lp-toggle-btn';
                 sellBtn.className = 'lp-toggle-btn active-remove';
                 costLabel.textContent = 'You escrow';
+                receiveLabel.textContent = 'If filled, you get';
+                profitLabel.textContent = 'Guaranteed receive';
                 submitBtn.textContent = 'Place Sell Order';
                 submitBtn.style.background = 'var(--red)';
+                explainerText.innerHTML = `<strong>Sell Limit:</strong> Ask above pool to get a better price. Your ${label} shares are escrowed until filled.`;
             }
+
+            // Set smart default price
+            setSmartDefaultPrice();
+
+            updateLimitBalance();
             updateLimitPreview();
         }
 
@@ -4894,11 +5688,49 @@
             const ammPrice = currentOrderbook.ammPrice || 0;
 
             const label = currentTrade.isYes ? 'YES' : 'NO';
+            const oddsHelper = document.getElementById('limitOddsHelper');
+            const oddsValue = document.getElementById('limitOddsValue');
+            const oddsVsPool = document.getElementById('limitOddsVsPool');
+            const returnInfo = document.getElementById('limitReturnInfo');
+
+            // Update pool price display
+            if (ammPrice > 0) {
+                document.getElementById('limitPoolPrice').textContent = ammPrice.toFixed(2) + ' (' + (ammPrice * 100).toFixed(0) + '%)';
+            }
+
+            // Show/update odds helper when price is entered
+            if (price > 0 && price < 1) {
+                oddsHelper.style.display = 'block';
+                const oddsPct = (price * 100).toFixed(0);
+                oddsValue.textContent = oddsPct + '%';
+
+                // Calculate potential return
+                const returnMultiple = (1 / price).toFixed(2);
+                const returnPct = ((1 / price - 1) * 100).toFixed(0);
+                returnInfo.textContent = limitIsBuy
+                    ? `If you win: ${returnMultiple}x return (+${returnPct}%)`
+                    : '';
+
+                // Compare to pool odds
+                if (ammPrice > 0) {
+                    const poolOddsPct = (ammPrice * 100).toFixed(0);
+                    const diff = ((price - ammPrice) / ammPrice * 100).toFixed(0);
+                    const isBetter = limitIsBuy ? price < ammPrice : price > ammPrice;
+                    const sign = diff > 0 ? '+' : '';
+                    oddsVsPool.innerHTML = isBetter
+                        ? `<span style="color:var(--green)">${sign}${diff}% vs pool</span>`
+                        : `<span style="color:var(--text-muted)">${sign}${diff}% vs pool</span>`;
+                } else {
+                    oddsVsPool.textContent = '';
+                }
+            } else {
+                oddsHelper.style.display = 'none';
+            }
 
             if (price <= 0 || shares <= 0) {
                 document.getElementById('limitCost').textContent = '-- ETH';
                 document.getElementById('limitReceive').textContent = '-- ' + label;
-                document.getElementById('limitVsAmm').textContent = '--';
+                document.getElementById('limitProfit').textContent = '--';
                 return;
             }
 
@@ -4908,22 +5740,21 @@
                 // Buy order: escrow ETH, receive shares when filled
                 document.getElementById('limitCost').textContent = totalCost.toFixed(4) + ' ETH';
                 document.getElementById('limitReceive').textContent = shares.toFixed(4) + ' ' + label;
+
+                // If you win, shares pay 1 ETH each
+                const payout = shares;
+                const profit = payout - totalCost;
+                const roi = (profit / totalCost * 100).toFixed(0);
+                document.getElementById('limitProfit').textContent = `${payout.toFixed(4)} ETH (+${roi}%)`;
+                document.getElementById('limitProfit').style.color = 'var(--green)';
             } else {
                 // Sell order: escrow shares, receive ETH when filled
                 document.getElementById('limitCost').textContent = shares.toFixed(4) + ' ' + label;
                 document.getElementById('limitReceive').textContent = totalCost.toFixed(4) + ' ETH';
-            }
 
-            // Compare to AMM price
-            if (ammPrice > 0) {
-                const diff = ((price - ammPrice) / ammPrice * 100).toFixed(1);
-                const isBetter = limitIsBuy ? price < ammPrice : price > ammPrice;
-                const color = isBetter ? 'var(--green)' : 'var(--red)';
-                const sign = price > ammPrice ? '+' : '';
-                document.getElementById('limitVsAmm').innerHTML =
-                    `<span style="color:${color}">${sign}${diff}% vs ${ammPrice.toFixed(4)}</span>`;
-            } else {
-                document.getElementById('limitVsAmm').textContent = 'No AMM price';
+                // Guaranteed ETH from sale
+                document.getElementById('limitProfit').textContent = totalCost.toFixed(4) + ' ETH';
+                document.getElementById('limitProfit').style.color = 'var(--text)';
             }
         }
 
@@ -5084,12 +5915,21 @@
                     const side = o.isBuy ? 'BUY' : 'SELL';
                     const sideColor = o.isBuy ? 'var(--green)' : 'var(--red)';
                     const shareType = o.isYes ? 'YES' : 'NO';
+                    const isCurrentSide = o.isYes === currentTrade.isYes;
+
+                    // Smart formatting for shares - show more decimals for small values
+                    const sharesStr = shares >= 1 ? shares.toFixed(2) :
+                                     shares >= 0.01 ? shares.toFixed(4) :
+                                     shares.toFixed(6);
+                    const oddsStr = (price * 100).toFixed(0) + '%';
 
                     return `
-                        <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid var(--border);${!isCurrentSide ? 'opacity:0.6;' : ''}">
                             <div>
                                 <span style="color:${sideColor};font-weight:600;">${side}</span>
-                                <span style="color:var(--text-muted);">${shares.toFixed(2)} ${shareType} @ ${price.toFixed(4)}</span>
+                                <span style="color:var(--text);">${sharesStr} ${shareType}</span>
+                                <span style="color:var(--text-muted);">@ ${price.toFixed(3)} (${oddsStr})</span>
+                                ${!isCurrentSide ? '<span style="font-size:9px;color:var(--text-dim);margin-left:4px;">(other side)</span>' : ''}
                             </div>
                             <button onclick="cancelUserOrder('${o.hash}')"
                                 style="padding:2px 8px;font-size:var(--font-xs);background:transparent;border:1px solid var(--red);color:var(--red);border-radius:var(--radius);cursor:pointer;">
@@ -5124,7 +5964,7 @@
                     onSuccess: async () => {
                         await loadOrderbook(currentTrade.marketId, currentTrade.isYes);
                         await refreshUserOrders();
-                        await loadUserPosition();
+                        await loadUserPosition(currentTrade.marketId);
                     }
                 });
 
@@ -5145,31 +5985,55 @@
                             const maxBal = bal > ethers.parseEther('0.01') ? bal - ethers.parseEther('0.01') : bal;
                             document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(maxBal)).toFixed(4);
                             updateLpPreview();
-                        } catch (e) {}
+                        } catch (e) {
+                            console.warn('Failed to fetch balance for max:', e.message);
+                        }
                     }
                 } else {
                     // Set max LP tokens for removing
                     document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(currentUserPosition.lpBalance)).toFixed(4);
                     updateLpPreview();
                 }
-            } else if (currentTradeMode === 'buy' || currentTradeMode === 'mint') {
+            } else if (currentTradeMode === 'swap') {
+                // Set max shares for swap (YES if YES→NO, NO if NO→YES)
+                const sharesBal = currentSwapDirection ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
+                updateSwapPreview();
+            } else if (currentTradeMode === 'trade') {
+                if (currentTradeDirection === 'buy') {
+                    // Set max ETH balance (leave some for gas)
+                    if (provider && connectedAddress) {
+                        try {
+                            const bal = await provider.getBalance(connectedAddress);
+                            const maxBal = bal > ethers.parseEther('0.01') ? bal - ethers.parseEther('0.01') : bal;
+                            document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(maxBal)).toFixed(4);
+                            updatePreview();
+                        } catch (e) {
+                            console.warn('Failed to fetch balance for max:', e.message);
+                        }
+                    }
+                } else {
+                    // Set max shares for sell
+                    const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                    document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
+                    updatePreview();
+                }
+            } else if (currentTradeMode === 'mint') {
                 // Set max ETH balance (leave some for gas)
                 if (provider && connectedAddress) {
                     try {
                         const bal = await provider.getBalance(connectedAddress);
                         const maxBal = bal > ethers.parseEther('0.01') ? bal - ethers.parseEther('0.01') : bal;
                         document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(maxBal)).toFixed(4);
-                        if (currentTradeMode === 'mint') {
-                            updateMintPreview();
-                        } else {
-                            updatePreview();
-                        }
-                    } catch (e) {}
+                        updateMintPreview();
+                    } catch (e) {
+                        console.warn('Failed to fetch balance for max:', e.message);
+                    }
                 }
             } else {
-                // Set max shares
+                // Legacy fallback
                 const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
-                document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(sharesBal)).toFixed(4);
+                document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
                 updatePreview();
             }
         }
@@ -5262,6 +6126,18 @@
             }
         }
 
+        function handleTradeInput() {
+            if (currentTradeMode === 'lp') {
+                updateLpPreview();
+            } else if (currentTradeMode === 'swap') {
+                updateSwapPreview();
+            } else if (currentTradeMode === 'mint') {
+                updateMintPreview();
+            } else {
+                updatePreview();
+            }
+        }
+
         async function loadBalance() {
             if (!provider || !connectedAddress) return;
             try {
@@ -5272,12 +6148,25 @@
                     } else {
                         document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(currentUserPosition.lpBalance)).toFixed(4);
                     }
-                } else if (currentTradeMode === 'buy' || currentTradeMode === 'mint') {
+                } else if (currentTradeMode === 'swap') {
+                    // For swap, show balance of the share being swapped (YES if YES→NO, NO if NO→YES)
+                    const sharesBal = currentSwapDirection ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                    document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
+                } else if (currentTradeMode === 'trade') {
+                    if (currentTradeDirection === 'buy') {
+                        const bal = await provider.getBalance(connectedAddress);
+                        document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(bal)).toFixed(4);
+                    } else {
+                        const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                        document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
+                    }
+                } else if (currentTradeMode === 'mint') {
                     const bal = await provider.getBalance(connectedAddress);
                     document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(bal)).toFixed(4);
                 } else {
+                    // Legacy fallback for buy/sell modes
                     const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
-                    document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(sharesBal)).toFixed(4);
+                    document.getElementById('tradeBalance').textContent = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
                 }
             } catch (e) {
                 document.getElementById('tradeBalance').textContent = '--';
@@ -5292,10 +6181,14 @@
             const savingsEl = document.getElementById('previewSavings');
             const breakdownDetails = document.getElementById('breakdownDetails');
 
+            // Determine if buying based on currentTradeDirection (for 'trade' mode) or legacy mode
+            const isBuy = currentTradeMode === 'trade' ? currentTradeDirection === 'buy' : currentTradeMode === 'buy';
+
             if (!m || amt === 0) {
                 document.getElementById('previewShares').textContent = '--';
                 document.getElementById('previewPrice').textContent = '--';
                 document.getElementById('previewPayout').textContent = '--';
+                document.getElementById('previewOddsRow').style.display = 'none';
                 routeEl.textContent = 'AMM';
                 routeEl.style.color = 'var(--blue)';
                 breakdownEl.style.display = 'none';
@@ -5309,7 +6202,7 @@
             const rNo = currentOrderbook.rNo || 0n;
 
             // Simulate mixed fill execution
-            const execution = simulateMixedFill(amt, currentTradeMode === 'buy', rYes, rNo, ammPrice);
+            const execution = simulateMixedFill(amt, isBuy, rYes, rNo, ammPrice);
 
             // Update route indicator
             if (execution.orderbookFills.length > 0) {
@@ -5325,29 +6218,40 @@
                 document.getElementById('previewShares').textContent = '--';
                 document.getElementById('previewPrice').textContent = '--';
                 document.getElementById('previewPayout').textContent = 'No liquidity';
+                document.getElementById('previewOddsRow').style.display = 'none';
                 breakdownEl.style.display = 'none';
                 savingsEl.style.display = 'none';
                 return;
             }
 
-            if (currentTradeMode === 'buy') {
+            if (isBuy) {
                 // Buy: spend ETH, receive shares (1 share = 1 ETH if win)
                 const effectivePrice = amt / execution.totalOutput;
                 const payout = execution.totalOutput; // Shares redeem at 1 ETH each
                 const profit = payout - amt;
                 const roi = (profit / amt) * 100;
+                const impliedOdds = effectivePrice * 100;
 
                 document.getElementById('previewShares').textContent = formatEth(execution.totalOutput, ' shares');
-                document.getElementById('previewPrice').textContent = formatEth(effectivePrice, ' ETH/share');
+                document.getElementById('previewPrice').textContent = formatEth(effectivePrice, ' ETH');
                 document.getElementById('previewPayout').textContent = `${formatEth(payout, '')} ETH (+${roi.toFixed(0)}%)`;
+
+                // Show implied odds
+                document.getElementById('previewOddsRow').style.display = 'flex';
+                document.getElementById('previewOdds').textContent = impliedOdds.toFixed(1) + '% ' + (currentTrade.isYes ? 'YES' : 'NO');
             } else {
                 // Sell: spend shares, receive ETH
                 const effectivePrice = execution.totalOutput / amt;
                 const minReceive = execution.totalOutput * (1 - slippageTolerance / 100);
+                const impliedOdds = effectivePrice * 100;
 
                 document.getElementById('previewShares').textContent = formatEth(execution.totalOutput);
-                document.getElementById('previewPrice').textContent = formatEth(effectivePrice, ' ETH/share');
+                document.getElementById('previewPrice').textContent = formatEth(effectivePrice, ' ETH');
                 document.getElementById('previewPayout').textContent = formatEth(minReceive);
+
+                // Show implied odds
+                document.getElementById('previewOddsRow').style.display = 'flex';
+                document.getElementById('previewOdds').textContent = impliedOdds.toFixed(1) + '%';
             }
 
             // Show execution breakdown if using orderbook
@@ -5355,14 +6259,14 @@
                 breakdownEl.style.display = 'flex';
                 let breakdownHtml = '';
                 execution.orderbookFills.forEach(fill => {
-                    if (currentTradeMode === 'buy') {
+                    if (isBuy) {
                         breakdownHtml += `<div>• ${formatEth(fill.sharesOut, '')} @ ${formatEth(fill.price, '')} (OB)</div>`;
                     } else {
                         breakdownHtml += `<div>• ${formatEth(fill.sharesIn, '')} @ ${formatEth(fill.price, '')} (OB)</div>`;
                     }
                 });
                 if (execution.ammOutput > 0) {
-                    if (currentTradeMode === 'buy') {
+                    if (isBuy) {
                         breakdownHtml += `<div>• ${formatEth(execution.ammOutput, '')} @ ~${formatEth(execution.ammEffectivePrice, '')} (AMM)</div>`;
                     } else {
                         breakdownHtml += `<div>• ${formatEth(execution.ammSharesIn, '')} → ${formatEth(execution.ammOutput)} (AMM)</div>`;
@@ -5374,7 +6278,7 @@
             }
 
             // Show savings vs pure AMM
-            if (execution.savings > 0.0001) {
+            if (execution.savings > 0.0001 && execution.pureAmmOutput > 0) {
                 savingsEl.style.display = 'flex';
                 const savingsPct = (execution.savings / execution.pureAmmOutput * 100).toFixed(1);
                 document.getElementById('savingsAmount').textContent = `+${execution.savings.toFixed(4)} (+${savingsPct}%)`;
@@ -5384,7 +6288,8 @@
             }
         }
 
-        // Simulate execution through orderbook first, then AMM for remainder
+        // Simulate execution with slippage-aware routing
+        // Compares limit orders against AMM effective price (with slippage), not just spot
         function simulateMixedFill(inputAmt, isBuy, rYes, rNo, ammPrice) {
             const result = {
                 orderbookFills: [],
@@ -5415,100 +6320,176 @@
                 }
             }
 
-            // Get orders better than AMM
-            let betterOrders = [];
+            // Get ALL limit orders (we'll compare against AMM with slippage)
+            let allOrders = [];
             if (isBuy) {
-                // For buying: asks cheaper than AMM, sorted by price ascending
-                betterOrders = (currentOrderbook.asks || [])
+                // For buying: we look at asks (sell orders), sorted by price ascending (cheapest first)
+                allOrders = (currentOrderbook.asks || [])
                     .map(o => ({
                         price: Number(o.collateral) / Number(o.shares),
                         shares: Number(o.shares) / 1e18,
                         collateral: Number(o.collateral) / 1e18,
-                        hash: o.hash
+                        hash: o.hash,
+                        remaining: Number(o.collateral) / 1e18 // ETH needed to fill
                     }))
-                    .filter(o => ammPrice > 0 ? o.price < ammPrice : true)
+                    .filter(o => o.price > 0 && o.shares > 0)
                     .sort((a, b) => a.price - b.price);
             } else {
-                // For selling: bids higher than AMM, sorted by price descending
-                betterOrders = (currentOrderbook.bids || [])
+                // For selling: we look at bids (buy orders), sorted by price descending (best first)
+                allOrders = (currentOrderbook.bids || [])
                     .map(o => ({
                         price: Number(o.collateral) / Number(o.shares),
                         shares: Number(o.shares) / 1e18,
                         collateral: Number(o.collateral) / 1e18,
-                        hash: o.hash
+                        hash: o.hash,
+                        remaining: Number(o.shares) / 1e18 // Shares they want to buy
                     }))
-                    .filter(o => ammPrice > 0 ? o.price > ammPrice : true)
+                    .filter(o => o.price > 0 && o.shares > 0)
                     .sort((a, b) => b.price - a.price);
             }
 
-            // Fill through orderbook
-            for (const order of betterOrders) {
-                if (remaining <= 0) break;
+            // Track AMM state as we simulate fills
+            let simRYes = rYes;
+            let simRNo = rNo;
+            let orderIdx = 0;
 
-                if (isBuy) {
-                    // Buying: we spend ETH, get shares
-                    const maxEthForOrder = order.collateral;
-                    const ethToSpend = Math.min(remaining, maxEthForOrder);
-                    const sharesOut = ethToSpend / order.price;
+            // Slippage-aware routing: compare each order against AMM marginal price
+            while (remaining > 0.000001 && (orderIdx < allOrders.length || (simRYes > 0n && simRNo > 0n))) {
+                const currentOrder = orderIdx < allOrders.length ? allOrders[orderIdx] : null;
 
-                    result.orderbookFills.push({
-                        price: order.price,
-                        ethSpent: ethToSpend,
-                        sharesOut: sharesOut,
-                        hash: order.hash
-                    });
-                    result.totalOutput += sharesOut;
-                    remaining -= ethToSpend;
+                // Calculate AMM marginal price for a small test amount
+                let ammMarginalPrice = ammPrice;
+                if (simRYes > 0n && simRNo > 0n) {
+                    const testAmt = BigInt(Math.floor(Math.min(remaining, 0.001) * 1e18));
+                    if (testAmt > 0n) {
+                        if (isBuy) {
+                            const testOut = currentTrade.isYes ?
+                                quoteBuyYes(testAmt, simRYes, simRNo, FEE_TIER) :
+                                quoteBuyNo(testAmt, simRYes, simRNo, FEE_TIER);
+                            ammMarginalPrice = Number(testAmt) / Number(testOut);
+                        } else {
+                            const testOut = currentTrade.isYes ?
+                                quoteSellYes(testAmt, simRYes, simRNo, FEE_TIER) :
+                                quoteSellNo(testAmt, simRYes, simRNo, FEE_TIER);
+                            ammMarginalPrice = Number(testOut) / Number(testAmt);
+                        }
+                    }
+                }
+
+                // Decide: fill order or use AMM?
+                let useOrder = false;
+                if (currentOrder && currentOrder.remaining > 0) {
+                    if (isBuy) {
+                        // Buying: order is better if its price < AMM marginal price
+                        useOrder = currentOrder.price < ammMarginalPrice;
+                    } else {
+                        // Selling: order is better if its price > AMM marginal price
+                        useOrder = currentOrder.price > ammMarginalPrice;
+                    }
+                }
+
+                if (useOrder && currentOrder) {
+                    // Fill limit order
+                    if (isBuy) {
+                        const maxEthForOrder = currentOrder.remaining;
+                        const ethToSpend = Math.min(remaining, maxEthForOrder);
+                        const sharesOut = ethToSpend / currentOrder.price;
+
+                        result.orderbookFills.push({
+                            price: currentOrder.price,
+                            ethSpent: ethToSpend,
+                            sharesOut: sharesOut,
+                            hash: currentOrder.hash
+                        });
+                        result.totalOutput += sharesOut;
+                        remaining -= ethToSpend;
+                        currentOrder.remaining -= ethToSpend;
+                    } else {
+                        const maxSharesForOrder = currentOrder.remaining;
+                        const sharesToSell = Math.min(remaining, maxSharesForOrder);
+                        const ethOut = sharesToSell * currentOrder.price;
+
+                        result.orderbookFills.push({
+                            price: currentOrder.price,
+                            sharesIn: sharesToSell,
+                            ethOut: ethOut,
+                            hash: currentOrder.hash
+                        });
+                        result.totalOutput += ethOut;
+                        remaining -= sharesToSell;
+                        currentOrder.remaining -= sharesToSell;
+                    }
+
+                    // Move to next order if this one is exhausted
+                    if (currentOrder.remaining <= 0.000001) {
+                        orderIdx++;
+                    }
+                } else if (simRYes > 0n && simRNo > 0n) {
+                    // Route to AMM - use chunk or all remaining
+                    // If there are more orders, route just enough to make next order competitive
+                    let amtToAmm = remaining;
+
+                    // Check if routing partial to AMM would make next order better
+                    if (currentOrder && currentOrder.remaining > 0) {
+                        // Route smaller chunks to check when order becomes competitive
+                        amtToAmm = Math.min(remaining, remaining * 0.1 + 0.0001);
+                    }
+
+                    const ammAmtWei = BigInt(Math.floor(amtToAmm * 1e18));
+                    if (ammAmtWei > 0n) {
+                        if (isBuy) {
+                            const ammOut = currentTrade.isYes ?
+                                quoteBuyYes(ammAmtWei, simRYes, simRNo, FEE_TIER) :
+                                quoteBuyNo(ammAmtWei, simRYes, simRNo, FEE_TIER);
+                            const sharesOut = Number(ammOut) / 1e18;
+                            result.ammOutput += sharesOut;
+                            result.ammInput += amtToAmm;
+                            result.totalOutput += sharesOut;
+                            remaining -= amtToAmm;
+
+                            // Update simulated reserves (approximate)
+                            if (currentTrade.isYes) {
+                                simRNo += ammAmtWei;
+                                simRYes -= ammOut > simRYes ? simRYes : ammOut;
+                            } else {
+                                simRYes += ammAmtWei;
+                                simRNo -= ammOut > simRNo ? simRNo : ammOut;
+                            }
+                        } else {
+                            const ammOut = currentTrade.isYes ?
+                                quoteSellYes(ammAmtWei, simRYes, simRNo, FEE_TIER) :
+                                quoteSellNo(ammAmtWei, simRYes, simRNo, FEE_TIER);
+                            const ethOut = Number(ammOut) / 1e18;
+                            result.ammOutput += ethOut;
+                            result.ammSharesIn += amtToAmm;
+                            result.totalOutput += ethOut;
+                            remaining -= amtToAmm;
+
+                            // Update simulated reserves (approximate)
+                            if (currentTrade.isYes) {
+                                simRYes += ammAmtWei;
+                                simRNo -= ammOut > simRNo ? simRNo : ammOut;
+                            } else {
+                                simRNo += ammAmtWei;
+                                simRYes -= ammOut > simRYes ? simRYes : ammOut;
+                            }
+                        }
+                    } else {
+                        break; // Can't route anymore
+                    }
                 } else {
-                    // Selling: we spend shares, get ETH
-                    const maxSharesForOrder = order.shares;
-                    const sharesToSell = Math.min(remaining, maxSharesForOrder);
-                    const ethOut = sharesToSell * order.price;
-
-                    result.orderbookFills.push({
-                        price: order.price,
-                        sharesIn: sharesToSell,
-                        ethOut: ethOut,
-                        hash: order.hash
-                    });
-                    result.totalOutput += ethOut;
-                    remaining -= sharesToSell;
+                    // No AMM and no competitive orders
+                    if (currentOrder) {
+                        orderIdx++; // Skip to next order
+                    } else {
+                        break; // Nothing left to route
+                    }
                 }
             }
 
-            // Remainder goes to AMM
-            if (remaining > 0 && rYes > 0n && rNo > 0n) {
-                const remainingWei = BigInt(Math.floor(remaining * 1e18));
-                result.ammInput = remaining;
-
-                if (isBuy) {
-                    const ammOut = currentTrade.isYes ?
-                        quoteBuyYes(remainingWei, rYes, rNo, FEE_TIER) :
-                        quoteBuyNo(remainingWei, rYes, rNo, FEE_TIER);
-                    result.ammOutput = Number(ammOut) / 1e18;
-                    result.ammEffectivePrice = remaining / result.ammOutput;
-                    result.totalOutput += result.ammOutput;
-                } else {
-                    const ammOut = currentTrade.isYes ?
-                        quoteSellYes(remainingWei, rYes, rNo, FEE_TIER) :
-                        quoteSellNo(remainingWei, rYes, rNo, FEE_TIER);
-                    result.ammOutput = Number(ammOut) / 1e18;
-                    result.ammSharesIn = remaining;
-                    result.totalOutput += result.ammOutput;
-                }
-            } else if (remaining > 0) {
-                // No AMM, use ammPrice as fallback
-                if (isBuy) {
-                    const shares = remaining / ammPrice;
-                    result.ammOutput = shares;
-                    result.ammEffectivePrice = ammPrice;
-                    result.totalOutput += shares;
-                } else {
-                    const ethOut = remaining * ammPrice;
-                    result.ammOutput = ethOut;
-                    result.ammSharesIn = remaining;
-                    result.totalOutput += ethOut;
-                }
+            // Calculate effective AMM price
+            if (result.ammInput > 0) {
+                result.ammEffectivePrice = result.ammInput / result.ammOutput;
             }
 
             // Calculate savings vs pure AMM
@@ -5525,6 +6506,9 @@
             const amt = parseFloat(document.getElementById('tradeAmount').value);
             if (!amt || amt <= 0) { showStatus('Enter valid amount', 'error'); return; }
 
+            // Determine if buying based on currentTradeDirection (for 'trade' mode) or legacy mode
+            const isBuy = currentTradeMode === 'trade' ? currentTradeDirection === 'buy' : currentTradeMode === 'buy';
+
             try {
                 showStatus('Preparing...', 'pending');
 
@@ -5536,7 +6520,7 @@
                 const rNo = currentOrderbook.rNo || 0n;
 
                 // Simulate execution to get expected output and order hashes
-                const execution = simulateMixedFill(amt, currentTradeMode === 'buy', rYes, rNo, ammPrice);
+                const execution = simulateMixedFill(amt, isBuy, rYes, rNo, ammPrice);
 
                 if (execution.totalOutput <= 0) {
                     showStatus('No liquidity available', 'error');
@@ -5550,11 +6534,11 @@
                 // Get order hashes from simulation
                 const betterOrderHashes = execution.orderbookFills.map(f => f.hash);
 
-                const tradeLabel = currentTradeMode === 'buy' ? 'Buying' : 'Selling';
+                const tradeLabel = isBuy ? 'Buying' : 'Selling';
                 const side = currentTrade.isYes ? (currentTrade.type === 'extreme' ? 'YES' : 'UP') : (currentTrade.type === 'extreme' ? 'NO' : 'DOWN');
 
                 let txPromise;
-                if (currentTradeMode === 'buy') {
+                if (isBuy) {
                     // Use fillOrdersThenSwap if we have better limit orders
                     if (betterOrderHashes.length > 0) {
                         txPromise = pmRouter.fillOrdersThenSwap(
@@ -5615,7 +6599,7 @@
                 await monitorTransaction(txPromise, {
                     pending: { title: `${tradeLabel} ${side}`, body: 'Confirm in your wallet...' },
                     submitted: { title: `${tradeLabel} ${side}`, body: 'Waiting for confirmation...' },
-                    success: { title: 'Trade Successful!', body: `${tradeLabel} ${amt} ${currentTradeMode === 'buy' ? 'ETH worth of' : ''} ${side} shares` },
+                    success: { title: 'Trade Successful!', body: `${tradeLabel} ${amt} ${isBuy ? 'ETH worth of' : ''} ${side} shares` },
                     error: { title: 'Trade Failed', body: '' },
                     onSuccess: async () => {
                         await loadData();
@@ -5843,6 +6827,12 @@
                 if (!approved) return false;
             }
 
+            // ZAMM needs to be operator on PAMM for: swap (YES↔NO)
+            if (operation === 'swap') {
+                const approved = await ensureOperatorApproval('pamm', ZAMM_ADDRESS, 'ZAMM');
+                if (!approved) return false;
+            }
+
             return true;
         }
 
@@ -5955,23 +6945,54 @@
             if (totalDuration <= 0) return currentTwap; // Invalid duration, use current
 
             const elapsed = Math.max(0, now - marketStart);
-            const elapsedRatio = Math.min(1, elapsed / totalDuration);
+            const remaining = Math.max(0, totalDuration - elapsed);
 
-            // How much TWAP is "locked in" vs still to be determined
-            // Early in market: mostly speculation. Late in market: mostly locked.
-            const lockedWeight = elapsedRatio;
-            const speculativeWeight = 1 - lockedWeight;
+            // If market closed or about to close, return current TWAP
+            if (remaining < 60) return currentTwap;
 
-            // Market's expected direction: odds above/below 50% indicate UP/DOWN expectation
-            // Scale the expected future average based on odds
-            // At 100% YES: expect future avg to be ~20% above current
-            // At 0% YES: expect future avg to be ~20% below current
-            const oddsDirection = (yesPrice - 0.5) * 2; // -1 to +1
-            const futureMultiplier = 1 + oddsDirection * 0.15; // ±15% swing
-            const expectedFutureAvg = currentTwap * futureMultiplier;
+            // TWAP formula: finalTwap = (accumulatedGweiSeconds) / totalDuration
+            // accumulatedGweiSeconds = currentTwap * elapsed + futureAvg * remaining
 
-            // Blend locked-in TWAP with speculative future
-            const predicted = currentTwap * lockedWeight + expectedFutureAvg * speculativeWeight;
+            // What future average would result in finalTwap = startTwap (the threshold)?
+            // startTwap * totalDuration = currentTwap * elapsed + neutralFuture * remaining
+            // neutralFuture = (startTwap * totalDuration - currentTwap * elapsed) / remaining
+            const neutralFutureAvg = (startTwap * totalDuration - currentTwap * elapsed) / remaining;
+
+            // Market odds indicate how much above/below threshold we expect
+            // yesPrice = 0.5 → expect exactly startTwap (threshold)
+            // yesPrice > 0.5 → expect above startTwap
+            // yesPrice < 0.5 → expect below startTwap
+            const rawDeviation = yesPrice - 0.5; // -0.5 to +0.5
+
+            // Use power curve: small deviations (near 50%) have reduced effect,
+            // larger deviations (toward extremes) have proportionally more effect
+            // This reflects that 55% is slightly bullish but 80% is very bullish
+            const sign = rawDeviation >= 0 ? 1 : -1;
+            const magnitude = Math.abs(rawDeviation) * 2; // 0 to 1
+            const scaledMagnitude = Math.pow(magnitude, 1.5); // Power curve reduces small values
+            const oddsDeviation = sign * scaledMagnitude * 0.5; // Back to -0.5 to +0.5 range
+
+            // Scale factor: how much to shift future avg per odds deviation
+            const shiftFactor = 0.7;
+
+            // Calculate expected future average
+            // Use blend of neutral (threshold-hitting) and current TWAP, weighted by odds
+            let expectedFutureAvg;
+            if (neutralFutureAvg > 0) {
+                // Shift from neutral based on odds direction
+                expectedFutureAvg = neutralFutureAvg * (1 + oddsDeviation * shiftFactor * 2);
+            } else {
+                // If neutral would be negative (current already way above threshold),
+                // use current TWAP with odds-based adjustment
+                expectedFutureAvg = currentTwap * (1 + oddsDeviation * 0.3);
+            }
+
+            // Clamp to reasonable range (avoid negative or extreme values)
+            // Use relative bounds based on current TWAP, not absolute values
+            expectedFutureAvg = Math.max(currentTwap * 0.2, Math.min(expectedFutureAvg, currentTwap * 3));
+
+            // Calculate predicted final TWAP
+            const predicted = (currentTwap * elapsed + expectedFutureAvg * remaining) / totalDuration;
 
             return predicted;
         }
@@ -6081,7 +7102,7 @@
 
         // ======================== MARKET CREATION ========================
         async function createHourly() {
-            if (!signer || !isOwner) return;
+            if (!signer) return;
 
             const seed = parseFloat(document.getElementById('hourlySeed').value);
             if (!seed || seed <= 0) { showToast('Invalid Seed', 'Enter a seed amount greater than 0', 'error', 4000); return; }
@@ -6121,7 +7142,7 @@
         }
 
         async function createDaily() {
-            if (!signer || !isOwner) return;
+            if (!signer) return;
 
             const seed = parseFloat(document.getElementById('dailySeed').value);
             if (!seed || seed <= 0) { showToast('Invalid Seed', 'Enter a seed amount greater than 0', 'error', 4000); return; }
@@ -6161,7 +7182,7 @@
         }
 
         async function createWeekly() {
-            if (!signer || !isOwner) return;
+            if (!signer) return;
 
             const seed = parseFloat(document.getElementById('weeklySeed').value);
             if (!seed || seed <= 0) { showToast('Invalid Seed', 'Enter a seed amount greater than 0', 'error', 4000); return; }
@@ -6202,7 +7223,7 @@
         }
 
         async function createExtreme() {
-            if (!signer || !isOwner) return;
+            if (!signer) return;
 
             const seed = parseFloat(document.getElementById('extremeSeed').value);
             if (!seed || seed <= 0) { showToast('Invalid Seed', 'Enter a seed amount greater than 0', 'error', 4000); return; }
