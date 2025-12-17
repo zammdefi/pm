@@ -21,6 +21,7 @@
             --red: #ef4444;
             --red-dim: rgba(239, 68, 68, 0.15);
             --blue: #3b82f6;
+            --blue-dim: rgba(59, 130, 246, 0.15);
             --amber: #f59e0b;
             --amber-dim: rgba(245, 158, 11, 0.15);
             --pink: #ec4899;
@@ -1007,17 +1008,20 @@
                 <div class="trade-input-group">
                     <div class="trade-label">
                         <span id="tradeAmountLabel">Amount (ETH)</span>
-                        <span>Balance: <span id="tradeBalance">--</span></span>
+                        <span style="display:flex;align-items:center;gap:0.5rem;">
+                            Balance: <span id="tradeBalance">--</span>
+                            <button id="tradeMaxBtn" onclick="setTradeMax()" style="display:none;padding:0.25rem 0.5rem;background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius);color:var(--red);font-weight:600;font-size:10px;cursor:pointer;">Max</button>
+                        </span>
                     </div>
                     <input type="number" class="trade-input" id="tradeAmount" placeholder="0.1" step="0.01" min="0" oninput="handleTradeInput()">
                 </div>
                 <div class="trade-preview">
                     <div class="trade-preview-row">
-                        <span>Est. Shares</span>
+                        <span id="previewSharesLabel">Est. Shares</span>
                         <span id="previewShares">--</span>
                     </div>
                     <div class="trade-preview-row">
-                        <span>Avg. Price</span>
+                        <span id="previewPriceLabel">Avg. Price</span>
                         <span id="previewPrice">--</span>
                     </div>
                     <div class="trade-preview-row">
@@ -1110,9 +1114,12 @@
                 <div class="trade-input-group">
                     <div class="trade-label">
                         <span id="lpAmountLabel">ETH to Add</span>
-                        <span>Balance: <span id="lpBalance">--</span></span>
+                        <span style="display:flex;align-items:center;gap:0.5rem;">
+                            Balance: <span id="lpBalance">--</span>
+                            <button id="lpMaxBtn" onclick="setLpMax()" style="padding:0.25rem 0.5rem;background:var(--blue-dim);border:1px solid var(--blue);border-radius:var(--radius);color:var(--blue);font-weight:600;font-size:10px;cursor:pointer;">Max</button>
+                        </span>
                     </div>
-                    <input type="number" class="trade-input" id="lpAmount" placeholder="0.1" step="0.01" min="0" oninput="updateLpPreview()">
+                    <input type="number" class="trade-input" id="lpAmount" placeholder="0.1" step="0.01" min="0" oninput="lpMaxRaw=null;updateLpPreview()">
                 </div>
                 <div class="trade-preview">
                     <div class="trade-preview-row">
@@ -1286,7 +1293,6 @@
 
         const PAMM_ABI = [
             'function getMarket(uint256 marketId) view returns (address resolver, address collateral, bool resolved, bool outcome, bool canClose, uint64 close, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply, string description)',
-            'function getMarkets(uint256 start, uint256 count) view returns (uint256[] marketIds, address[] resolvers, address[] collaterals, uint8[] states, uint64[] closes, uint256[] collateralAmounts, uint256[] yesSupplies, uint256[] noSupplies, string[] descs, uint256 next)',
             'function getPoolState(uint256 marketId, uint256 feeOrHook) view returns (uint256 rYes, uint256 rNo, uint256 pYesNum, uint256 pYesDen)',
             'function balanceOf(address owner, uint256 id) view returns (uint256)',
             'function getNoId(uint256 marketId) pure returns (uint256)',
@@ -1339,6 +1345,7 @@
         let connectedWalletProvider = null;
         let walletConnectProvider = null;
         let isConnecting = false;
+        let walletEventHandlers = null;
         const eip6963Providers = new Map();
 
         let pnkstrMarkets = []; // Markets related to PNKSTR
@@ -1368,8 +1375,10 @@
         async function init() {
             initEIP6963();
 
+            // Auto-reconnect wallet if previously connected
             const savedWallet = localStorage.getItem('pnkpm_wallet');
             if (savedWallet) {
+                // Small delay to let EIP-6963 providers announce themselves
                 setTimeout(async () => {
                     try {
                         await connectWithWallet(savedWallet);
@@ -1420,91 +1429,61 @@
             }
         }
 
+        // Known PNKSTR market IDs (hardcoded for stability)
+        const KNOWN_PNKSTR_MARKETS = [
+            32134417008196240812336678454075505952526867228548827945664500580851657114937n
+        ];
+
         async function loadPnkstrMarkets(rpc) {
             try {
-                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, rpc);
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
                 const punks = new ethers.Contract(CRYPTOPUNKS_ADDRESS, CRYPTOPUNKS_ABI, rpc);
-
-                // Use efficient batch view function to get all markets
-                const BATCH_SIZE = 100;
-                let start = 0;
-                let allMarketsData = [];
-
-                // Paginate through all markets
-                while (true) {
-                    const batch = await pamm.getMarkets(start, BATCH_SIZE);
-                    const { marketIds, resolvers, collaterals, states, closes, collateralAmounts, descs, next } = batch;
-
-                    for (let i = 0; i < marketIds.length; i++) {
-                        // Filter: only markets using our Resolver
-                        if (resolvers[i].toLowerCase() !== RESOLVER_ADDRESS.toLowerCase()) continue;
-
-                        const state = Number(states[i]);
-                        allMarketsData.push({
-                            marketId: marketIds[i],
-                            resolved: (state & 1) !== 0,
-                            outcome: (state & 2) !== 0,
-                            canClose: (state & 4) !== 0,
-                            close: Number(closes[i]),
-                            collateralLocked: collateralAmounts[i],
-                            description: descs[i]
-                        });
-                    }
-
-                    if (next === 0n || marketIds.length === 0) break;
-                    start = Number(next);
-                }
-
-                // Batch fetch conditions for all Resolver markets via multicall
                 const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
+                const pammInterface = new ethers.Interface(PAMM_ABI);
                 const resolverInterface = new ethers.Interface(RESOLVER_ABI);
 
-                const conditionCalls = allMarketsData.map(m => ({
-                    target: RESOLVER_ADDRESS,
-                    allowFailure: true,
-                    callData: resolverInterface.encodeFunctionData('conditions', [m.marketId])
-                }));
+                // Use known market IDs for stability
+                const marketIds = KNOWN_PNKSTR_MARKETS;
 
-                const conditionRaw = conditionCalls.length > 0
-                    ? await multicall.aggregate3(conditionCalls)
-                    : [];
+                // Batch fetch market data via multicall: getMarket + conditions for each
+                const marketCalls = marketIds.flatMap(id => [
+                    { target: PAMM_ADDRESS, allowFailure: true, callData: pammInterface.encodeFunctionData('getMarket', [id]) },
+                    { target: RESOLVER_ADDRESS, allowFailure: true, callData: resolverInterface.encodeFunctionData('conditions', [id]) }
+                ]);
 
-                const conditionResults = conditionRaw.map((r, i) => {
-                    if (!r.success) return null;
+                const marketRaw = await multicall.aggregate3(marketCalls);
+
+                // Parse market data
+                let allMarketsData = [];
+                for (let i = 0; i < marketIds.length; i++) {
+                    const marketResult = marketRaw[i * 2];
+                    const conditionResult = marketRaw[i * 2 + 1];
+
+                    if (!marketResult.success || !conditionResult.success) continue;
+
                     try {
-                        return resolverInterface.decodeFunctionResult('conditions', r.returnData);
-                    } catch { return null; }
-                });
+                        const market = pammInterface.decodeFunctionResult('getMarket', marketResult.returnData);
+                        const condition = resolverInterface.decodeFunctionResult('conditions', conditionResult.returnData);
 
-                // Filter to only PNKSTR markets
-                const pnkstrCandidates = [];
-                for (let i = 0; i < allMarketsData.length; i++) {
-                    const m = allMarketsData[i];
-                    const condition = conditionResults[i];
-
-                    if (!condition) continue;
-
-                    // Check if this is a PNKSTR market
-                    if (condition.targetA === ethers.ZeroAddress) {
-                        // Resolved market - check description for PNKSTR
-                        if (!m.description.toLowerCase().includes('pnkstr')) continue;
-                    } else {
-                        // Active market - verify target and callData
-                        if (condition.targetA.toLowerCase() !== CRYPTOPUNKS_ADDRESS.toLowerCase()) continue;
-                        if (condition.callDataA.toLowerCase() !== PNKSTR_BALANCE_CALLDATA) continue;
-                    }
-
-                    pnkstrCandidates.push({ ...m, condition });
+                        allMarketsData.push({
+                            marketId: marketIds[i],
+                            resolved: market.resolved,
+                            outcome: market.outcome,
+                            canClose: market.canClose,
+                            close: Number(market.close),
+                            collateralLocked: market.collateralLocked,
+                            description: market.description,
+                            condition
+                        });
+                    } catch { continue; }
                 }
 
                 // Batch fetch pool states, noIds, previews, and punk balance via multicall
-                const pammInterface = new ethers.Interface(PAMM_ABI);
                 const punksInterface = new ethers.Interface(CRYPTOPUNKS_ABI);
 
                 const dataCalls = [];
-                // Pool state calls for each candidate
-                for (const m of pnkstrCandidates) {
+                // Pool state calls for each market
+                for (const m of allMarketsData) {
                     dataCalls.push({
                         target: PAMM_ADDRESS,
                         allowFailure: true,
@@ -1512,7 +1491,7 @@
                     });
                 }
                 // NoId calls for each candidate (for ZAMM pool link)
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     dataCalls.push({
                         target: PAMM_ADDRESS,
                         allowFailure: true,
@@ -1520,7 +1499,7 @@
                     });
                 }
                 // Preview calls for unresolved markets
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     if (!m.resolved) {
                         dataCalls.push({
                             target: RESOLVER_ADDRESS,
@@ -1545,7 +1524,7 @@
                 let idx = 0;
 
                 // Pool states
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     const r = dataRaw[idx++];
                     if (r.success) {
                         try {
@@ -1556,7 +1535,7 @@
                     }
                 }
                 // NoIds
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     const r = dataRaw[idx++];
                     if (r.success) {
                         try {
@@ -1567,7 +1546,7 @@
                     }
                 }
                 // Previews
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     if (!m.resolved) {
                         const r = dataRaw[idx++];
                         if (r.success) {
@@ -1591,8 +1570,8 @@
                 const markets = [];
                 let totalTvl = 0n;
 
-                for (let i = 0; i < pnkstrCandidates.length; i++) {
-                    const m = pnkstrCandidates[i];
+                for (let i = 0; i < allMarketsData.length; i++) {
+                    const m = allMarketsData[i];
                     const poolState = poolResults[i];
                     const preview = previewResults[i];
                     const noId = noIdResults[i];
@@ -1781,6 +1760,7 @@
             metamask: { name: 'MetaMask', icon: '🦊', detect: () => window.ethereum?.isMetaMask, getProvider: () => window.ethereum },
             coinbase: { name: 'Coinbase', icon: '🔵', detect: () => window.ethereum?.isCoinbaseWallet, getProvider: () => window.ethereum },
             rabby: { name: 'Rabby', icon: '🐰', detect: () => window.ethereum?.isRabby, getProvider: () => window.ethereum },
+            rainbow: { name: 'Rainbow', icon: '🌈', detect: () => window.ethereum?.isRainbow, getProvider: () => window.ethereum },
             walletconnect: { name: 'WalletConnect', icon: '📱' }
         };
 
@@ -1851,7 +1831,7 @@
                         <span class="wallet-option-icon">${w.icon}</span>
                         <span class="wallet-option-name">${w.name}</span>
                     </div>
-                `).join('') : '<div style="padding:1rem;text-align:center;color:var(--text-muted);">No wallets detected.</div>';
+                `).join('') : '<div style="padding:1rem;text-align:center;color:var(--text-muted);">No wallets detected. Install MetaMask or use WalletConnect.</div>';
             }
 
             document.getElementById('walletModal').classList.add('active');
@@ -1868,6 +1848,11 @@
         async function connectWithWallet(walletKey) {
             if (isConnecting) return;
             isConnecting = true;
+
+            const connectBtn = document.getElementById('connectBtn');
+            const originalText = connectBtn.textContent;
+            connectBtn.textContent = 'Connecting...';
+            connectBtn.disabled = true;
 
             try {
                 closeWalletModal();
@@ -1916,18 +1901,17 @@
                 // Check network is Ethereum mainnet
                 let network = await provider.getNetwork();
                 if (network.chainId !== 1n) {
-                    showToast('Wrong Network', 'Please switch to Ethereum mainnet', 'error');
                     try {
                         await walletProvider.request({
                             method: 'wallet_switchEthereumChain',
                             params: [{ chainId: '0x1' }]
                         });
+                        // Re-create provider after network switch and verify
+                        provider = new ethers.BrowserProvider(walletProvider);
+                        network = await provider.getNetwork();
                     } catch (e) {
-                        throw new Error('Please switch to Ethereum mainnet');
+                        // Switch failed or was rejected
                     }
-                    // Re-create provider after network switch and verify
-                    provider = new ethers.BrowserProvider(walletProvider);
-                    network = await provider.getNetwork();
                     if (network.chainId !== 1n) {
                         throw new Error('Please switch to Ethereum mainnet');
                     }
@@ -1940,8 +1924,22 @@
                 document.getElementById('connectBtn').textContent = connectedAddress.slice(0, 6) + '...' + connectedAddress.slice(-4);
                 document.getElementById('connectBtn').classList.add('connected');
 
-                walletProvider.on('accountsChanged', () => window.location.reload());
-                walletProvider.on('chainChanged', () => window.location.reload());
+                // Remove old listeners if any
+                if (walletEventHandlers) {
+                    try {
+                        walletEventHandlers.provider.removeListener('accountsChanged', walletEventHandlers.onAccountsChanged);
+                        walletEventHandlers.provider.removeListener('chainChanged', walletEventHandlers.onChainChanged);
+                    } catch (e) {}
+                }
+
+                // Store and add new listeners
+                walletEventHandlers = {
+                    provider: walletProvider,
+                    onAccountsChanged: () => window.location.reload(),
+                    onChainChanged: () => window.location.reload()
+                };
+                walletProvider.on('accountsChanged', walletEventHandlers.onAccountsChanged);
+                walletProvider.on('chainChanged', walletEventHandlers.onChainChanged);
 
                 localStorage.setItem('pnkpm_wallet', walletKey);
 
@@ -1953,12 +1951,22 @@
                 if (!isUserRejection(error)) {
                     showToast('Connection Failed', error.message || 'Could not connect wallet', 'error');
                 }
+                connectBtn.textContent = originalText;
             } finally {
+                connectBtn.disabled = false;
                 isConnecting = false;
             }
         }
 
         function disconnectWallet() {
+            // Remove event listeners
+            if (walletEventHandlers) {
+                try {
+                    walletEventHandlers.provider.removeListener('accountsChanged', walletEventHandlers.onAccountsChanged);
+                    walletEventHandlers.provider.removeListener('chainChanged', walletEventHandlers.onChainChanged);
+                } catch (e) {}
+                walletEventHandlers = null;
+            }
             if (walletConnectProvider) {
                 try { walletConnectProvider.disconnect(); } catch (e) {}
                 walletConnectProvider = null;
@@ -2144,8 +2152,10 @@
 
         function setTradeDirection(dir) {
             currentTradeDirection = dir;
+            tradeMaxRaw = null; // Clear max when switching direction
             const buyBtn = document.getElementById('buyBtn');
             const sellBtn = document.getElementById('sellBtn');
+            const maxBtn = document.getElementById('tradeMaxBtn');
 
             if (dir === 'buy') {
                 buyBtn.style.background = 'var(--green-dim)';
@@ -2155,7 +2165,10 @@
                 sellBtn.style.color = 'var(--text-muted)';
                 sellBtn.style.borderColor = 'var(--border)';
                 document.getElementById('tradeAmountLabel').textContent = 'Amount (ETH)';
+                document.getElementById('previewSharesLabel').textContent = 'Est. Shares';
+                document.getElementById('previewPriceLabel').textContent = 'Avg. Price';
                 document.getElementById('previewPayoutLabel').textContent = 'If you win';
+                maxBtn.style.display = 'none';
             } else {
                 sellBtn.style.background = 'var(--red-dim)';
                 sellBtn.style.color = 'var(--red)';
@@ -2164,7 +2177,10 @@
                 buyBtn.style.color = 'var(--text-muted)';
                 buyBtn.style.borderColor = 'var(--border)';
                 document.getElementById('tradeAmountLabel').textContent = 'Shares to Sell';
-                document.getElementById('previewPayoutLabel').textContent = 'You receive';
+                document.getElementById('previewSharesLabel').textContent = 'ETH Received';
+                document.getElementById('previewPriceLabel').textContent = 'Price/Share';
+                document.getElementById('previewPayoutLabel').textContent = 'Min Received';
+                maxBtn.style.display = 'inline-block';
             }
 
             updateTradeButton();
@@ -2258,6 +2274,23 @@
 
         let swapMaxRaw = null; // Store raw BigInt for exact max swaps
         let limitMaxRaw = null; // Store raw BigInt for exact max limit orders
+        let tradeMaxRaw = null; // Store raw BigInt for exact max sells
+        let lpMaxRaw = null; // Store raw BigInt for exact max LP operations
+
+        function setTradeMax() {
+            // Only works for sell mode - fills with user's share balance
+            if (currentTradeDirection !== 'sell') return;
+
+            const balance = currentTrade.isYes
+                ? currentUserPosition.yesBalance
+                : currentUserPosition.noBalance;
+
+            if (balance && balance > 0n) {
+                tradeMaxRaw = balance;
+                document.getElementById('tradeAmount').value = ethers.formatEther(balance);
+                updateTradePreview(); // Don't call handleTradeInput which clears tradeMaxRaw
+            }
+        }
 
         function setSwapMax() {
             // Get the balance of the source token (YES or NO based on swap direction)
@@ -2301,6 +2334,7 @@
 
         function setLpMode(mode) {
             currentLpMode = mode;
+            lpMaxRaw = null; // Clear max when switching mode
             const addBtn = document.getElementById('lpAddBtn');
             const removeBtn = document.getElementById('lpRemoveBtn');
 
@@ -2324,6 +2358,29 @@
 
             loadBalance();
             updateLpPreview();
+        }
+
+        async function setLpMax() {
+            if (currentLpMode === 'add') {
+                // For add, max is ETH balance (leave some for gas)
+                if (!connectedAddress) return;
+                const rpc = await getReadProvider();
+                const bal = await rpc.getBalance(connectedAddress);
+                if (bal > 0n) {
+                    const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
+                    lpMaxRaw = maxBal;
+                    document.getElementById('lpAmount').value = ethers.formatEther(maxBal);
+                    updateLpPreview();
+                }
+            } else {
+                // For remove, max is LP balance
+                const lpBal = currentUserPosition.lpBalance;
+                if (lpBal && lpBal > 0n) {
+                    lpMaxRaw = lpBal;
+                    document.getElementById('lpAmount').value = ethers.formatEther(lpBal);
+                    updateLpPreview();
+                }
+            }
         }
 
         function setLimitSide(side) {
@@ -3061,6 +3118,7 @@
 
         // ======================== PREVIEW FUNCTIONS ========================
         function handleTradeInput() {
+            tradeMaxRaw = null; // Clear max when user manually edits input
             if (currentTradeMode === 'trade') updateTradePreview();
         }
 
@@ -3072,6 +3130,7 @@
                 document.getElementById('previewShares').textContent = '--';
                 document.getElementById('previewPrice').textContent = '--';
                 document.getElementById('previewPayout').textContent = '--';
+                document.getElementById('previewPayout').style.color = 'var(--text-muted)';
                 routeEl.textContent = '--';
                 return;
             }
@@ -3198,10 +3257,14 @@
                 document.getElementById('previewShares').textContent = totalShares.toFixed(4);
                 document.getElementById('previewPrice').textContent = avgPrice.toFixed(4) + ' ETH';
                 document.getElementById('previewPayout').textContent = (profit > 0 ? '+' : '') + profit.toFixed(4) + ' ETH';
+                document.getElementById('previewPayout').style.color = 'var(--green)';
             } else {
-                document.getElementById('previewShares').textContent = amount.toFixed(4);
+                // For sells: profit = totalEth received
+                document.getElementById('previewShares').textContent = profit.toFixed(4) + ' ETH';
                 document.getElementById('previewPrice').textContent = avgPrice.toFixed(4) + ' ETH';
-                document.getElementById('previewPayout').textContent = profit.toFixed(4) + ' ETH';
+                const minReceived = profit * (100 - slippageTolerance) / 100;
+                document.getElementById('previewPayout').textContent = minReceived.toFixed(4) + ' ETH';
+                document.getElementById('previewPayout').style.color = 'var(--text-muted)';
             }
         }
 
@@ -3446,6 +3509,18 @@
             const isBuy = currentTradeDirection === 'buy';
             const side = currentTrade.isYes ? 'YES' : 'NO';
 
+            // For sells, validate balance first
+            if (!isBuy) {
+                const balance = currentTrade.isYes
+                    ? currentUserPosition.yesBalance
+                    : currentUserPosition.noBalance;
+                const amtToSell = tradeMaxRaw || ethers.parseEther(amount.toString());
+                if (!balance || amtToSell > balance) {
+                    showToast('Insufficient Balance', `You don't have enough ${side} shares`, 'error');
+                    return;
+                }
+            }
+
             try {
                 if (!isBuy) {
                     const approved = await checkAndRequestApprovals('sell');
@@ -3453,7 +3528,8 @@
                 }
 
                 const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
-                const amtWei = ethers.parseEther(amount.toString());
+                // Use exact raw value if max was clicked, otherwise parse input
+                const amtWei = (!isBuy && tradeMaxRaw) ? tradeMaxRaw : ethers.parseEther(amount.toString());
                 const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
                 // Calculate expected AMM output (with price impact) for routing decisions
@@ -3604,12 +3680,15 @@
                     success: { title: 'Trade Complete!', body: `${isBuy ? 'Bought' : 'Sold'} ${amount} ${side} shares${routeInfo}` },
                     error: { title: 'Trade Failed', body: '' },
                     onSuccess: async () => {
+                        tradeMaxRaw = null; // Clear max flag
                         await Promise.all([loadUserPosition(), loadOrderbook(), loadData()]);
                         loadBalance();
                     }
                 });
             } catch (e) {
                 if (!isUserRejection(e)) console.error('Trade error:', e);
+            } finally {
+                tradeMaxRaw = null; // Clear max flag regardless of outcome
             }
         }
 
@@ -3694,9 +3773,20 @@
                 return;
             }
 
+            // Use exact raw value if max was clicked, otherwise parse input
+            const amtWei = lpMaxRaw || ethers.parseEther(amount.toString());
+
+            // Validate balance for LP remove
+            if (currentLpMode === 'remove') {
+                const lpBal = currentUserPosition.lpBalance;
+                if (!lpBal || amtWei > lpBal) {
+                    showToast('Insufficient LP', 'You don\'t have enough LP tokens', 'error');
+                    return;
+                }
+            }
+
             try {
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
-                const amtWei = ethers.parseEther(amount.toString());
                 const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
                 // Calculate expected outputs for slippage protection
@@ -3728,6 +3818,7 @@
                             success: { title: 'Liquidity Added!', body: `Added ${amount} ETH to the pool` },
                             error: { title: 'Add Liquidity Failed', body: '' },
                             onSuccess: async () => {
+                                lpMaxRaw = null; // Clear max flag
                                 await loadUserPosition();
                                 loadBalance();
                             }
@@ -3800,6 +3891,7 @@
                         success: { title: 'Success!', body: successBody },
                         error: { title: 'Withdraw Failed', body: '' },
                         onSuccess: async () => {
+                            lpMaxRaw = null; // Clear max flag
                             await loadUserPosition();
                             loadBalance();
                         }
@@ -3807,6 +3899,8 @@
                 }
             } catch (e) {
                 if (!isUserRejection(e)) console.error('LP error:', e);
+            } finally {
+                lpMaxRaw = null; // Clear max flag regardless of outcome
             }
         }
 
