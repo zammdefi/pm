@@ -13,7 +13,16 @@ interface ICryptoPunks {
     function punkIndexToAddress(uint256 index) external view returns (address);
     function transferPunk(address to, uint256 punkIndex) external;
     function buyPunk(uint256 punkIndex) external payable;
-    function punksOfferedForSale(uint256 punkIndex) external view returns (bool isForSale, uint256 punkIndex_, address seller, uint256 minValue, address onlySellTo);
+    function punksOfferedForSale(uint256 punkIndex)
+        external
+        view
+        returns (
+            bool isForSale,
+            uint256 punkIndex_,
+            address seller,
+            uint256 minValue,
+            address onlySellTo
+        );
 }
 
 /// @notice Interface for PMRouter
@@ -59,24 +68,26 @@ interface IPMRouter {
         bool partialFill
     ) external payable returns (bytes32 orderHash);
 
-    function fillOrder(
-        bytes32 orderHash,
-        uint96 sharesToFill,
-        address to
-    ) external payable returns (uint96 sharesFilled, uint96 collateralFilled);
+    function fillOrder(bytes32 orderHash, uint96 sharesToFill, address to)
+        external
+        payable
+        returns (uint96 sharesFilled, uint96 collateralFilled);
 
     function cancelOrder(bytes32 orderHash) external;
 
     function claimProceeds(bytes32 orderHash, address to) external returns (uint96 amount);
 
-    function getOrder(bytes32 orderHash) external view returns (
-        Order memory order,
-        uint96 sharesFilled,
-        uint96 sharesRemaining,
-        uint96 collateralFilled,
-        uint96 collateralRemaining,
-        bool active
-    );
+    function getOrder(bytes32 orderHash)
+        external
+        view
+        returns (
+            Order memory order,
+            uint96 sharesFilled,
+            uint96 sharesRemaining,
+            uint96 collateralFilled,
+            uint96 collateralRemaining,
+            bool active
+        );
 
     function fillOrdersThenSwap(
         uint256 marketId,
@@ -90,16 +101,15 @@ interface IPMRouter {
         uint256 deadline
     ) external payable returns (uint256 totalOutput);
 
-    function getOrderbook(
-        uint256 marketId,
-        bool isYes,
-        uint256 depth
-    ) external view returns (
-        bytes32[] memory bidHashes,
-        Order[] memory bidOrders,
-        bytes32[] memory askHashes,
-        Order[] memory askOrders
-    );
+    function getOrderbook(uint256 marketId, bool isYes, uint256 depth)
+        external
+        view
+        returns (
+            bytes32[] memory bidHashes,
+            Order[] memory bidOrders,
+            bytes32[] memory askHashes,
+            Order[] memory askOrders
+        );
 }
 
 /// @title PnkPM Fork Tests
@@ -116,7 +126,8 @@ contract PnkPMTest is Test {
     address constant PNKSTR_TREASURY = 0x1244EAe9FA2c064453B5F605d708C0a0Bfba4838;
 
     // Market parameters (from deployed market)
-    uint256 constant MARKET_ID = 32134417008196240812336678454075505952526867228548827945664500580851657114937;
+    uint256 constant MARKET_ID =
+        32134417008196240812336678454075505952526867228548827945664500580851657114937;
     uint256 constant THRESHOLD = 40;
     uint64 constant CLOSE_TIME = 1767225599; // Dec 31, 2025 23:59:59 UTC
     uint256 constant FEE_TIER = 30; // 0.30%
@@ -145,13 +156,10 @@ contract PnkPMTest is Test {
         (
             address marketResolver,
             address collateral,
-            bool resolved,
-            ,
+            bool resolved,,
             bool canClose,
             uint64 close,
-            uint256 collateralLocked,
-            ,
-            ,
+            uint256 collateralLocked,,,
             string memory description
         ) = pamm.getMarket(MARKET_ID);
 
@@ -186,10 +194,8 @@ contract PnkPMTest is Test {
         assertEq(threshold, THRESHOLD, "Wrong threshold");
 
         // Verify callData is balanceOf(PNKSTR)
-        bytes memory expectedCallData = abi.encodeWithSelector(
-            ICryptoPunks.balanceOf.selector,
-            PNKSTR_TREASURY
-        );
+        bytes memory expectedCallData =
+            abi.encodeWithSelector(ICryptoPunks.balanceOf.selector, PNKSTR_TREASURY);
         assertEq(callDataA, expectedCallData, "Wrong callData");
         assertEq(callDataB.length, 0, "CallDataB should be empty");
     }
@@ -284,15 +290,8 @@ contract PnkPMTest is Test {
         uint256 balBefore = ALICE.balance;
 
         vm.prank(ALICE);
-        uint256 collateralOut = router.sell(
-            MARKET_ID,
-            true,
-            sellAmount,
-            0,
-            FEE_TIER,
-            ALICE,
-            block.timestamp + 1 hours
-        );
+        uint256 collateralOut =
+            router.sell(MARKET_ID, true, sellAmount, 0, FEE_TIER, ALICE, block.timestamp + 1 hours);
 
         assertGt(collateralOut, 0, "Should receive ETH back");
         assertEq(ALICE.balance - balBefore, collateralOut, "ETH balance should increase");
@@ -312,7 +311,9 @@ contract PnkPMTest is Test {
 
         // Skip this test if condition not currently met
         if (currentBalance <= THRESHOLD) {
-            console2.log("Skipping: PNKSTR balance", currentBalance, "is not > threshold", THRESHOLD);
+            console2.log(
+                "Skipping: PNKSTR balance", currentBalance, "is not > threshold", THRESHOLD
+            );
             return;
         }
 
@@ -544,13 +545,18 @@ contract PnkPMTest is Test {
     function test_PoolStateAndOdds() public {
         // Make some trades to establish odds
         vm.prank(ALICE);
-        router.buy{value: 1 ether}(MARKET_ID, true, 1 ether, 0, FEE_TIER, ALICE, block.timestamp + 1 hours);
+        router.buy{value: 1 ether}(
+            MARKET_ID, true, 1 ether, 0, FEE_TIER, ALICE, block.timestamp + 1 hours
+        );
 
         vm.prank(BOB);
-        router.buy{value: 0.5 ether}(MARKET_ID, false, 0.5 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 0.5 ether}(
+            MARKET_ID, false, 0.5 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
 
         // Get pool state
-        (uint256 rYes, uint256 rNo, uint256 pYesNum, uint256 pYesDen) = pamm.getPoolState(MARKET_ID, FEE_TIER);
+        (uint256 rYes, uint256 rNo, uint256 pYesNum, uint256 pYesDen) =
+            pamm.getPoolState(MARKET_ID, FEE_TIER);
 
         assertGt(rYes, 0, "Should have YES reserves");
         assertGt(rNo, 0, "Should have NO reserves");
@@ -576,7 +582,9 @@ contract PnkPMTest is Test {
             MARKET_ID,
             lpAmount,
             FEE_TIER,
-            0, 0, 0, // mins
+            0,
+            0,
+            0, // mins
             ALICE,
             block.timestamp + 1 hours
         );
@@ -606,12 +614,7 @@ contract PnkPMTest is Test {
 
         vm.prank(ALICE);
         (uint256 collateralOut,,) = pamm.removeLiquidityToCollateral(
-            MARKET_ID,
-            FEE_TIER,
-            removeAmount,
-            0, 0, 0,
-            ALICE,
-            block.timestamp + 1 hours
+            MARKET_ID, FEE_TIER, removeAmount, 0, 0, 0, ALICE, block.timestamp + 1 hours
         );
 
         assertGt(collateralOut, 0, "Should receive collateral back");
@@ -674,11 +677,7 @@ contract PnkPMTest is Test {
         bool yesIsToken0 = MARKET_ID == id0;
 
         IZAMM.PoolKey memory poolKey = IZAMM.PoolKey({
-            id0: id0,
-            id1: id1,
-            token0: address(pamm),
-            token1: address(pamm),
-            feeOrHook: FEE_TIER
+            id0: id0, id1: id1, token0: address(pamm), token1: address(pamm), feeOrHook: FEE_TIER
         });
 
         // Swap half YES to NO
@@ -686,18 +685,21 @@ contract PnkPMTest is Test {
         uint256 noBalBefore = pamm.balanceOf(ALICE, noId);
 
         vm.prank(ALICE);
-        uint256 noOut = IZAMM(ZAMM_ADDRESS).swapExactIn(
-            poolKey,
-            swapAmount,
-            0, // minOut
-            yesIsToken0, // zeroForOne: YES→NO if yes is token0
-            ALICE,
-            block.timestamp + 1 hours
-        );
+        uint256 noOut = IZAMM(ZAMM_ADDRESS)
+            .swapExactIn(
+                poolKey,
+                swapAmount,
+                0, // minOut
+                yesIsToken0, // zeroForOne: YES→NO if yes is token0
+                ALICE,
+                block.timestamp + 1 hours
+            );
 
         assertGt(noOut, 0, "Should receive NO shares");
         assertEq(pamm.balanceOf(ALICE, noId) - noBalBefore, noOut, "NO balance should increase");
-        assertEq(pamm.balanceOf(ALICE, MARKET_ID), yesShares - swapAmount, "YES balance should decrease");
+        assertEq(
+            pamm.balanceOf(ALICE, MARKET_ID), yesShares - swapAmount, "YES balance should decrease"
+        );
 
         console2.log("Swapped YES:", swapAmount);
         console2.log("Received NO:", noOut);
@@ -722,11 +724,7 @@ contract PnkPMTest is Test {
         bool yesIsToken0 = MARKET_ID == id0;
 
         IZAMM.PoolKey memory poolKey = IZAMM.PoolKey({
-            id0: id0,
-            id1: id1,
-            token0: address(pamm),
-            token1: address(pamm),
-            feeOrHook: FEE_TIER
+            id0: id0, id1: id1, token0: address(pamm), token1: address(pamm), feeOrHook: FEE_TIER
         });
 
         // Swap NO to YES
@@ -734,17 +732,20 @@ contract PnkPMTest is Test {
         uint256 yesBalBefore = pamm.balanceOf(BOB, MARKET_ID);
 
         vm.prank(BOB);
-        uint256 yesOut = IZAMM(ZAMM_ADDRESS).swapExactIn(
-            poolKey,
-            swapAmount,
-            0,
-            !yesIsToken0, // NO→YES is opposite direction
-            BOB,
-            block.timestamp + 1 hours
-        );
+        uint256 yesOut = IZAMM(ZAMM_ADDRESS)
+            .swapExactIn(
+                poolKey,
+                swapAmount,
+                0,
+                !yesIsToken0, // NO→YES is opposite direction
+                BOB,
+                block.timestamp + 1 hours
+            );
 
         assertGt(yesOut, 0, "Should receive YES shares");
-        assertEq(pamm.balanceOf(BOB, MARKET_ID) - yesBalBefore, yesOut, "YES balance should increase");
+        assertEq(
+            pamm.balanceOf(BOB, MARKET_ID) - yesBalBefore, yesOut, "YES balance should increase"
+        );
 
         console2.log("Swapped NO:", swapAmount);
         console2.log("Received YES:", yesOut);
@@ -774,11 +775,8 @@ contract PnkPMTest is Test {
         assertNotEq(orderHash, bytes32(0), "Should return order hash");
 
         // Verify order exists in orderbook
-        (
-            bytes32[] memory bidHashes,
-            IPMRouter.Order[] memory bidOrders,
-            ,
-        ) = router.getOrderbook(MARKET_ID, true, 10);
+        (bytes32[] memory bidHashes, IPMRouter.Order[] memory bidOrders,,) =
+            router.getOrderbook(MARKET_ID, true, 10);
 
         bool found = false;
         for (uint256 i = 0; i < bidHashes.length; i++) {
@@ -847,7 +845,9 @@ contract PnkPMTest is Test {
 
         // Bob needs YES shares to fill - first buy some
         vm.prank(BOB);
-        router.buy{value: 2 ether}(MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 2 ether}(
+            MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
 
         // Bob approves router
         vm.prank(BOB);
@@ -858,16 +858,19 @@ contract PnkPMTest is Test {
         uint256 aliceYesBefore = pamm.balanceOf(ALICE, MARKET_ID);
 
         vm.prank(BOB);
-        (uint96 sharesFilled, uint96 collateralFilled) = router.fillOrder(
-            orderHash,
-            shares, // fill entire order
-            BOB
-        );
+        (uint96 sharesFilled, uint96 collateralFilled) =
+            router.fillOrder(
+                orderHash,
+                shares, // fill entire order
+                BOB
+            );
 
         assertEq(sharesFilled, shares, "Should fill all shares");
         assertEq(collateralFilled, collateral, "Should receive all collateral");
         assertEq(BOB.balance - bobEthBefore, collateral, "Bob should receive ETH");
-        assertEq(pamm.balanceOf(ALICE, MARKET_ID) - aliceYesBefore, shares, "Alice should receive YES");
+        assertEq(
+            pamm.balanceOf(ALICE, MARKET_ID) - aliceYesBefore, shares, "Alice should receive YES"
+        );
 
         console2.log("Shares filled:", sharesFilled);
         console2.log("Collateral filled:", collateralFilled);
@@ -1038,7 +1041,9 @@ contract PnkPMTest is Test {
     function test_ClaimLoserSide_NoShares() public {
         // Bob buys NO shares
         vm.prank(BOB);
-        router.buy{value: 1 ether}(MARKET_ID, false, 1 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 1 ether}(
+            MARKET_ID, false, 1 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
 
         // Mock YES wins (condition met)
         vm.mockCall(
@@ -1058,7 +1063,9 @@ contract PnkPMTest is Test {
     function test_DoubleClaim() public {
         // Alice buys YES
         vm.prank(ALICE);
-        router.buy{value: 1 ether}(MARKET_ID, true, 1 ether, 0, FEE_TIER, ALICE, block.timestamp + 1 hours);
+        router.buy{value: 1 ether}(
+            MARKET_ID, true, 1 ether, 0, FEE_TIER, ALICE, block.timestamp + 1 hours
+        );
 
         // Mock YES wins
         vm.mockCall(
@@ -1084,7 +1091,9 @@ contract PnkPMTest is Test {
 
         // Alice buys YES
         vm.prank(ALICE);
-        router.buy{value: 1 ether}(MARKET_ID, true, 1 ether, 0, FEE_TIER, ALICE, block.timestamp + 1 hours);
+        router.buy{value: 1 ether}(
+            MARKET_ID, true, 1 ether, 0, FEE_TIER, ALICE, block.timestamp + 1 hours
+        );
 
         // Mock YES wins
         vm.mockCall(
@@ -1114,12 +1123,20 @@ contract PnkPMTest is Test {
 
         vm.prank(ALICE);
         bytes32 orderHash = router.placeOrder{value: collateral}(
-            MARKET_ID, true, true, shares, collateral, uint56(CLOSE_TIME), true // partialFill = true
+            MARKET_ID,
+            true,
+            true,
+            shares,
+            collateral,
+            uint56(CLOSE_TIME),
+            true // partialFill = true
         );
 
         // Bob buys YES shares to fill
         vm.prank(BOB);
-        router.buy{value: 2 ether}(MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 2 ether}(
+            MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
         vm.prank(BOB);
         pamm.setOperator(address(router), true);
 
@@ -1132,26 +1149,30 @@ contract PnkPMTest is Test {
         uint256 bobSharesBefore = pamm.balanceOf(BOB, MARKET_ID);
 
         vm.prank(BOB);
-        (uint96 sharesFilled, uint96 collateralFilled) = router.fillOrder(
-            orderHash,
-            partialShares,
-            BOB
-        );
+        (uint96 sharesFilled, uint96 collateralFilled) =
+            router.fillOrder(orderHash, partialShares, BOB);
 
         // Verify state changes
         assertEq(sharesFilled, partialShares, "Should fill partial shares");
         assertEq(collateralFilled, expectedCollateral, "Should receive proportional collateral");
-        assertEq(pamm.balanceOf(ALICE, MARKET_ID) - aliceYesBefore, partialShares, "Alice gets partial shares");
+        assertEq(
+            pamm.balanceOf(ALICE, MARKET_ID) - aliceYesBefore,
+            partialShares,
+            "Alice gets partial shares"
+        );
         assertEq(BOB.balance - bobEthBefore, expectedCollateral, "Bob gets partial ETH");
-        assertEq(bobSharesBefore - pamm.balanceOf(BOB, MARKET_ID), partialShares, "Bob shares decreased");
+        assertEq(
+            bobSharesBefore - pamm.balanceOf(BOB, MARKET_ID), partialShares, "Bob shares decreased"
+        );
 
         // Fill the remaining half
         vm.prank(BOB);
-        (uint96 sharesFilled2, uint96 collateralFilled2) = router.fillOrder(
-            orderHash,
-            partialShares, // remaining half
-            BOB
-        );
+        (uint96 sharesFilled2, uint96 collateralFilled2) =
+            router.fillOrder(
+                orderHash,
+                partialShares, // remaining half
+                BOB
+            );
 
         assertEq(sharesFilled2, partialShares, "Should fill remaining shares");
         assertEq(collateralFilled2, expectedCollateral, "Should receive remaining collateral");
@@ -1205,7 +1226,11 @@ contract PnkPMTest is Test {
 
         // Get state after trading
         (,,,,,, uint256 collateralLockedAfterTrade,,,) = pamm.getMarket(MARKET_ID);
-        assertGt(collateralLockedAfterTrade, collateralLockedBefore, "Collateral should increase after trading");
+        assertGt(
+            collateralLockedAfterTrade,
+            collateralLockedBefore,
+            "Collateral should increase after trading"
+        );
 
         // Resolve - YES wins
         vm.mockCall(
@@ -1277,9 +1302,8 @@ contract PnkPMTest is Test {
         });
 
         vm.prank(BOB);
-        uint256 bobSwapOut = IZAMM(ZAMM_ADDRESS).swapExactIn(
-            poolKey, bobYes / 4, 0, MARKET_ID == id0, BOB, block.timestamp + 1 hours
-        );
+        uint256 bobSwapOut = IZAMM(ZAMM_ADDRESS)
+            .swapExactIn(poolKey, bobYes / 4, 0, MARKET_ID == id0, BOB, block.timestamp + 1 hours);
         console2.log("4. Bob swapped YES to NO:", bobSwapOut);
 
         // 5. Resolve - YES wins
@@ -1337,9 +1361,8 @@ contract PnkPMTest is Test {
         uint96 collateral = 0.5 ether;
 
         vm.prank(ALICE);
-        bytes32 orderHash = router.placeOrder(
-            MARKET_ID, true, false, shares, collateral, uint56(CLOSE_TIME), true
-        );
+        bytes32 orderHash =
+            router.placeOrder(MARKET_ID, true, false, shares, collateral, uint56(CLOSE_TIME), true);
 
         // Verify Alice's order was created
         assertNotEq(orderHash, bytes32(0), "Order should be created");
@@ -1352,15 +1375,15 @@ contract PnkPMTest is Test {
         vm.prank(BOB);
         IZAMM(ZAMM_ADDRESS).fillOrder{value: collateral}(
             address(router), // maker is PMRouter
-            address(pamm),   // tokenIn = PAMM (YES shares)
-            tokenId,         // idIn = YES token id
-            shares,          // amtIn
-            address(0),      // tokenOut = ETH
-            0,               // idOut = 0
-            collateral,      // amtOut
+            address(pamm), // tokenIn = PAMM (YES shares)
+            tokenId, // idIn = YES token id
+            shares, // amtIn
+            address(0), // tokenOut = ETH
+            0, // idOut = 0
+            collateral, // amtOut
             uint56(CLOSE_TIME),
-            true,            // partialFill
-            collateral       // fillPart = full order
+            true, // partialFill
+            collateral // fillPart = full order
         );
 
         // Check Bob received the YES shares
@@ -1439,9 +1462,10 @@ contract PnkPMTest is Test {
 
         uint256 carolSwapNo = carolNo / 4;
         vm.prank(CAROL);
-        uint256 carolYesFromSwap = IZAMM(ZAMM_ADDRESS).swapExactIn(
-            poolKey, carolSwapNo, 0, MARKET_ID != id0, CAROL, block.timestamp + 1 hours
-        );
+        uint256 carolYesFromSwap = IZAMM(ZAMM_ADDRESS)
+            .swapExactIn(
+                poolKey, carolSwapNo, 0, MARKET_ID != id0, CAROL, block.timestamp + 1 hours
+            );
         assertGt(carolYesFromSwap, 0, "Carol should receive YES from swap");
 
         // ===== PHASE 5: Resolution - YES wins =====
@@ -1632,7 +1656,8 @@ contract PnkPMTest is Test {
         // All YES holders claim
         uint256 totalClaimed = 0;
         for (uint256 i = 0; i < 10; i++) {
-            if (i % 2 == 0) { // YES holders
+            if (i % 2 == 0) {
+                // YES holders
                 uint256 balBefore = traders[i].balance;
                 vm.prank(traders[i]);
                 pamm.claim(MARKET_ID, traders[i]);
@@ -1695,7 +1720,9 @@ contract PnkPMTest is Test {
         // Single taker fills all orders
         vm.deal(BOB, 100 ether);
         vm.prank(BOB);
-        router.buy{value: 10 ether}(MARKET_ID, true, 10 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 10 ether}(
+            MARKET_ID, true, 10 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
 
         vm.prank(BOB);
         pamm.setOperator(address(router), true);
@@ -1838,7 +1865,9 @@ contract PnkPMTest is Test {
         assertGt(lp2Tokens, 0, "LP2 should have tokens");
         assertGt(t1Shares, 0, "Trader1 should have shares");
         assertGt(t2Shares, 0, "Trader2 should have shares");
-        assertGt(pamm.balanceOf(ORDER_MAKER, MARKET_ID), 0, "Order maker should have shares from fill");
+        assertGt(
+            pamm.balanceOf(ORDER_MAKER, MARKET_ID), 0, "Order maker should have shares from fill"
+        );
 
         // Resolve and everyone claims/withdraws
         vm.mockCall(
@@ -1860,12 +1889,16 @@ contract PnkPMTest is Test {
         vm.prank(LP1);
         IZAMM(ZAMM_ADDRESS).setOperator(address(pamm), true);
         vm.prank(LP1);
-        pamm.removeLiquidityToCollateral(MARKET_ID, FEE_TIER, lp1Tokens, 0, 0, 0, LP1, block.timestamp + 1 hours);
+        pamm.removeLiquidityToCollateral(
+            MARKET_ID, FEE_TIER, lp1Tokens, 0, 0, 0, LP1, block.timestamp + 1 hours
+        );
 
         vm.prank(LP2);
         IZAMM(ZAMM_ADDRESS).setOperator(address(pamm), true);
         vm.prank(LP2);
-        pamm.removeLiquidityToCollateral(MARKET_ID, FEE_TIER, lp2Tokens, 0, 0, 0, LP2, block.timestamp + 1 hours);
+        pamm.removeLiquidityToCollateral(
+            MARKET_ID, FEE_TIER, lp2Tokens, 0, 0, 0, LP2, block.timestamp + 1 hours
+        );
 
         console2.log("All concurrent operations succeeded");
     }
@@ -1883,7 +1916,9 @@ contract PnkPMTest is Test {
 
         // Bob fills half the order
         vm.prank(BOB);
-        router.buy{value: 2 ether}(MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 2 ether}(
+            MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
         vm.prank(BOB);
         pamm.setOperator(address(router), true);
 
@@ -1925,19 +1960,27 @@ contract PnkPMTest is Test {
 
         // Place bids (buy orders) at 35%, 40%, 45%
         vm.prank(BIDDER1);
-        router.placeOrder{value: 0.35 ether}(MARKET_ID, true, true, 1 ether, 0.35 ether, uint56(CLOSE_TIME), true);
+        router.placeOrder{value: 0.35 ether}(
+            MARKET_ID, true, true, 1 ether, 0.35 ether, uint56(CLOSE_TIME), true
+        );
 
         vm.prank(BIDDER2);
-        router.placeOrder{value: 0.40 ether}(MARKET_ID, true, true, 1 ether, 0.40 ether, uint56(CLOSE_TIME), true);
+        router.placeOrder{value: 0.4 ether}(
+            MARKET_ID, true, true, 1 ether, 0.4 ether, uint56(CLOSE_TIME), true
+        );
 
         // Askers need YES shares first
         vm.prank(ASKER1);
-        router.buy{value: 3 ether}(MARKET_ID, true, 3 ether, 0, FEE_TIER, ASKER1, block.timestamp + 1 hours);
+        router.buy{value: 3 ether}(
+            MARKET_ID, true, 3 ether, 0, FEE_TIER, ASKER1, block.timestamp + 1 hours
+        );
         vm.prank(ASKER1);
         pamm.setOperator(address(router), true);
 
         vm.prank(ASKER2);
-        router.buy{value: 3 ether}(MARKET_ID, true, 3 ether, 0, FEE_TIER, ASKER2, block.timestamp + 1 hours);
+        router.buy{value: 3 ether}(
+            MARKET_ID, true, 3 ether, 0, FEE_TIER, ASKER2, block.timestamp + 1 hours
+        );
         vm.prank(ASKER2);
         pamm.setOperator(address(router), true);
 
@@ -1946,10 +1989,11 @@ contract PnkPMTest is Test {
         router.placeOrder(MARKET_ID, true, false, 1 ether, 0.55 ether, uint56(CLOSE_TIME), true);
 
         vm.prank(ASKER2);
-        router.placeOrder(MARKET_ID, true, false, 1 ether, 0.60 ether, uint56(CLOSE_TIME), true);
+        router.placeOrder(MARKET_ID, true, false, 1 ether, 0.6 ether, uint56(CLOSE_TIME), true);
 
         // Verify orderbook structure
-        (bytes32[] memory bidHashes,, bytes32[] memory askHashes,) = router.getOrderbook(MARKET_ID, true, 10);
+        (bytes32[] memory bidHashes,, bytes32[] memory askHashes,) =
+            router.getOrderbook(MARKET_ID, true, 10);
 
         assertGe(bidHashes.length, 2, "Should have at least 2 bids");
         assertGe(askHashes.length, 2, "Should have at least 2 asks");
@@ -2014,12 +2058,15 @@ contract PnkPMTest is Test {
         address SELLER = makeAddr("SELLER");
         vm.deal(SELLER, 20 ether);
         vm.prank(SELLER);
-        router.buy{value: 5 ether}(MARKET_ID, true, 5 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours);
+        router.buy{value: 5 ether}(
+            MARKET_ID, true, 5 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours
+        );
         vm.prank(SELLER);
         pamm.setOperator(address(router), true);
 
         vm.prank(SELLER);
-        bytes32 askOrder = router.placeOrder(MARKET_ID, true, false, 2 ether, 0.6 ether, uint56(CLOSE_TIME), true);
+        bytes32 askOrder =
+            router.placeOrder(MARKET_ID, true, false, 2 ether, 0.6 ether, uint56(CLOSE_TIME), true);
 
         // Bob fills the order directly, then buys more from AMM
         vm.deal(BOB, 10 ether);
@@ -2029,7 +2076,8 @@ contract PnkPMTest is Test {
         uint256 sellerEthBefore = SELLER.balance;
 
         vm.prank(BOB);
-        (uint96 sharesFilled, uint96 collateralPaid) = router.fillOrder{value: 0.6 ether}(askOrder, 2 ether, BOB);
+        (uint96 sharesFilled, uint96 collateralPaid) =
+            router.fillOrder{value: 0.6 ether}(askOrder, 2 ether, BOB);
 
         assertGt(sharesFilled, 0, "Should fill some shares");
         assertGt(collateralPaid, 0, "Should pay collateral");
@@ -2044,7 +2092,11 @@ contract PnkPMTest is Test {
         uint256 sellerEthAfter = SELLER.balance;
 
         // Verify Bob got shares from both sources
-        assertEq(bobSharesAfter - bobSharesBefore, sharesFilled + ammShares, "Bob should have shares from order + AMM");
+        assertEq(
+            bobSharesAfter - bobSharesBefore,
+            sharesFilled + ammShares,
+            "Bob should have shares from order + AMM"
+        );
 
         // Seller should have received ETH from filled order
         assertGt(sellerEthAfter - sellerEthBefore, 0, "Seller should receive ETH from order fill");
@@ -2093,7 +2145,8 @@ contract PnkPMTest is Test {
 
         uint256 arbEthBefore = ARB.balance;
         vm.prank(ARB);
-        (, uint96 collateralReceived) = router.fillOrder(bidOrder, uint96(arbShares > 1 ether ? 1 ether : arbShares), ARB);
+        (, uint96 collateralReceived) =
+            router.fillOrder(bidOrder, uint96(arbShares > 1 ether ? 1 ether : arbShares), ARB);
 
         // Arb should profit if bid price > AMM execution price
         console2.log("AMM price (approx):", ammPrice);
@@ -2114,15 +2167,20 @@ contract PnkPMTest is Test {
         // Multiple trades
         vm.deal(BOB, 50 ether);
         vm.prank(BOB);
-        router.buy{value: 5 ether}(MARKET_ID, true, 5 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 5 ether}(
+            MARKET_ID, true, 5 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
 
         address CAROL = makeAddr("CAROL");
         vm.deal(CAROL, 50 ether);
         vm.prank(CAROL);
-        router.buy{value: 3 ether}(MARKET_ID, false, 3 ether, 0, FEE_TIER, CAROL, block.timestamp + 1 hours);
+        router.buy{value: 3 ether}(
+            MARKET_ID, false, 3 ether, 0, FEE_TIER, CAROL, block.timestamp + 1 hours
+        );
 
         // Get market state
-        (,,,,,, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply,) = pamm.getMarket(MARKET_ID);
+        (,,,,,, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply,) =
+            pamm.getMarket(MARKET_ID);
 
         // Invariant: collateralLocked should cover max(yesSupply, noSupply) payout
         // Because only one side wins, and each winning share pays 1 ETH
@@ -2172,9 +2230,8 @@ contract PnkPMTest is Test {
         });
 
         vm.prank(BOB);
-        uint256 noReceived = IZAMM(ZAMM_ADDRESS).swapExactIn(
-            poolKey, swapAmount, 0, yesIsToken0, BOB, block.timestamp + 1 hours
-        );
+        uint256 noReceived = IZAMM(ZAMM_ADDRESS)
+            .swapExactIn(poolKey, swapAmount, 0, yesIsToken0, BOB, block.timestamp + 1 hours);
 
         // After swap
         uint256 yesAfter = pamm.balanceOf(BOB, MARKET_ID);
@@ -2242,7 +2299,9 @@ contract PnkPMTest is Test {
         IZAMM(ZAMM_ADDRESS).setOperator(address(pamm), true);
         uint256 aliceBalBefore = ALICE.balance;
         vm.prank(ALICE);
-        pamm.removeLiquidityToCollateral(MARKET_ID, FEE_TIER, aliceLp, 0, 0, 0, ALICE, block.timestamp + 1 hours);
+        pamm.removeLiquidityToCollateral(
+            MARKET_ID, FEE_TIER, aliceLp, 0, 0, 0, ALICE, block.timestamp + 1 hours
+        );
         totalEthOut += ALICE.balance - aliceBalBefore;
 
         // Carol gets nothing (NO lost)
@@ -2278,12 +2337,16 @@ contract PnkPMTest is Test {
         address SELLER = makeAddr("SELLER");
         vm.deal(SELLER, 20 ether);
         vm.prank(SELLER);
-        router.buy{value: 5 ether}(MARKET_ID, true, 5 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours);
+        router.buy{value: 5 ether}(
+            MARKET_ID, true, 5 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours
+        );
         vm.prank(SELLER);
         pamm.setOperator(address(router), true);
 
         vm.prank(SELLER);
-        bytes32 cheapOrder = router.placeOrder(MARKET_ID, true, false, 1 ether, 0.25 ether, uint56(CLOSE_TIME), true);
+        bytes32 cheapOrder = router.placeOrder(
+            MARKET_ID, true, false, 1 ether, 0.25 ether, uint56(CLOSE_TIME), true
+        );
 
         // Compare: Bob buys 2 ETH worth via AMM only
         vm.deal(BOB, 20 ether);
@@ -2309,7 +2372,9 @@ contract PnkPMTest is Test {
         uint256 carolTotalShares = orderShares + ammShares;
 
         // Carol should have MORE shares than Bob for same ETH spent
-        assertGt(carolTotalShares, ammOnlyShares, "Mixed fill should yield more shares than AMM only");
+        assertGt(
+            carolTotalShares, ammOnlyShares, "Mixed fill should yield more shares than AMM only"
+        );
 
         console2.log("Bob (AMM only, 2 ETH):", ammOnlyShares, "shares");
         console2.log("Carol (order + AMM, 2 ETH):", carolTotalShares, "shares");
@@ -2322,7 +2387,9 @@ contract PnkPMTest is Test {
         address SELLER = makeAddr("SELLER");
         vm.deal(SELLER, 20 ether);
         vm.prank(SELLER);
-        router.buy{value: 5 ether}(MARKET_ID, true, 5 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours);
+        router.buy{value: 5 ether}(
+            MARKET_ID, true, 5 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours
+        );
 
         uint256 sellerSharesBefore = pamm.balanceOf(SELLER, MARKET_ID);
         vm.prank(SELLER);
@@ -2332,11 +2399,15 @@ contract PnkPMTest is Test {
         uint96 orderCollateral = 1 ether;
 
         vm.prank(SELLER);
-        bytes32 orderHash = router.placeOrder(MARKET_ID, true, false, orderShares, orderCollateral, uint56(CLOSE_TIME), true);
+        bytes32 orderHash = router.placeOrder(
+            MARKET_ID, true, false, orderShares, orderCollateral, uint56(CLOSE_TIME), true
+        );
 
         // Verify seller's shares were escrowed
         uint256 sellerSharesAfterPlace = pamm.balanceOf(SELLER, MARKET_ID);
-        assertEq(sellerSharesBefore - sellerSharesAfterPlace, orderShares, "Shares should be escrowed");
+        assertEq(
+            sellerSharesBefore - sellerSharesAfterPlace, orderShares, "Shares should be escrowed"
+        );
 
         // Buyer fills order
         vm.deal(BOB, 10 ether);
@@ -2344,7 +2415,8 @@ contract PnkPMTest is Test {
         uint256 sellerEthBefore = SELLER.balance;
 
         vm.prank(BOB);
-        (uint96 sharesFilled, uint96 collateralPaid) = router.fillOrder{value: orderCollateral}(orderHash, orderShares, BOB);
+        (uint96 sharesFilled, uint96 collateralPaid) =
+            router.fillOrder{value: orderCollateral}(orderHash, orderShares, BOB);
 
         // Verify exact amounts
         assertEq(sharesFilled, orderShares, "All shares should be filled");
@@ -2365,19 +2437,23 @@ contract PnkPMTest is Test {
         address SELLER = makeAddr("SELLER");
         vm.deal(SELLER, 20 ether);
         vm.prank(SELLER);
-        router.buy{value: 10 ether}(MARKET_ID, true, 10 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours);
+        router.buy{value: 10 ether}(
+            MARKET_ID, true, 10 ether, 0, FEE_TIER, SELLER, block.timestamp + 1 hours
+        );
         vm.prank(SELLER);
         pamm.setOperator(address(router), true);
 
         vm.prank(SELLER);
-        bytes32 orderHash = router.placeOrder(MARKET_ID, true, false, 4 ether, 2 ether, uint56(CLOSE_TIME), true);
+        bytes32 orderHash =
+            router.placeOrder(MARKET_ID, true, false, 4 ether, 2 ether, uint56(CLOSE_TIME), true);
 
         // Bob fills 25% of order (1 share)
         vm.deal(BOB, 10 ether);
         uint256 sellerEthBefore = SELLER.balance;
 
         vm.prank(BOB);
-        (uint96 sharesFilled1, uint96 collateralPaid1) = router.fillOrder{value: 0.5 ether}(orderHash, 1 ether, BOB);
+        (uint96 sharesFilled1, uint96 collateralPaid1) =
+            router.fillOrder{value: 0.5 ether}(orderHash, 1 ether, BOB);
 
         assertEq(sharesFilled1, 1 ether, "Should fill 1 share");
         assertEq(collateralPaid1, 0.5 ether, "Should pay 0.5 ETH for 1 share");
@@ -2389,7 +2465,8 @@ contract PnkPMTest is Test {
         sellerEthBefore = SELLER.balance;
 
         vm.prank(CAROL);
-        (uint96 sharesFilled2, uint96 collateralPaid2) = router.fillOrder{value: 1 ether}(orderHash, 2 ether, CAROL);
+        (uint96 sharesFilled2, uint96 collateralPaid2) =
+            router.fillOrder{value: 1 ether}(orderHash, 2 ether, CAROL);
 
         assertEq(sharesFilled2, 2 ether, "Should fill 2 shares");
         assertEq(collateralPaid2, 1 ether, "Should pay 1 ETH for 2 shares");
@@ -2455,20 +2532,25 @@ contract PnkPMTest is Test {
         );
 
         // Get initial supplies
-        (,,,,,, uint256 collateralBefore, uint256 yesSupplyBefore, uint256 noSupplyBefore,) = pamm.getMarket(MARKET_ID);
+        (,,,,,, uint256 collateralBefore, uint256 yesSupplyBefore, uint256 noSupplyBefore,) =
+            pamm.getMarket(MARKET_ID);
 
         // Multiple operations
         vm.deal(BOB, 50 ether);
 
         // 1. Buy YES via AMM
         vm.prank(BOB);
-        router.buy{value: 2 ether}(MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 2 ether}(
+            MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
 
         // 2. Place and fill order
         vm.prank(BOB);
         pamm.setOperator(address(router), true);
         vm.prank(BOB);
-        bytes32 order = router.placeOrder(MARKET_ID, true, false, 0.5 ether, 0.25 ether, uint56(CLOSE_TIME), true);
+        bytes32 order = router.placeOrder(
+            MARKET_ID, true, false, 0.5 ether, 0.25 ether, uint56(CLOSE_TIME), true
+        );
 
         address CAROL = makeAddr("CAROL");
         vm.deal(CAROL, 10 ether);
@@ -2488,10 +2570,12 @@ contract PnkPMTest is Test {
         });
 
         vm.prank(BOB);
-        IZAMM(ZAMM_ADDRESS).swapExactIn(poolKey, 0.5 ether, 0, MARKET_ID == id0, BOB, block.timestamp + 1 hours);
+        IZAMM(ZAMM_ADDRESS)
+            .swapExactIn(poolKey, 0.5 ether, 0, MARKET_ID == id0, BOB, block.timestamp + 1 hours);
 
         // Check supplies after all operations
-        (,,,,,, uint256 collateralAfter, uint256 yesSupplyAfter, uint256 noSupplyAfter,) = pamm.getMarket(MARKET_ID);
+        (,,,,,, uint256 collateralAfter, uint256 yesSupplyAfter, uint256 noSupplyAfter,) =
+            pamm.getMarket(MARKET_ID);
 
         console2.log("Collateral: before", collateralBefore, "after", collateralAfter);
         console2.log("YES supply: before", yesSupplyBefore, "after", yesSupplyAfter);
@@ -2512,28 +2596,40 @@ contract PnkPMTest is Test {
 
         vm.deal(BOB, 50 ether);
         vm.prank(BOB);
-        router.buy{value: 2 ether}(MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours);
+        router.buy{value: 2 ether}(
+            MARKET_ID, true, 2 ether, 0, FEE_TIER, BOB, block.timestamp + 1 hours
+        );
 
         address CAROL = makeAddr("CAROL");
         vm.deal(CAROL, 50 ether);
         vm.prank(CAROL);
-        router.buy{value: 2 ether}(MARKET_ID, false, 2 ether, 0, FEE_TIER, CAROL, block.timestamp + 1 hours);
+        router.buy{value: 2 ether}(
+            MARKET_ID, false, 2 ether, 0, FEE_TIER, CAROL, block.timestamp + 1 hours
+        );
 
         // Verify condition: PNKSTR treasury > 40 punks
-        (address target,,,,uint256 threshold,,) = resolver.conditions(MARKET_ID);
+        (address target,,,, uint256 threshold,,) = resolver.conditions(MARKET_ID);
 
         assertEq(target, address(punks), "Condition target should be CryptoPunks");
         assertEq(threshold, 40, "Threshold should be 40 punks");
 
         // Scenario A: Condition NOT met (39 punks) - NO wins
-        vm.mockCall(address(punks), abi.encodeWithSelector(ICryptoPunks.balanceOf.selector, PNKSTR_TREASURY), abi.encode(uint256(39)));
+        vm.mockCall(
+            address(punks),
+            abi.encodeWithSelector(ICryptoPunks.balanceOf.selector, PNKSTR_TREASURY),
+            abi.encode(uint256(39))
+        );
 
         // Preview should show condition not met
         (, bool condTrue,) = resolver.preview(MARKET_ID);
         assertFalse(condTrue, "39 > 40 should be false");
 
         // Scenario B: Condition met (41 punks) - YES wins
-        vm.mockCall(address(punks), abi.encodeWithSelector(ICryptoPunks.balanceOf.selector, PNKSTR_TREASURY), abi.encode(uint256(41)));
+        vm.mockCall(
+            address(punks),
+            abi.encodeWithSelector(ICryptoPunks.balanceOf.selector, PNKSTR_TREASURY),
+            abi.encode(uint256(41))
+        );
 
         (, condTrue,) = resolver.preview(MARKET_ID);
         assertTrue(condTrue, "41 > 40 should be true");
