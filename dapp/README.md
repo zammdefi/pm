@@ -4,13 +4,47 @@ Single-file HTML dapps for prediction markets.
 
 ## Quick Start
 
+Start a local server from the repository root:
+
 ```bash
-cd dapp && npx live-server --port=8080 --open=/pnkPM.html
+# Using npx serve (recommended)
+npx serve .
+
+# Or using Python
+python3 -m http.server 3000
+
+# Or using Node's http-server
+npx http-server .
+```
+
+Then open in your browser:
+- **Gas PM**: http://localhost:3000/dapp/gasPM.html
+- **PNK PM**: http://localhost:3000/dapp/pnkPM.html
+
+### Browser Console
+
+Once the page is loaded, you can interact with the contracts via the browser console:
+
+```javascript
+// Get the ethers provider
+const provider = new ethers.BrowserProvider(window.ethereum);
+
+// Get a signer (requires wallet connection)
+const signer = await provider.getSigner();
+
+// Contract addresses
+const PAMM = '0x000000000044bfe6c2BBFeD8862973E0612f07C0';
+const PMRouter = '0x000000000055fF709f26efB262fba8B0AE8c35Dc';
+const ZAMM = '0x000000000000040470635EB91b7CE4D132D616eD';
+const Resolver = '0x00000000002205020E387b6a378c05639047BcFB';
+
+// Example: Read market data
+const pamm = new ethers.Contract(PAMM, ['function getMarket(bytes32) view returns (tuple)'], provider);
 ```
 
 ## Files
 
-- `GasPM.html` - Ethereum gas price prediction markets
+- `gasPM.html` - Ethereum gas price prediction markets
 - `pnkPM.html` - PNKSTR CryptoPunks treasury prediction markets
 
 ## How It Works

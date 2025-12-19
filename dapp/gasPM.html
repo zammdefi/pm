@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GasPM</title>
+    <title>gasPM - Gas Bets</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2309090b' width='100' height='100' rx='12'/><text x='50' y='55' font-family='system-ui,sans-serif' font-size='16' font-weight='600' fill='%2322c55e' text-anchor='middle'>Gas</text><text x='50' y='72' font-family='system-ui,sans-serif' font-size='14' font-weight='600' fill='%233b82f6' text-anchor='middle'>PM</text></svg>" type="image/svg+xml">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.15.0/ethers.umd.min.js" integrity="sha512-UXYETj+vXKSURF1UlgVRLzWRS9ZiQTv3lcL4rbeLyqTXCPNZC6PTLF/Ik3uxm2Zo+E109cUpJPZfLxJsCgKSng==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.10.0/dist/index.umd.js" integrity="sha384-ACTo60vL1/AfeYkCCXRvB1G0ugjHF0/SHU9YN7e4/KH/mitAIYpLcw5PKXW/+ekM" crossorigin="anonymous"></script>
@@ -160,6 +160,110 @@
         }
 
         .chart-canvas { width: 100%; height: 100%; }
+
+        .chart-expand-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid transparent;
+            border-radius: var(--radius);
+            color: var(--text-dim);
+            padding: 4px 6px;
+            font-size: 12px;
+            cursor: pointer;
+            z-index: 50;
+            opacity: 0.5;
+            transition: all 0.15s;
+        }
+        .chart-expand-btn:hover {
+            background: rgba(0, 0, 0, 0.7);
+            color: var(--text);
+            border-color: var(--border);
+            opacity: 1;
+        }
+
+        /* Chart Modal */
+        .chart-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(8px);
+            z-index: 3000;
+            flex-direction: column;
+        }
+        .chart-modal-overlay.active { display: flex; }
+
+        .chart-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg);
+        }
+        .chart-modal-title {
+            font-size: var(--font-lg);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .chart-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.75rem;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .chart-modal-close:hover { color: var(--text); }
+
+        .chart-modal-body {
+            flex: 1;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .chart-modal-canvas-container {
+            flex: 1;
+            background: var(--surface);
+            border-radius: var(--radius);
+            position: relative;
+            min-height: 300px;
+        }
+        .chart-modal-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart-modal-stats {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: var(--radius);
+            margin-top: 1rem;
+        }
+        .chart-modal-stat {
+            text-align: center;
+        }
+        .chart-modal-stat-label {
+            font-size: var(--font-xs);
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+        .chart-modal-stat-value {
+            font-size: var(--font-lg);
+            font-weight: 600;
+        }
 
         .chart-tooltip {
             position: absolute;
@@ -398,20 +502,26 @@
 
         .bet-btn {
             padding: 0.75rem 0.5rem;
-            background: transparent;
-            border: 1px solid var(--border);
+            background: var(--surface);
+            border: 2px solid var(--border);
             border-radius: var(--radius);
             cursor: pointer;
             text-align: center;
             transition: all 0.15s;
         }
 
-        .bet-btn:hover { background: var(--surface-2); }
+        .bet-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 
-        .bet-btn.up { border-color: var(--green); }
-        .bet-btn.up:hover { background: var(--green-dim); }
-        .bet-btn.down { border-color: var(--red); }
-        .bet-btn.down:hover { background: var(--red-dim); }
+        .bet-btn.up { border-color: var(--green); background: var(--green-dim); }
+        .bet-btn.up:hover { background: var(--green); }
+        .bet-btn.up:hover .bet-btn-label,
+        .bet-btn.up:hover .bet-btn-odds,
+        .bet-btn.up:hover .bet-btn-price { color: var(--bg); }
+        .bet-btn.down { border-color: var(--red); background: var(--red-dim); }
+        .bet-btn.down:hover { background: var(--red); }
+        .bet-btn.down:hover .bet-btn-label,
+        .bet-btn.down:hover .bet-btn-odds,
+        .bet-btn.down:hover .bet-btn-price { color: var(--bg); }
 
         .bet-btn-label {
             font-size: var(--font-xs);
@@ -462,6 +572,192 @@
         }
 
         .position-row { display: flex; justify-content: space-between; }
+
+        /* CARD CHART TOGGLE */
+        .card-chart-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .card-chart-toggle:hover {
+            background: var(--surface-2);
+            color: var(--text);
+            border-color: var(--text-dim);
+        }
+
+        .card-chart-toggle.active {
+            background: var(--surface-2);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .card-chart-toggle-icon {
+            transition: transform 0.3s ease;
+            font-size: 10px;
+        }
+
+        .card-chart-toggle.active .card-chart-toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        .card-chart-container {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease, margin 0.3s ease, opacity 0.3s ease;
+            opacity: 0;
+            margin-top: 0;
+            border-radius: var(--radius);
+        }
+
+        .card-chart-container.open {
+            max-height: 400px;
+            opacity: 1;
+            margin-top: 0.75rem;
+        }
+
+        .card-chart-container iframe {
+            display: block;
+            width: 100%;
+            height: 320px;
+            border: none;
+            border-radius: 0 0 var(--radius) var(--radius);
+            background: var(--surface-2);
+        }
+
+        .card-chart-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 320px;
+            background: var(--surface-2);
+            border-radius: var(--radius);
+            color: var(--text-muted);
+            font-size: var(--font-xs);
+        }
+
+        .card-chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0.75rem;
+            background: var(--surface-2);
+            border-radius: var(--radius) var(--radius) 0 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .card-chart-title {
+            font-size: var(--font-xs);
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        .card-chart-expand {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-muted);
+            padding: 4px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s;
+        }
+        .card-chart-expand:hover {
+            background: var(--surface);
+            color: var(--text);
+            border-color: var(--text-dim);
+        }
+
+        /* Odds Chart Modal */
+        .odds-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(8px);
+            z-index: 3000;
+            flex-direction: column;
+        }
+        .odds-modal-overlay.active { display: flex; }
+
+        .odds-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg);
+        }
+        .odds-modal-title {
+            font-size: var(--font-lg);
+            font-weight: 600;
+        }
+        .odds-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.75rem;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .odds-modal-close:hover { color: var(--text); }
+
+        .odds-modal-body {
+            flex: 1;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .odds-modal-iframe-container {
+            flex: 1;
+            background: var(--surface);
+            border-radius: var(--radius);
+            overflow: hidden;
+            min-height: 400px;
+        }
+        .odds-modal-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .odds-modal-stats {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: var(--radius);
+            margin-top: 1rem;
+        }
+        .odds-modal-stat {
+            text-align: center;
+        }
+        .odds-modal-stat-label {
+            font-size: var(--font-xs);
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+        .odds-modal-stat-value {
+            font-size: var(--font-lg);
+            font-weight: 600;
+        }
 
         /* CREATE SECTION */
         .create-section {
@@ -938,6 +1234,9 @@
             .header { padding: 0.5rem 1rem; }
             .header-center { gap: 1rem; }
             .chart-container { height: 220px; }
+            .card-chart-container.open { max-height: 320px; }
+            .card-chart-container iframe { height: 260px; }
+            .card-chart-loading { height: 260px; }
             .bets-section, .create-section, .info-section { padding: 1rem; }
             .bet-card, .create-card { padding: 1rem; }
             .modal {
@@ -1014,6 +1313,99 @@
                 flex: 0 0 auto;
             }
             .chart-container { height: 180px; }
+        }
+
+        /* Chart modal mobile styles */
+        @media (max-width: 600px) {
+            .chart-modal-header {
+                padding: 0.75rem 1rem;
+            }
+            .chart-modal-title {
+                font-size: var(--font-base);
+                gap: 0.5rem;
+            }
+            .chart-modal-body {
+                padding: 0.5rem;
+            }
+            .chart-modal-canvas-container {
+                min-height: 250px;
+            }
+            .chart-modal-stats {
+                flex-wrap: wrap;
+                gap: 1rem;
+                padding: 0.75rem;
+                margin-top: 0.5rem;
+            }
+            .chart-modal-stat {
+                flex: 1 1 40%;
+                min-width: 80px;
+            }
+            .chart-modal-stat-label {
+                font-size: 10px;
+            }
+            .chart-modal-stat-value {
+                font-size: var(--font-base);
+            }
+            .chart-expand-btn {
+                padding: 4px 8px;
+                font-size: 10px;
+            }
+        }
+        @media (max-width: 400px) {
+            .chart-modal-stats {
+                gap: 0.75rem;
+            }
+            .chart-modal-stat {
+                flex: 1 1 45%;
+            }
+        }
+
+        /* Odds modal mobile styles */
+        @media (max-width: 600px) {
+            .odds-modal-header {
+                padding: 0.75rem 1rem;
+            }
+            .odds-modal-title {
+                font-size: var(--font-base);
+            }
+            .odds-modal-body {
+                padding: 0.5rem;
+            }
+            .odds-modal-iframe-container {
+                min-height: 300px;
+            }
+            .odds-modal-stats {
+                flex-wrap: wrap;
+                gap: 1rem;
+                padding: 0.75rem;
+                margin-top: 0.5rem;
+            }
+            .odds-modal-stat {
+                flex: 1 1 40%;
+                min-width: 70px;
+            }
+            .odds-modal-stat-label {
+                font-size: 10px;
+            }
+            .odds-modal-stat-value {
+                font-size: var(--font-base);
+            }
+            .card-chart-header {
+                padding: 0.4rem 0.5rem;
+            }
+            .card-chart-expand {
+                padding: 3px 6px;
+                font-size: 9px;
+            }
+            .card-chart-container.open {
+                max-height: 360px;
+            }
+            .card-chart-container iframe {
+                height: 280px;
+            }
+            .card-chart-loading {
+                height: 280px;
+            }
         }
 
         @media (max-width: 768px) {
@@ -1138,7 +1530,7 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <header class="header">
-        <div class="logo">Gas<span>PM</span></div>
+        <div class="logo">gas<span>PM</span></div>
         <span class="tagline">Bet Gas on Gas Price</span>
         <div class="header-center">
             <div class="live-stat">
@@ -1173,6 +1565,7 @@
         <!-- Chart Section -->
         <section class="chart-section">
             <div class="chart-container">
+                <button class="chart-expand-btn" onclick="openChartModal()" title="Expand chart">⛶</button>
                 <canvas id="gasChart" class="chart-canvas"></canvas>
                 <div class="chart-tooltip" id="chartTooltip">
                     <div class="chart-tooltip-time" id="tooltipTime">--</div>
@@ -1258,12 +1651,12 @@
                     </div>
                     <div class="bet-buttons">
                         <button class="bet-btn up" onclick="openTrade('hourly', true)">
-                            <div class="bet-btn-label">Up</div>
+                            <div class="bet-btn-label">Buy Up</div>
                             <div class="bet-btn-odds" id="hourlyUpOdds">--</div>
                             <div class="bet-btn-price" id="hourlyUpPrice">--</div>
                         </button>
                         <button class="bet-btn down" onclick="openTrade('hourly', false)">
-                            <div class="bet-btn-label">Down</div>
+                            <div class="bet-btn-label">Buy Down</div>
                             <div class="bet-btn-odds" id="hourlyDownOdds">--</div>
                             <div class="bet-btn-price" id="hourlyDownPrice">--</div>
                         </button>
@@ -1281,6 +1674,11 @@
                         <div class="position-row"><span>Your DOWN</span><span id="hourlyDownBal">0</span></div>
                     </div>
                     <button id="hourlyResolveBtn" class="resolve-btn" style="display:none;width:100%;margin-top:0.5rem;padding:0.75rem;background:var(--amber);color:var(--black);border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;" onclick="resolveMarket('hourly')">Resolve Market</button>
+                    <button class="card-chart-toggle" id="hourlyChartToggle" onclick="toggleChart('hourly')">
+                        <span>Odds Chart</span>
+                        <span class="card-chart-toggle-icon">▼</span>
+                    </button>
+                    <div class="card-chart-container" id="hourlyChartContainer"></div>
                 </div>
 
                 <!-- Daily Card -->
@@ -1303,12 +1701,12 @@
                     </div>
                     <div class="bet-buttons">
                         <button class="bet-btn up" onclick="openTrade('daily', true)">
-                            <div class="bet-btn-label">Up</div>
+                            <div class="bet-btn-label">Buy Up</div>
                             <div class="bet-btn-odds" id="dailyUpOdds">--</div>
                             <div class="bet-btn-price" id="dailyUpPrice">--</div>
                         </button>
                         <button class="bet-btn down" onclick="openTrade('daily', false)">
-                            <div class="bet-btn-label">Down</div>
+                            <div class="bet-btn-label">Buy Down</div>
                             <div class="bet-btn-odds" id="dailyDownOdds">--</div>
                             <div class="bet-btn-price" id="dailyDownPrice">--</div>
                         </button>
@@ -1326,6 +1724,11 @@
                         <div class="position-row"><span>Your DOWN</span><span id="dailyDownBal">0</span></div>
                     </div>
                     <button id="dailyResolveBtn" class="resolve-btn" style="display:none;width:100%;margin-top:0.5rem;padding:0.75rem;background:var(--amber);color:var(--black);border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;" onclick="resolveMarket('daily')">Resolve Market</button>
+                    <button class="card-chart-toggle" id="dailyChartToggle" onclick="toggleChart('daily')">
+                        <span>Odds Chart</span>
+                        <span class="card-chart-toggle-icon">▼</span>
+                    </button>
+                    <div class="card-chart-container" id="dailyChartContainer"></div>
                 </div>
 
                 <!-- Weekly Card -->
@@ -1348,12 +1751,12 @@
                     </div>
                     <div class="bet-buttons">
                         <button class="bet-btn up" onclick="openTrade('weekly', true)">
-                            <div class="bet-btn-label">Up</div>
+                            <div class="bet-btn-label">Buy Up</div>
                             <div class="bet-btn-odds" id="weeklyUpOdds">--</div>
                             <div class="bet-btn-price" id="weeklyUpPrice">--</div>
                         </button>
                         <button class="bet-btn down" onclick="openTrade('weekly', false)">
-                            <div class="bet-btn-label">Down</div>
+                            <div class="bet-btn-label">Buy Down</div>
                             <div class="bet-btn-odds" id="weeklyDownOdds">--</div>
                             <div class="bet-btn-price" id="weeklyDownPrice">--</div>
                         </button>
@@ -1371,6 +1774,11 @@
                         <div class="position-row"><span>Your DOWN</span><span id="weeklyDownBal">0</span></div>
                     </div>
                     <button id="weeklyResolveBtn" class="resolve-btn" style="display:none;width:100%;margin-top:0.5rem;padding:0.75rem;background:var(--amber);color:var(--black);border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;" onclick="resolveMarket('weekly')">Resolve Market</button>
+                    <button class="card-chart-toggle" id="weeklyChartToggle" onclick="toggleChart('weekly')">
+                        <span>Odds Chart</span>
+                        <span class="card-chart-toggle-icon">▼</span>
+                    </button>
+                    <div class="card-chart-container" id="weeklyChartContainer"></div>
                 </div>
 
                 <!-- Extreme Card -->
@@ -1415,6 +1823,11 @@
                         <div class="position-row"><span>Your NO</span><span id="extremeNoBal">0</span></div>
                     </div>
                     <button id="extremeResolveBtn" class="resolve-btn" style="display:none;width:100%;margin-top:0.5rem;padding:0.75rem;background:var(--amber);color:var(--black);border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;" onclick="resolveMarket('extreme')">Resolve Market</button>
+                    <button class="card-chart-toggle" id="extremeChartToggle" onclick="toggleChart('extreme')">
+                        <span>Odds Chart</span>
+                        <span class="card-chart-toggle-icon">▼</span>
+                    </button>
+                    <div class="card-chart-container" id="extremeChartContainer"></div>
                 </div>
             </div>
         </section>
@@ -1511,7 +1924,7 @@
     </main>
 
     <!-- Wallet Modal -->
-    <div class="modal-overlay" id="walletModal">
+    <div class="modal-overlay" id="walletModal" onclick="if(event.target===this)closeWalletModal()">
         <div class="modal" style="max-width:360px;">
             <div class="modal-header">
                 <div class="modal-title">Connect Wallet</div>
@@ -1522,7 +1935,7 @@
     </div>
 
     <!-- Trade Modal -->
-    <div class="modal-overlay" id="tradeModal">
+    <div class="modal-overlay" id="tradeModal" onclick="if(event.target===this)closeModal()">
         <div class="modal">
             <div class="modal-header">
                 <div class="modal-title" id="tradeTitle">Trade Shares</div>
@@ -1564,8 +1977,8 @@
                     <span id="positionValue" style="color:var(--text);font-weight:600;">--</span>
                 </div>
                 <div style="display:flex;gap:1.5rem;margin-bottom:6px;">
-                    <span style="color:var(--green);">YES: <span id="tradeModalYes">0</span></span>
-                    <span style="color:var(--red);">NO: <span id="tradeModalNo">0</span></span>
+                    <span style="color:var(--green);"><span id="tradeModalYesLabel">YES</span>: <span id="tradeModalYes">0</span></span>
+                    <span style="color:var(--red);"><span id="tradeModalNoLabel">NO</span>: <span id="tradeModalNo">0</span></span>
                     <span style="color:var(--blue);">LP: <span id="tradeModalLP">0</span></span>
                 </div>
                 <div id="positionPnL" style="display:none;padding-top:6px;border-top:1px solid var(--border);">
@@ -1623,7 +2036,7 @@
                     <span>Balance: <span id="tradeBalance">--</span> <span id="tradeBalanceUnit">ETH</span></span>
                 </div>
                 <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
-                    <input type="number" class="trade-input" id="tradeAmount" placeholder="0.01" step="0.001" min="0" oninput="handleTradeInput()" style="flex:1;background:transparent;border:none;border-radius:0;">
+                    <input type="number" class="trade-input" id="tradeAmount" value="0.01" step="0.001" min="0" oninput="handleTradeInput()" style="flex:1;background:transparent;border:none;border-radius:0;">
                     <button onclick="setMaxTrade()" style="padding:0.5rem 1rem;background:var(--surface-2);border:none;border-left:1px solid var(--border);color:var(--green);font-weight:600;cursor:pointer;font-size:var(--font-xs);">MAX</button>
                 </div>
             </div>
@@ -1874,6 +2287,71 @@
         </div>
     </div>
 
+    <!-- Chart Modal (Full Screen) -->
+    <div class="chart-modal-overlay" id="chartModal" onclick="if(event.target === this) closeChartModal()">
+        <div class="chart-modal-header">
+            <div class="chart-modal-title">
+                <span style="color:var(--green);">Gas</span><span style="color:var(--blue);">PM</span>
+                <span style="color:var(--text-muted);font-weight:400;font-size:var(--font-sm);">TWAP Chart</span>
+            </div>
+            <button class="chart-modal-close" onclick="closeChartModal()">&times;</button>
+        </div>
+        <div class="chart-modal-body">
+            <div class="chart-modal-canvas-container">
+                <canvas id="modalChart" class="chart-modal-canvas"></canvas>
+            </div>
+            <div class="chart-modal-stats">
+                <div class="chart-modal-stat">
+                    <div class="chart-modal-stat-label">Current Gas</div>
+                    <div class="chart-modal-stat-value" style="color:var(--green);" id="modalCurrentGas">--</div>
+                </div>
+                <div class="chart-modal-stat">
+                    <div class="chart-modal-stat-label">TWAP</div>
+                    <div class="chart-modal-stat-value" style="color:var(--blue);" id="modalTwapGas">--</div>
+                </div>
+                <div class="chart-modal-stat">
+                    <div class="chart-modal-stat-label">1H Odds</div>
+                    <div class="chart-modal-stat-value" id="modalHourlyOdds">--</div>
+                </div>
+                <div class="chart-modal-stat">
+                    <div class="chart-modal-stat-label">1D Odds</div>
+                    <div class="chart-modal-stat-value" id="modalDailyOdds">--</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Odds Chart Modal (Full Screen) -->
+    <div class="odds-modal-overlay" id="oddsModal" onclick="if(event.target === this) closeOddsModal()">
+        <div class="odds-modal-header">
+            <div class="odds-modal-title" id="oddsModalTitle">Odds Chart</div>
+            <button class="odds-modal-close" onclick="closeOddsModal()">&times;</button>
+        </div>
+        <div class="odds-modal-body">
+            <div class="odds-modal-iframe-container">
+                <iframe id="oddsModalIframe" class="odds-modal-iframe" src="" title="Odds Chart"></iframe>
+            </div>
+            <div class="odds-modal-stats">
+                <div class="odds-modal-stat">
+                    <div class="odds-modal-stat-label">UP Price</div>
+                    <div class="odds-modal-stat-value" style="color:var(--green);" id="oddsModalUpPrice">--</div>
+                </div>
+                <div class="odds-modal-stat">
+                    <div class="odds-modal-stat-label">DOWN Price</div>
+                    <div class="odds-modal-stat-value" style="color:var(--red);" id="oddsModalDownPrice">--</div>
+                </div>
+                <div class="odds-modal-stat">
+                    <div class="odds-modal-stat-label">TVL</div>
+                    <div class="odds-modal-stat-value" style="color:var(--blue);" id="oddsModalTvl">--</div>
+                </div>
+                <div class="odds-modal-stat">
+                    <div class="odds-modal-stat-label">Closes</div>
+                    <div class="odds-modal-stat-value" id="oddsModalCloses">--</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // ======================== CONSTANTS ========================
         const GASPM_ADDRESS = '0x0000000000ee3d4294438093EaA34308f47Bc0b4';
@@ -1980,12 +2458,15 @@
 
         let markets = { hourly: null, daily: null, weekly: null, extreme: null };
         let resolvedMarkets = [];
+        const chartPoolIds = new Map(); // type -> poolId for ZAMM embed
+        const marketMetaCache = new Map(); // marketId -> { noId, poolKey, poolId }
+        const chartLoaded = new Set(); // track which chart iframes have been loaded
         let currentTrade = { type: null, isYes: true, marketId: null };
         let currentTradeMode = 'buy'; // 'buy' or 'sell'
         let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n };
         let slippageTolerance = 0.5; // 0.5% default slippage tolerance
 
-        // Chart data (like GasPM.html)
+        // Chart data
         let chartDataPoints = [];   // Historical baseFee in gwei
         let chartTimestamps = [];   // Timestamps for each observation
         let chartCumulatives = [];  // Cumulative base fee for rolling TWAP
@@ -2102,10 +2583,12 @@
                     const safeName = (info.name || 'Unknown').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
                     // Only allow data: or https: URLs for icons
                     const iconUrl = info.icon && (info.icon.startsWith('data:') || info.icon.startsWith('https://')) ? info.icon : null;
+                    // Escape URL to prevent XSS via attribute injection
+                    const safeIconUrl = iconUrl ? iconUrl.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])) : null;
                     detected.push({
                         key: `eip6963_${uuid}`,
                         name: safeName,
-                        icon: iconUrl ? `<img src="${iconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
+                        icon: safeIconUrl ? `<img src="${safeIconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
                         getProvider: () => provider
                     });
                     seenNames.add(info.name.toLowerCase());
@@ -2281,7 +2764,7 @@
                 const gasPmInterface = new ethers.Interface(GASPM_ABI);
                 const pammInterface = new ethers.Interface(PAMM_ABI);
 
-                // Batch gas data + market infos with block fetch (like GasPM.html)
+                // Batch gas data + market infos with block fetch
                 const [results, block] = await Promise.all([
                     multicall.aggregate3([
                         { target: GASPM_ADDRESS, allowFailure: true, callData: gasPmInterface.encodeFunctionData('baseFeeAverage') },
@@ -2429,6 +2912,17 @@
             // Reset markets on each load to handle expiry
             markets = { hourly: null, daily: null, weekly: null, extreme: null };
             resolvedMarkets = [];
+
+            // Clear chart cache when markets reload (new period may have different poolIds)
+            chartPoolIds.clear();
+            chartLoaded.clear();
+            // Reset chart UI
+            ['hourly', 'daily', 'weekly', 'extreme'].forEach(type => {
+                const container = document.getElementById(`${type}ChartContainer`);
+                const toggle = document.getElementById(`${type}ChartToggle`);
+                if (container) { container.classList.remove('open'); container.innerHTML = ''; }
+                if (toggle) toggle.classList.remove('active');
+            });
 
             try {
                 if (marketInfos.length === 0) return;
@@ -2598,8 +3092,8 @@
                             markets.extreme = { id: info.marketId, close, yesPrice, noPrice, needsResolve, conditionMet: info.conditionMet, tvl: Number(collateralLocked) / 1e18 };
                             document.getElementById('extremeYesOdds').textContent = formatOdds(yesPrice);
                             document.getElementById('extremeNoOdds').textContent = formatOdds(noPrice);
-                            document.getElementById('extremeYesPrice').textContent = formatEth(yesPrice, '');
-                            document.getElementById('extremeNoPrice').textContent = formatEth(noPrice, '');
+                            document.getElementById('extremeYesPrice').textContent = yesPrice.toFixed(2) + ' Ξ';
+                            document.getElementById('extremeNoPrice').textContent = noPrice.toFixed(2) + ' Ξ';
                             // Show resolve button for extreme if ready (condition met OR expired)
                             const resolveBtn = document.getElementById('extremeResolveBtn');
                             if (resolveBtn) {
@@ -2785,12 +3279,10 @@
                     // Compute pool IDs and build balance calls
                     // Query BOTH YES and NO token balances for each market
                     const poolIds = new Map();
-                    const noTokenIds = new Map();
                     const balanceCalls = [];
                     for (let i = 0; i < sorted.length; i++) {
                         const m = sorted[i];
                         const noId = ethers.solidityPackedKeccak256(['string', 'uint256'], ['PMARKET:NO', m.id]);
-                        noTokenIds.set(m.id.toString(), noId);
 
                         // YES token balance (marketId)
                         balanceCalls.push({
@@ -3072,8 +3564,8 @@
 
             document.getElementById(`${type}UpOdds`).textContent = formatOdds(yesPrice);
             document.getElementById(`${type}DownOdds`).textContent = formatOdds(noPrice);
-            document.getElementById(`${type}UpPrice`).textContent = formatEth(yesPrice, '');
-            document.getElementById(`${type}DownPrice`).textContent = formatEth(noPrice, '');
+            document.getElementById(`${type}UpPrice`).textContent = yesPrice.toFixed(2) + ' Ξ';
+            document.getElementById(`${type}DownPrice`).textContent = noPrice.toFixed(2) + ' Ξ';
 
             // Show/hide resolve button and update card state for expired markets
             const resolveBtn = document.getElementById(`${type}ResolveBtn`);
@@ -3159,6 +3651,394 @@
             ['hourly', 'daily', 'weekly', 'extreme'].forEach(t => {
                 document.getElementById(`${t}Position`).style.display = 'none';
             });
+        }
+
+        // ======================== CHART MODAL ========================
+        let isChartModalOpen = false;
+        let modalChartCtx = null;
+
+        function openChartModal() {
+            const modal = document.getElementById('chartModal');
+            modal.classList.add('active');
+            isChartModalOpen = true;
+
+            // Update stats
+            updateModalStats();
+
+            // Draw chart in modal after a small delay for DOM to settle
+            setTimeout(() => {
+                drawModalChart();
+            }, 50);
+
+            // Prevent body scroll
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeChartModal() {
+            const modal = document.getElementById('chartModal');
+            modal.classList.remove('active');
+            isChartModalOpen = false;
+            document.body.style.overflow = '';
+        }
+
+        // Handle ESC key and resize for modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isChartModalOpen) {
+                closeChartModal();
+            }
+        });
+
+        // Resize handler for modal chart
+        let modalResizeTimer = null;
+        window.addEventListener('resize', () => {
+            if (isChartModalOpen) {
+                clearTimeout(modalResizeTimer);
+                modalResizeTimer = setTimeout(drawModalChart, 100);
+            }
+        });
+
+        // ======================== ODDS CHART MODAL ========================
+        let isOddsModalOpen = false;
+        let currentOddsMarketType = null;
+
+        function openOddsModal(type) {
+            const market = markets[type];
+            if (!market) return;
+
+            const modal = document.getElementById('oddsModal');
+            const iframe = document.getElementById('oddsModalIframe');
+            const title = document.getElementById('oddsModalTitle');
+
+            // Get market label
+            const typeLabels = {
+                hourly: 'Hourly',
+                daily: 'Daily',
+                weekly: 'Weekly',
+                extreme: '100 Gwei Challenge'
+            };
+            title.textContent = `${typeLabels[type] || type} Odds Chart`;
+
+            // Get the chart URL
+            const poolId = chartPoolIds.get(type);
+            if (poolId) {
+                const poolIdDecimal = BigInt(poolId).toString();
+                iframe.src = `https://www.zamm.finance/embed/pool/${poolIdDecimal}?theme=dark`;
+            }
+
+            // Update stats
+            updateOddsModalStats(type);
+
+            modal.classList.add('active');
+            isOddsModalOpen = true;
+            currentOddsMarketType = type;
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeOddsModal() {
+            const modal = document.getElementById('oddsModal');
+            const iframe = document.getElementById('oddsModalIframe');
+            modal.classList.remove('active');
+            isOddsModalOpen = false;
+            currentOddsMarketType = null;
+            document.body.style.overflow = '';
+            // Clear iframe to stop loading
+            iframe.src = '';
+        }
+
+        function updateOddsModalStats(type) {
+            const market = markets[type];
+            if (!market) return;
+
+            const upPrice = document.getElementById('oddsModalUpPrice');
+            const downPrice = document.getElementById('oddsModalDownPrice');
+            const tvl = document.getElementById('oddsModalTvl');
+            const closes = document.getElementById('oddsModalCloses');
+
+            // Use YES/NO labels for extreme, UP/DOWN for others
+            const upLabel = document.querySelector('#oddsModalUpPrice').parentElement.querySelector('.odds-modal-stat-label');
+            const downLabel = document.querySelector('#oddsModalDownPrice').parentElement.querySelector('.odds-modal-stat-label');
+            if (type === 'extreme') {
+                upLabel.textContent = 'YES Price';
+                downLabel.textContent = 'NO Price';
+            } else {
+                upLabel.textContent = 'UP Price';
+                downLabel.textContent = 'DOWN Price';
+            }
+
+            // Prices
+            if (market.yesPrice !== undefined) {
+                upPrice.textContent = market.yesPrice.toFixed(2) + ' Ξ';
+            }
+            if (market.noPrice !== undefined) {
+                downPrice.textContent = market.noPrice.toFixed(2) + ' Ξ';
+            }
+
+            // TVL
+            if (market.tvl) {
+                tvl.textContent = formatEth(market.tvl);
+            }
+
+            // Time to close
+            if (market.closeTime) {
+                const now = Math.floor(Date.now() / 1000);
+                const remaining = market.closeTime - now;
+                closes.textContent = formatTime(remaining);
+            }
+        }
+
+        // Handle ESC key for odds modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isOddsModalOpen) {
+                closeOddsModal();
+            }
+        });
+
+        function updateModalStats() {
+            const modalCurrentGas = document.getElementById('modalCurrentGas');
+            const modalTwapGas = document.getElementById('modalTwapGas');
+            const modalHourlyOdds = document.getElementById('modalHourlyOdds');
+            const modalDailyOdds = document.getElementById('modalDailyOdds');
+
+            if (cachedGasData.current) {
+                modalCurrentGas.textContent = cachedGasData.current.toFixed(2) + ' gwei';
+            }
+            if (cachedGasData.twap) {
+                modalTwapGas.textContent = cachedGasData.twap.toFixed(2) + ' gwei';
+            }
+
+            // Hourly odds
+            if (markets.hourly && markets.hourly.yesPrice !== undefined) {
+                const pct = Math.round(markets.hourly.yesPrice * 100);
+                const color = pct > 50 ? 'var(--green)' : pct < 50 ? 'var(--red)' : 'var(--text-muted)';
+                modalHourlyOdds.textContent = pct + '% UP';
+                modalHourlyOdds.style.color = color;
+            }
+
+            // Daily odds
+            if (markets.daily && markets.daily.yesPrice !== undefined) {
+                const pct = Math.round(markets.daily.yesPrice * 100);
+                const color = pct > 50 ? 'var(--green)' : pct < 50 ? 'var(--red)' : 'var(--text-muted)';
+                modalDailyOdds.textContent = pct + '% UP';
+                modalDailyOdds.style.color = color;
+            }
+        }
+
+        function drawModalChart() {
+            if (!isChartModalOpen) return;
+            if (!cachedGasData || !cachedGasData.current) return;
+
+            const canvas = document.getElementById('modalChart');
+            const container = canvas.parentElement;
+
+            // Size canvas to container
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+
+            if (!modalChartCtx) modalChartCtx = canvas.getContext('2d');
+            const ctx = modalChartCtx;
+
+            const { twap, current, startTime } = cachedGasData;
+            const width = canvas.width;
+            const height = canvas.height;
+
+            // Generous padding for modal view
+            const isMobile = width < 500;
+            const padding = isMobile ? 35 : 50;
+            const paddingRight = isMobile ? 80 : 120;
+            const chartWidth = width - padding - paddingRight;
+
+            // Clear
+            ctx.fillStyle = '#18181b';
+            ctx.fillRect(0, 0, width, height);
+
+            // Use actual data points
+            let data = chartDataPoints.length > 0 ? [...chartDataPoints] : [current];
+            let timestamps = [...chartTimestamps];
+
+            // Ensure current is last point
+            if (data.length === 0 || data[data.length - 1] !== current) {
+                data.push(current);
+                timestamps.push(Math.floor(Date.now() / 1000));
+            }
+
+            // Downsample for large datasets
+            const maxDisplayPoints = 400;
+            if (data.length > maxDisplayPoints) {
+                const factor = Math.ceil(data.length / maxDisplayPoints);
+                const sampledData = [];
+                const sampledTimestamps = [];
+                for (let i = 0; i < data.length; i += factor) {
+                    sampledData.push(data[i]);
+                    if (timestamps[i] !== undefined) sampledTimestamps.push(timestamps[i]);
+                }
+                if (sampledData[sampledData.length - 1] !== data[data.length - 1]) {
+                    sampledData.push(data[data.length - 1]);
+                    if (timestamps.length > 0) sampledTimestamps.push(timestamps[timestamps.length - 1]);
+                }
+                data = sampledData;
+                timestamps = sampledTimestamps;
+            }
+
+            // Calculate Y range
+            const allValues = [...data, twap];
+            let max = Math.max(...allValues) * 1.1;
+            let min = Math.min(...allValues) * 0.9;
+            const range = Math.max(max - min, 0.001);
+            const gweiToY = (gwei) => padding + (height - padding * 2) * (1 - (gwei - min) / range);
+
+            const getDecimals = (r) => {
+                if (r >= 10) return 0;
+                if (r >= 1) return 1;
+                if (r >= 0.1) return 2;
+                return 3;
+            };
+            const decimals = getDecimals(range);
+
+            // Draw grid
+            const axisFontSize = isMobile ? 10 : 12;
+            ctx.strokeStyle = '#27272a';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 5; i++) {
+                const y = padding + (height - padding * 2) * i / 5;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(padding + chartWidth, y);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.font = `${axisFontSize}px Helvetica`;
+                ctx.textAlign = 'right';
+                ctx.fillText((max - range * i / 5).toFixed(decimals), padding - 8, y + 4);
+            }
+
+            // Draw time axis labels
+            if (timestamps.length > 1) {
+                const firstTime = timestamps[0];
+                const lastTime = timestamps[timestamps.length - 1];
+                const timeSpan = lastTime - firstTime;
+
+                const formatTime = (ts) => {
+                    const d = new Date(ts * 1000);
+                    if (timeSpan < 86400) {
+                        return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                    } else if (timeSpan < 604800) {
+                        return d.toLocaleDateString(undefined, { weekday: 'short', hour: '2-digit' });
+                    } else {
+                        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                    }
+                };
+
+                const numLabels = isMobile ? 4 : 6;
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.font = `${axisFontSize}px Helvetica`;
+                ctx.textAlign = 'center';
+                for (let i = 0; i < numLabels; i++) {
+                    const idx = Math.floor(i * (timestamps.length - 1) / (numLabels - 1));
+                    const x = padding + chartWidth * idx / Math.max(1, data.length - 1);
+                    ctx.fillText(formatTime(timestamps[idx]), x, height - padding + 20);
+                }
+            }
+
+            // Draw TWAP reference line
+            const twapY = gweiToY(twap);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([8, 6]);
+            ctx.beginPath();
+            ctx.moveTo(padding, twapY);
+            ctx.lineTo(padding + chartWidth, twapY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#3b82f6';
+            ctx.font = `bold ${axisFontSize}px Helvetica`;
+            ctx.textAlign = 'right';
+            ctx.fillText('TWAP ' + twap.toFixed(decimals), padding + chartWidth - 8, twapY - 8);
+
+            // Draw line chart with directional coloring
+            if (data.length > 0) {
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                for (let i = 1; i < data.length; i++) {
+                    const x1 = padding + chartWidth * (i - 1) / Math.max(1, data.length - 1);
+                    const y1 = gweiToY(data[i - 1]);
+                    const x2 = padding + chartWidth * i / Math.max(1, data.length - 1);
+                    const y2 = gweiToY(data[i]);
+
+                    const isUp = data[i] >= data[i - 1];
+                    ctx.strokeStyle = isUp ? '#22c55e' : '#ef4444';
+
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.stroke();
+                }
+
+                // Gradient fill
+                const firstVal = data[0];
+                const lastVal = data[data.length - 1];
+                const overallUp = lastVal >= firstVal;
+                const trendColor = overallUp ? '34, 197, 94' : '239, 68, 68';
+
+                const gradient = ctx.createLinearGradient(0, padding, 0, height - padding);
+                gradient.addColorStop(0, `rgba(${trendColor}, 0.2)`);
+                gradient.addColorStop(1, `rgba(${trendColor}, 0)`);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(padding, height - padding);
+                for (let i = 0; i < data.length; i++) {
+                    const x = padding + chartWidth * i / Math.max(1, data.length - 1);
+                    const y = gweiToY(data[i]);
+                    ctx.lineTo(x, y);
+                }
+                ctx.lineTo(padding + chartWidth, height - padding);
+                ctx.closePath();
+                ctx.fill();
+
+                // Current point with pulse effect
+                const lastX = padding + chartWidth;
+                const lastY = gweiToY(data[data.length - 1]);
+                const pulseTime = Date.now() / 1000;
+                const pulseScale = 1 + 0.3 * Math.sin(pulseTime * 3);
+                const pulseColor = overallUp ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)';
+
+                ctx.fillStyle = pulseColor;
+                ctx.beginPath();
+                ctx.arc(lastX, lastY, 15 * pulseScale, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = overallUp ? '#22c55e' : '#ef4444';
+                ctx.beginPath();
+                ctx.arc(lastX, lastY, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(lastX, lastY, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Current value label
+                ctx.font = `bold 14px Helvetica`;
+                ctx.textAlign = 'left';
+                ctx.fillStyle = overallUp ? '#22c55e' : '#ef4444';
+                ctx.fillText(data[data.length - 1].toFixed(decimals) + ' gwei', lastX + 12, lastY + 5);
+            }
+
+            // Legend
+            ctx.font = `${isMobile ? 10 : 11}px Helvetica`;
+            ctx.textAlign = 'left';
+            const legendY = 20;
+            ctx.fillStyle = '#22c55e';
+            ctx.fillText('▲ UP', padding, legendY);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('▼ DOWN', padding + 50, legendY);
+            ctx.fillStyle = '#3b82f6';
+            ctx.fillText('― TWAP', padding + 120, legendY);
+
+            // Observation count
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${chartDataPoints.length || 1} observations`, padding, height - 8);
         }
 
         // ======================== CHART ========================
@@ -3762,23 +4642,39 @@
             const twapLabel = isMobile ? twap.toFixed(decimals) : ('TWAP ' + twap.toFixed(decimals));
             ctx.fillText(twapLabel, padding + chartWidth - (isMobile ? 3 : 5), twapY + 4);
 
-            // Draw line chart connecting data points (spot prices)
+            // Draw line chart connecting data points (spot prices) with directional coloring
+            // Green = price going UP (bullish for YES/UP), Red = price going DOWN (bearish/NO)
             if (data.length > 0) {
-                ctx.strokeStyle = '#22c55e';
                 ctx.lineWidth = 2;
-                ctx.beginPath();
-                for (let i = 0; i < data.length; i++) {
-                    const x = padding + chartWidth * i / Math.max(1, data.length - 1);
-                    const y = gweiToY(data[i]);
-                    if (i === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.stroke();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
 
-                // Draw gradient fill under spot line
+                // Draw each segment with direction-based color
+                for (let i = 1; i < data.length; i++) {
+                    const x1 = padding + chartWidth * (i - 1) / Math.max(1, data.length - 1);
+                    const y1 = gweiToY(data[i - 1]);
+                    const x2 = padding + chartWidth * i / Math.max(1, data.length - 1);
+                    const y2 = gweiToY(data[i]);
+
+                    // Color based on direction: green if going up, red if going down
+                    const isUp = data[i] >= data[i - 1];
+                    ctx.strokeStyle = isUp ? '#22c55e' : '#ef4444';
+
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.stroke();
+                }
+
+                // Draw gradient fill under spot line - use overall trend color
+                const firstVal = data[0];
+                const lastVal = data[data.length - 1];
+                const overallUp = lastVal >= firstVal;
+                const trendColor = overallUp ? '34, 197, 94' : '239, 68, 68'; // green or red RGB
+
                 const gradient = ctx.createLinearGradient(0, padding, 0, height - padding);
-                gradient.addColorStop(0, 'rgba(34, 197, 94, 0.15)');
-                gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
+                gradient.addColorStop(0, `rgba(${trendColor}, 0.15)`);
+                gradient.addColorStop(1, `rgba(${trendColor}, 0)`);
                 ctx.fillStyle = gradient;
                 ctx.beginPath();
                 ctx.moveTo(padding, height - padding);
@@ -3801,10 +4697,12 @@
                 // Draw data points (skip for large datasets - line is enough)
                 if (data.length <= 100) {
                     const pointSize = data.length > 50 ? 2 : (data.length > 20 ? 3 : 4);
-                    ctx.fillStyle = '#22c55e';
                     for (let i = 0; i < data.length; i++) {
                         const x = padding + chartWidth * i / Math.max(1, data.length - 1);
                         const y = gweiToY(data[i]);
+                        // Color based on direction from previous point
+                        const isUp = i === 0 ? true : data[i] >= data[i - 1];
+                        ctx.fillStyle = isUp ? '#22c55e' : '#ef4444';
                         ctx.beginPath();
                         ctx.arc(x, y, i === data.length - 1 ? 6 : pointSize, 0, Math.PI * 2);
                         ctx.fill();
@@ -3857,8 +4755,9 @@
                     ctx.stroke();
                     ctx.setLineDash([]);
 
-                    // Highlight circle on spot line
-                    ctx.strokeStyle = '#22c55e';
+                    // Highlight circle on spot line - color based on direction
+                    const hoverUp = hoverIndex === 0 ? true : data[hoverIndex] >= data[hoverIndex - 1];
+                    ctx.strokeStyle = hoverUp ? '#22c55e' : '#ef4444';
                     ctx.lineWidth = 2;
                     ctx.beginPath();
                     ctx.arc(hoverX, hoverY, 8, 0, Math.PI * 2);
@@ -3874,13 +4773,15 @@
                     }
                 }
 
-                // Pulsing live point (outer glow) - responsive
+                // Pulsing live point (outer glow) - responsive, color based on trend
                 const lastX = padding + chartWidth;
                 const lastY = gweiToY(data[data.length - 1]);
                 const pulseTime = Date.now() / 1000;
                 const pulseScale = 1 + 0.3 * Math.sin(pulseTime * 3);
                 const pulseRadius = isMobile ? 8 : 12;
-                ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+                // Use overall trend color for pulse
+                const pulseColor = overallUp ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)';
+                ctx.fillStyle = pulseColor;
                 ctx.beginPath();
                 ctx.arc(lastX, lastY, pulseRadius * pulseScale, 0, Math.PI * 2);
                 ctx.fill();
@@ -3891,11 +4792,11 @@
                 ctx.arc(lastX, lastY, isMobile ? 1.5 : 2, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Current value label (next to live point) - responsive
+                // Current value label (next to live point) - responsive, color based on trend
                 const currentLabel = data[data.length - 1].toFixed(decimals);
                 ctx.font = `bold ${axisFontSize}px Helvetica`;
                 ctx.textAlign = 'left';
-                ctx.fillStyle = '#22c55e';
+                ctx.fillStyle = overallUp ? '#22c55e' : '#ef4444';
                 const labelOffset = isMobile ? 12 : 18;
                 const labelY = lastY < padding + 30 ? lastY + labelOffset : lastY - (isMobile ? 8 : 12);
                 ctx.fillText(currentLabel, lastX + (isMobile ? 6 : 10), labelY);
@@ -3973,9 +4874,12 @@
             ctx.font = `${legendFontSize}px Helvetica`;
             ctx.textAlign = 'right';
             const legendY = isMobile ? 10 : 12;
-            const legendSpacing = isMobile ? 30 : 40;
-            ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
-            ctx.fillText('● Spot', width - legendSpacing * 2 - 5, legendY);
+            const legendSpacing = isMobile ? 35 : 48;
+            // Show UP (green) and DOWN (red) indicators
+            ctx.fillStyle = '#22c55e';
+            ctx.fillText('▲ UP', width - legendSpacing * 3 - 5, legendY);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('▼ DOWN', width - legendSpacing * 2 - 5, legendY);
             ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
             ctx.fillText('― TWAP', width - legendSpacing - 5, legendY);
             ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
@@ -4345,17 +5249,13 @@
             currentTradeMode = 'trade';
             currentTradeDirection = 'buy';
 
-            // Load user position and orderbook in parallel
-            await Promise.all([
-                loadUserPosition(market.id),
-                loadOrderbook(market.id, isYes)
-            ]);
-
             // Update side toggle labels based on market type
             const yesLabel = type === 'extreme' ? 'YES' : 'UP';
             const noLabel = type === 'extreme' ? 'NO' : 'DOWN';
             document.getElementById('sideYesLabel').textContent = yesLabel;
             document.getElementById('sideNoLabel').textContent = noLabel;
+            document.getElementById('tradeModalYesLabel').textContent = yesLabel;
+            document.getElementById('tradeModalNoLabel').textContent = noLabel;
 
             // Update odds on both buttons
             updateSideOdds(market);
@@ -4368,9 +5268,26 @@
             // Reset to trade mode with buy direction
             setTradeMode('trade');
 
-            document.getElementById('tradeAmount').value = '';
-            updatePreview();
+            // Show modal immediately with loading state
+            document.getElementById('tradeAmount').value = '0.01';
+            document.getElementById('tradeModalYes').textContent = '...';
+            document.getElementById('tradeModalNo').textContent = '...';
+            document.getElementById('tradeModalLP').textContent = '...';
+            document.getElementById('previewShares').textContent = '--';
+            document.getElementById('previewPrice').textContent = '--';
+            document.getElementById('previewPayout').textContent = 'Loading...';
             document.getElementById('tradeModal').classList.add('active');
+
+            // Load data in background (non-blocking)
+            Promise.all([
+                loadUserPosition(market.id),
+                loadOrderbook(market.id, isYes)
+            ]).then(() => {
+                updatePreview();
+            }).catch(e => {
+                console.error('Failed to load trade data:', e);
+                document.getElementById('previewPayout').textContent = 'Load failed';
+            });
         }
 
         function updateSideOdds(market) {
@@ -4400,21 +5317,25 @@
             currentTrade.isYes = isYes;
             updateSideButtons(isYes);
 
-            // Reload orderbook for new side
-            await loadOrderbook(currentTrade.marketId, isYes);
-
-            // Update position value display
+            // Update position value display immediately
             const yesShares = parseFloat(ethers.formatEther(currentUserPosition.yesBalance || 0n));
             const noShares = parseFloat(ethers.formatEther(currentUserPosition.noBalance || 0n));
             updatePositionValue(yesShares, noShares);
 
-            // Update trade mode labels and preview
+            // Update trade mode labels
             setTradeMode(currentTradeMode);
 
             // Update limit balance if in limit mode
             if (currentTradeMode === 'limit') {
                 updateLimitBalance();
             }
+
+            // Reload orderbook in background, then update preview
+            loadOrderbook(currentTrade.marketId, isYes).then(() => {
+                updatePreview();
+            }).catch(e => {
+                console.error('Failed to load orderbook:', e);
+            });
         }
 
         async function loadUserPosition(marketId) {
@@ -4428,31 +5349,34 @@
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
                 const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, rpc);
 
-                // Get noId and poolKey for LP balance
-                const [noId, poolKey] = await Promise.all([
-                    pamm.getNoId(marketId),
-                    pamm.poolKey(marketId, FEE_TIER)
-                ]);
+                // Use cached metadata or fetch if not available
+                const marketIdStr = marketId.toString();
+                let meta = marketMetaCache.get(marketIdStr);
+                if (!meta) {
+                    const [noId, poolKey] = await Promise.all([
+                        pamm.getNoId(marketId),
+                        pamm.poolKey(marketId, FEE_TIER)
+                    ]);
+                    const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+                        ['uint256', 'uint256', 'address', 'address', 'uint256'],
+                        [poolKey.id0, poolKey.id1, poolKey.token0, poolKey.token1, poolKey.feeOrHook]
+                    ));
+                    meta = { noId, poolKey, poolId };
+                    marketMetaCache.set(marketIdStr, meta);
+                }
 
                 // Store yesId and noId in currentTrade for swap functionality
-                // YES shares have ID = marketId, NO shares have ID from getNoId
                 currentTrade.yesId = marketId;
-                currentTrade.noId = noId;
-
-                // Compute pool ID (LP token ID) = keccak256(abi.encode(id0, id1, token0, token1, feeOrHook))
-                const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
-                    ['uint256', 'uint256', 'address', 'address', 'uint256'],
-                    [poolKey.id0, poolKey.id1, poolKey.token0, poolKey.token1, poolKey.feeOrHook]
-                ));
+                currentTrade.noId = meta.noId;
 
                 const [yesBal, noBal, lpBal, poolData] = await Promise.all([
                     pamm.balanceOf(connectedAddress, marketId),
-                    pamm.balanceOf(connectedAddress, noId),
-                    zamm.balanceOf(connectedAddress, poolId),
-                    zamm.pools(poolId)
+                    pamm.balanceOf(connectedAddress, meta.noId),
+                    zamm.balanceOf(connectedAddress, meta.poolId),
+                    zamm.pools(meta.poolId)
                 ]);
                 // poolData: [reserve0, reserve1, blockTimestampLast, price0CumulativeLast, price1CumulativeLast, kLast, supply]
-                currentUserPosition = { yesBalance: yesBal, noBalance: noBal, lpBalance: lpBal, poolId, lpTotalSupply: poolData[6] };
+                currentUserPosition = { yesBalance: yesBal, noBalance: noBal, lpBalance: lpBal, poolId: meta.poolId, lpTotalSupply: poolData[6] };
             } catch (e) {
                 console.error('Failed to load position:', e);
                 currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n };
@@ -4501,16 +5425,20 @@
             if (yesShares > 0 || noShares > 0) {
                 positionPnLEl.style.display = 'block';
 
+                // Use market-specific labels
+                const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+                const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+
                 // Determine the larger position
                 if (yesShares >= noShares) {
-                    positionOutcomeEl.textContent = currentTrade.isYes ? 'YES' : 'UP';
+                    positionOutcomeEl.textContent = yesLabel;
                     positionOutcomeEl.style.color = 'var(--green)';
                     const payout = yesShares;
                     const profit = payout - currentValue;
                     positionPayoutEl.textContent = `${payout.toFixed(4)} ETH`;
                     positionPayoutEl.style.color = profit >= 0 ? 'var(--green)' : 'var(--red)';
                 } else {
-                    positionOutcomeEl.textContent = currentTrade.isYes ? 'NO' : 'DOWN';
+                    positionOutcomeEl.textContent = noLabel;
                     positionOutcomeEl.style.color = 'var(--red)';
                     const payout = noShares;
                     const profit = payout - currentValue;
@@ -4538,37 +5466,45 @@
             document.getElementById('spreadOddsPct').textContent = '--';
             document.getElementById('spreadBidAsk').textContent = '-- / --';
             document.getElementById('spreadPct').textContent = '--%';
-            document.getElementById('orderbookShareType').textContent = isYes ? 'YES' : 'NO';
-            document.getElementById('spreadOutcome').textContent = isYes ? 'YES' : 'NO';
+            // Use UP/DOWN for comparison markets, YES/NO for extreme
+            const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+            document.getElementById('orderbookShareType').textContent = isYes ? yesLabel : noLabel;
+            document.getElementById('spreadOutcome').textContent = isYes ? yesLabel : noLabel;
             document.getElementById('orderbookTotalDepth').textContent = '--';
 
             try {
                 const rpc = provider || await getRpcProvider();
+                const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpc);
 
-                // Always fetch AMM pool price first (available even without PMRouter)
+                // Fetch pool state and orderbook in parallel for speed
+                const depth = 10;
+                const [poolStateResult, orderbookResult] = await Promise.all([
+                    pamm.getPoolState(marketId, FEE_TIER).catch(e => {
+                        console.warn('Could not get AMM price:', e);
+                        return null;
+                    }),
+                    pmRouter.getOrderbook(marketId, isYes, depth)
+                ]);
+
+                // Process pool state
                 let ammPrice = 0;
                 let rYesBigInt = 0n, rNoBigInt = 0n;
-                try {
-                    const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
-                    const [rYes, rNo, pYesNum, pYesDen] = await pamm.getPoolState(marketId, FEE_TIER);
+                if (poolStateResult) {
+                    const [rYes, rNo, pYesNum, pYesDen] = poolStateResult;
                     rYesBigInt = rYes;
                     rNoBigInt = rNo;
-                    // AMM price for YES = rNo / (rYes + rNo), for NO = rYes / (rYes + rNo)
                     ammPrice = isYes ?
                         Number(pYesNum) / Number(pYesDen) :
                         (Number(pYesDen) - Number(pYesNum)) / Number(pYesDen);
-                } catch (e) {
-                    console.warn('Could not get AMM price:', e);
                 }
 
                 currentOrderbook.ammPrice = ammPrice;
                 currentOrderbook.rYes = rYesBigInt;
                 currentOrderbook.rNo = rNoBigInt;
 
-                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpc);
-
-                const depth = 10; // Max orders per side
-                const [bidHashes, bidOrders, askHashes, askOrders] = await pmRouter.getOrderbook(marketId, isYes, depth);
+                const [bidHashes, bidOrders, askHashes, askOrders] = orderbookResult;
 
                 // Preserve rYes/rNo when updating orderbook
                 currentOrderbook = {
@@ -4644,11 +5580,11 @@
                 if (hasOrders) {
                     document.getElementById('orderbookTotalDepth').textContent = totalDepthEth > 0 ? formatSize(totalDepthEth) : '--';
                     depthInfo.style.display = 'block';
-                    titleText.innerHTML = `<span id="orderbookShareType">${isYes ? 'YES' : 'NO'}</span> Order Book`;
+                    titleText.innerHTML = `<span id="orderbookShareType">${isYes ? yesLabel : noLabel}</span> Order Book`;
                 } else {
                     // No orders - show simpler title
                     depthInfo.style.display = 'none';
-                    titleText.innerHTML = `<span id="orderbookShareType">${isYes ? 'YES' : 'NO'}</span> Pool`;
+                    titleText.innerHTML = `<span id="orderbookShareType">${isYes ? yesLabel : noLabel}</span> Pool`;
                 }
 
                 // Get user's address for highlighting their orders
@@ -4735,7 +5671,7 @@
                 if (ammPrice > 0) {
                     spreadMidPrice.textContent = ammPrice.toFixed(3) + ' ETH';
                     spreadOddsPct.textContent = (ammPrice * 100).toFixed(0) + '%';
-                    spreadOutcome.textContent = isYes ? 'YES' : 'NO';
+                    spreadOutcome.textContent = isYes ? yesLabel : noLabel;
                     spreadOutcome.style.color = isYes ? 'var(--green)' : 'var(--red)';
                 } else if (bestAsk && bestBid) {
                     const midPrice = (bestAsk + bestBid) / 2;
@@ -4915,6 +5851,11 @@
         let currentTradeDirection = 'buy';
         let currentSwapDirection = true; // true = YES→NO, false = NO→YES
 
+        // Store raw BigInt values for exact max operations (avoid rounding errors)
+        let tradeMaxRaw = null;
+        let swapMaxRaw = null;
+        let lpMaxRaw = null;
+
         function setTradeMode(mode) {
             currentTradeMode = mode;
 
@@ -5005,7 +5946,7 @@
             }
 
             loadBalance();
-            document.getElementById('tradeAmount').value = '';
+            document.getElementById('tradeAmount').value = '0.01';
             if (mode === 'trade') updatePreview();
             if (mode === 'swap') updateSwapPreview();
         }
@@ -5039,7 +5980,7 @@
             }
 
             loadBalance();
-            document.getElementById('tradeAmount').value = '';
+            document.getElementById('tradeAmount').value = '0.01';
             updatePreview();
         }
 
@@ -5077,7 +6018,7 @@
             }
 
             loadBalance();
-            document.getElementById('tradeAmount').value = '';
+            document.getElementById('tradeAmount').value = '0.01';
             if (!skipUpdate) updateSwapPreview();
         }
 
@@ -5109,7 +6050,7 @@
             }
 
             loadBalance();
-            document.getElementById('tradeAmount').value = '';
+            document.getElementById('tradeAmount').value = '0.01';
             updateLpPreview();
         }
 
@@ -5133,13 +6074,14 @@
             // Pool price (YES probability)
             const yesPrice = rYesNum > 0 && rNoNum > 0 ? rNoNum / (rYesNum + rNoNum) : 0.5;
 
-            // Display pool TVL and price
+            // Display pool TVL and price with market-specific label
+            const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
             if (rYes > 0n && rNo > 0n) {
                 document.getElementById('lpPoolReserves').textContent = formatEth(poolTvl);
-                document.getElementById('lpPoolPrice').textContent = yesPrice.toFixed(3) + ' (' + formatOdds(yesPrice) + ' YES)';
+                document.getElementById('lpPoolPrice').textContent = yesPrice.toFixed(3) + ' (' + formatOdds(yesPrice) + ' ' + yesLabel + ')';
             } else {
                 document.getElementById('lpPoolReserves').textContent = '--';
-                document.getElementById('lpPoolPrice').textContent = '-- (--% YES)';
+                document.getElementById('lpPoolPrice').textContent = '-- (--% ' + yesLabel + ')';
             }
 
             // Current user position value and share
@@ -5344,7 +6286,8 @@
             }
 
             // Validate user has enough shares to swap
-            const amtWei = ethers.parseEther(amt.toString());
+            // Use raw max value if available (from Max button), otherwise parse input
+            const amtWei = swapMaxRaw || ethers.parseEther(amt.toString());
             const sourceBalance = currentSwapDirection ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
             if (!sourceBalance || amtWei > sourceBalance) {
                 const available = sourceBalance ? parseFloat(ethers.formatEther(sourceBalance)).toFixed(4) : '0';
@@ -5372,7 +6315,7 @@
                 }
 
                 const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, signer);
-                const amtWei = ethers.parseEther(amt.toString());
+                // amtWei already declared above for balance validation
 
                 // Get market IDs from current trade
                 const yesId = BigInt(currentTrade.yesId);
@@ -5420,7 +6363,7 @@
                         success: { title: 'Swap Complete!', body: `Swapped ${amt.toFixed(4)} ${fromLabel} → ${expectedOut.toFixed(4)} ${toLabel}` },
                         error: { title: 'Swap Failed', body: '' },
                         onSuccess: async () => {
-                            document.getElementById('tradeAmount').value = '';
+                            document.getElementById('tradeAmount').value = '0.01';
                             updateSwapPreview();
                             await loadUserPosition(currentTrade.marketId);
                             await loadOrderbook(currentTrade.marketId, currentTrade.isYes);
@@ -5434,6 +6377,7 @@
                 }
             } finally {
                 submitBtn.disabled = false;
+                swapMaxRaw = null; // Clear max flag
             }
         }
 
@@ -5442,6 +6386,12 @@
             mintKeepYes = keepYes;
             const keepYesBtn = document.getElementById('keepYesBtn');
             const keepNoBtn = document.getElementById('keepNoBtn');
+
+            // Use market-specific labels
+            const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+            keepYesBtn.textContent = 'Keep ' + yesLabel;
+            keepNoBtn.textContent = 'Keep ' + noLabel;
 
             if (keepYes) {
                 keepYesBtn.className = 'lp-toggle-btn active-add';
@@ -5457,11 +6407,14 @@
             const amt = parseFloat(document.getElementById('tradeAmount').value) || 0;
             const limitPrice = parseFloat(document.getElementById('mintLimitPrice').value) || 0;
 
-            const keepLabel = mintKeepYes ? 'YES' : 'NO';
-            const sellLabel = mintKeepYes ? 'NO' : 'YES';
+            // Use market-specific labels
+            const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+            const keepLabel = mintKeepYes ? yesLabel : noLabel;
+            const sellLabel = mintKeepYes ? noLabel : yesLabel;
 
             document.getElementById('mintDeposit').textContent = amt > 0 ? amt.toFixed(4) + ' ETH' : '-- ETH';
-            document.getElementById('mintReceive').textContent = amt > 0 ? amt.toFixed(4) + ' YES + ' + amt.toFixed(4) + ' NO' : '-- YES + -- NO';
+            document.getElementById('mintReceive').textContent = amt > 0 ? amt.toFixed(4) + ' ' + yesLabel + ' + ' + amt.toFixed(4) + ' ' + noLabel : '-- ' + yesLabel + ' + -- ' + noLabel;
             document.getElementById('mintKeep').textContent = amt > 0 ? amt.toFixed(4) + ' ' + keepLabel : '-- ' + keepLabel;
 
             if (amt > 0 && limitPrice > 0) {
@@ -5540,7 +6493,9 @@
                     true // partialFill
                 ]);
 
-                const keepSide = mintKeepYes ? 'YES' : 'NO';
+                const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+                const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+                const keepSide = mintKeepYes ? yesLabel : noLabel;
                 await monitorTransaction(
                     pmRouter.multicall([splitData, placeOrderData], { value: amountWei }),
                     {
@@ -5551,7 +6506,7 @@
                         onSuccess: async () => {
                             await loadUserPosition(currentTrade.marketId);
                             await loadOrderbook(currentTrade.marketId, currentTrade.isYes);
-                            document.getElementById('tradeAmount').value = '';
+                            document.getElementById('tradeAmount').value = '0.01';
                             document.getElementById('mintLimitPrice').value = '';
                             updateMintPreview();
                         }
@@ -5585,7 +6540,9 @@
                     // Sell order: need shares
                     const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
                     balEl.textContent = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
-                    unitEl.textContent = currentTrade.isYes ? 'YES' : 'NO';
+                    const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+                    const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+                    unitEl.textContent = currentTrade.isYes ? yesLabel : noLabel;
                 }
             } catch (e) {
                 balEl.textContent = '--';
@@ -5687,7 +6644,9 @@
             const shares = parseFloat(document.getElementById('limitShares').value) || 0;
             const ammPrice = currentOrderbook.ammPrice || 0;
 
-            const label = currentTrade.isYes ? 'YES' : 'NO';
+            const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+            const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+            const label = currentTrade.isYes ? yesLabel : noLabel;
             const oddsHelper = document.getElementById('limitOddsHelper');
             const oddsValue = document.getElementById('limitOddsValue');
             const oddsVsPool = document.getElementById('limitOddsVsPool');
@@ -5874,29 +6833,31 @@
 
                 const orderHashes = await pmRouter.getUserOrderHashes(connectedAddress, 0, 50);
 
-                // Fetch order details and filter for current market
+                // Fetch order details in parallel for speed
+                const orderPromises = orderHashes.map(hash =>
+                    pmRouter.orders(hash).then(order => ({ hash, order })).catch(() => null)
+                );
+                const orderResults = await Promise.all(orderPromises);
+
+                // Filter for current market
                 const orders = [];
-                for (const hash of orderHashes) {
-                    try {
-                        const order = await pmRouter.orders(hash);
-                        // Filter: same market AND (order not fully filled, i.e., owner still set)
-                        if (order.owner !== ethers.ZeroAddress &&
-                            order.marketId.toString() === currentTrade.marketId.toString()) {
-                            // Convert ethers Result to plain object
-                            orders.push({
-                                hash,
-                                owner: order.owner,
-                                deadline: order.deadline,
-                                isYes: order.isYes,
-                                isBuy: order.isBuy,
-                                partialFill: order.partialFill,
-                                shares: order.shares,
-                                collateral: order.collateral,
-                                marketId: order.marketId
-                            });
-                        }
-                    } catch (e) {
-                        // Order might be cancelled/filled
+                for (const result of orderResults) {
+                    if (!result) continue;
+                    const { hash, order } = result;
+                    // Filter: same market AND (order not fully filled, i.e., owner still set)
+                    if (order.owner !== ethers.ZeroAddress &&
+                        order.marketId.toString() === currentTrade.marketId.toString()) {
+                        orders.push({
+                            hash,
+                            owner: order.owner,
+                            deadline: order.deadline,
+                            isYes: order.isYes,
+                            isBuy: order.isBuy,
+                            partialFill: order.partialFill,
+                            shares: order.shares,
+                            collateral: order.collateral,
+                            marketId: order.marketId
+                        });
                     }
                 }
 
@@ -5914,7 +6875,9 @@
                     const price = shares > 0 ? collateral / shares : 0;
                     const side = o.isBuy ? 'BUY' : 'SELL';
                     const sideColor = o.isBuy ? 'var(--green)' : 'var(--red)';
-                    const shareType = o.isYes ? 'YES' : 'NO';
+                    const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+                    const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+                    const shareType = o.isYes ? yesLabel : noLabel;
                     const isCurrentSide = o.isYes === currentTrade.isYes;
 
                     // Smart formatting for shares - show more decimals for small values
@@ -5983,6 +6946,7 @@
                         try {
                             const bal = await provider.getBalance(connectedAddress);
                             const maxBal = bal > ethers.parseEther('0.01') ? bal - ethers.parseEther('0.01') : bal;
+                            lpMaxRaw = maxBal; // Store exact value
                             document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(maxBal)).toFixed(4);
                             updateLpPreview();
                         } catch (e) {
@@ -5991,12 +6955,15 @@
                     }
                 } else {
                     // Set max LP tokens for removing
-                    document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(currentUserPosition.lpBalance)).toFixed(4);
+                    const lpBal = currentUserPosition.lpBalance || 0n;
+                    lpMaxRaw = lpBal; // Store exact value
+                    document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(lpBal)).toFixed(4);
                     updateLpPreview();
                 }
             } else if (currentTradeMode === 'swap') {
                 // Set max shares for swap (YES if YES→NO, NO if NO→YES)
                 const sharesBal = currentSwapDirection ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                swapMaxRaw = sharesBal || 0n; // Store exact value
                 document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
                 updateSwapPreview();
             } else if (currentTradeMode === 'trade') {
@@ -6006,6 +6973,7 @@
                         try {
                             const bal = await provider.getBalance(connectedAddress);
                             const maxBal = bal > ethers.parseEther('0.01') ? bal - ethers.parseEther('0.01') : bal;
+                            tradeMaxRaw = maxBal; // Store exact value
                             document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(maxBal)).toFixed(4);
                             updatePreview();
                         } catch (e) {
@@ -6015,6 +6983,7 @@
                 } else {
                     // Set max shares for sell
                     const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                    tradeMaxRaw = sharesBal || 0n; // Store exact value
                     document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
                     updatePreview();
                 }
@@ -6024,6 +6993,7 @@
                     try {
                         const bal = await provider.getBalance(connectedAddress);
                         const maxBal = bal > ethers.parseEther('0.01') ? bal - ethers.parseEther('0.01') : bal;
+                        tradeMaxRaw = maxBal; // Store exact value
                         document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(maxBal)).toFixed(4);
                         updateMintPreview();
                     } catch (e) {
@@ -6033,6 +7003,7 @@
             } else {
                 // Legacy fallback
                 const sharesBal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
+                tradeMaxRaw = sharesBal || 0n; // Store exact value
                 document.getElementById('tradeAmount').value = parseFloat(ethers.formatEther(sharesBal || 0n)).toFixed(4);
                 updatePreview();
             }
@@ -6051,7 +7022,8 @@
 
             try {
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
-                const amtWei = ethers.parseEther(amt.toString());
+                // Use raw max value if available (from Max button), otherwise parse input
+                const amtWei = lpMaxRaw || ethers.parseEther(amt.toString());
 
                 // 1% slippage protection for LP operations
                 const lpSlippage = 0.01;
@@ -6120,13 +7092,23 @@
 
             } catch (e) {
                 // monitorTransaction handles errors, but catch user rejection before tx submission
-                if (!isUserRejection(e)) {
+                if (isUserRejection(e)) {
+                    showStatus('', ''); // Clear status on user rejection
+                } else {
                     console.error('LP operation failed:', e);
+                    showStatus('LP operation failed', 'error');
                 }
+            } finally {
+                lpMaxRaw = null; // Clear max flag
             }
         }
 
         function handleTradeInput() {
+            // Clear raw max values when user manually edits input
+            tradeMaxRaw = null;
+            swapMaxRaw = null;
+            lpMaxRaw = null;
+
             if (currentTradeMode === 'lp') {
                 updateLpPreview();
             } else if (currentTradeMode === 'swap') {
@@ -6238,7 +7220,9 @@
 
                 // Show implied odds
                 document.getElementById('previewOddsRow').style.display = 'flex';
-                document.getElementById('previewOdds').textContent = impliedOdds.toFixed(1) + '% ' + (currentTrade.isYes ? 'YES' : 'NO');
+                const yesLabel = currentTrade.type === 'extreme' ? 'YES' : 'UP';
+                const noLabel = currentTrade.type === 'extreme' ? 'NO' : 'DOWN';
+                document.getElementById('previewOdds').textContent = impliedOdds.toFixed(1) + '% ' + (currentTrade.isYes ? yesLabel : noLabel);
             } else {
                 // Sell: spend shares, receive ETH
                 const effectivePrice = execution.totalOutput / amt;
@@ -6325,25 +7309,33 @@
             if (isBuy) {
                 // For buying: we look at asks (sell orders), sorted by price ascending (cheapest first)
                 allOrders = (currentOrderbook.asks || [])
-                    .map(o => ({
-                        price: Number(o.collateral) / Number(o.shares),
-                        shares: Number(o.shares) / 1e18,
-                        collateral: Number(o.collateral) / 1e18,
-                        hash: o.hash,
-                        remaining: Number(o.collateral) / 1e18 // ETH needed to fill
-                    }))
+                    .map(o => {
+                        // Use BigInt arithmetic with 1e18 scaling for precision
+                        const priceScaled = o.shares > 0n ? (o.collateral * BigInt(1e18)) / o.shares : 0n;
+                        return {
+                            price: Number(priceScaled) / 1e18,
+                            shares: Number(o.shares) / 1e18,
+                            collateral: Number(o.collateral) / 1e18,
+                            hash: o.hash,
+                            remaining: Number(o.collateral) / 1e18 // ETH needed to fill
+                        };
+                    })
                     .filter(o => o.price > 0 && o.shares > 0)
                     .sort((a, b) => a.price - b.price);
             } else {
                 // For selling: we look at bids (buy orders), sorted by price descending (best first)
                 allOrders = (currentOrderbook.bids || [])
-                    .map(o => ({
-                        price: Number(o.collateral) / Number(o.shares),
-                        shares: Number(o.shares) / 1e18,
-                        collateral: Number(o.collateral) / 1e18,
-                        hash: o.hash,
-                        remaining: Number(o.shares) / 1e18 // Shares they want to buy
-                    }))
+                    .map(o => {
+                        // Use BigInt arithmetic with 1e18 scaling for precision
+                        const priceScaled = o.shares > 0n ? (o.collateral * BigInt(1e18)) / o.shares : 0n;
+                        return {
+                            price: Number(priceScaled) / 1e18,
+                            shares: Number(o.shares) / 1e18,
+                            collateral: Number(o.collateral) / 1e18,
+                            hash: o.hash,
+                            remaining: Number(o.shares) / 1e18 // Shares they want to buy
+                        };
+                    })
                     .filter(o => o.price > 0 && o.shares > 0)
                     .sort((a, b) => b.price - a.price);
             }
@@ -6488,7 +7480,7 @@
             }
 
             // Calculate effective AMM price
-            if (result.ammInput > 0) {
+            if (result.ammInput > 0 && result.ammOutput > 0) {
                 result.ammEffectivePrice = result.ammInput / result.ammOutput;
             }
 
@@ -6513,7 +7505,8 @@
                 showStatus('Preparing...', 'pending');
 
                 const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
-                const amtWei = ethers.parseEther(amt.toString());
+                // Use raw max value if available (from Max button), otherwise parse input
+                const amtWei = tradeMaxRaw || ethers.parseEther(amt.toString());
 
                 const ammPrice = currentOrderbook.ammPrice || 0;
                 const rYes = currentOrderbook.rYes || 0n;
@@ -6610,9 +7603,14 @@
 
             } catch (e) {
                 // monitorTransaction handles errors, but catch user rejection before tx submission
-                if (!isUserRejection(e)) {
+                if (isUserRejection(e)) {
+                    showStatus('', ''); // Clear status on user rejection
+                } else {
                     console.error('Trade failed:', e);
+                    showStatus('Transaction failed', 'error');
                 }
+            } finally {
+                tradeMaxRaw = null; // Clear max flag
             }
         }
 
@@ -6847,14 +7845,6 @@
             return numerator / denominator;
         }
 
-        // AMM reverse calculation (matches ZAMM._getAmountIn)
-        function getAmountIn(amountOut, reserveIn, reserveOut, feeBps = 30n) {
-            if (amountOut === 0n || reserveIn === 0n || amountOut >= reserveOut) return 0n;
-            const numerator = reserveIn * amountOut * 10000n;
-            const denominator = (reserveOut - amountOut) * (10000n - feeBps);
-            return (numerator / denominator) + 1n;
-        }
-
         // Quote buying YES shares with collateral
         // PAMM buyYes: split collateral → YES + NO, then swap NO → YES
         function quoteBuyYes(collateralIn, rYes, rNo, feeBps = 30n) {
@@ -6928,6 +7918,80 @@
                 return pct.toFixed(1) + '%';
             }
             return price.toFixed(4);
+        }
+
+        // Toggle chart visibility in market cards
+        async function toggleChart(type) {
+            const toggle = document.getElementById(`${type}ChartToggle`);
+            const container = document.getElementById(`${type}ChartContainer`);
+            if (!toggle || !container) return;
+
+            const isOpen = container.classList.contains('open');
+
+            if (isOpen) {
+                // Close chart
+                container.classList.remove('open');
+                toggle.classList.remove('active');
+            } else {
+                // Open chart
+                toggle.classList.add('active');
+                container.classList.add('open');
+
+                // Load chart if not already loaded
+                if (!chartLoaded.has(type)) {
+                    container.innerHTML = '<div class="card-chart-loading">Loading chart...</div>';
+
+                    try {
+                        const market = markets[type];
+                        if (!market || !market.id) {
+                            container.innerHTML = '<div class="card-chart-loading" style="color:var(--text-dim);">No active market</div>';
+                            return;
+                        }
+
+                        // Get or compute poolId
+                        let poolId = chartPoolIds.get(type);
+                        if (!poolId) {
+                            const rpc = provider || await getRpcProvider();
+                            const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
+                            const poolKey = await pamm.poolKey(market.id, FEE_TIER);
+                            poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+                                ['uint256', 'uint256', 'address', 'address', 'uint256'],
+                                [poolKey.id0, poolKey.id1, poolKey.token0, poolKey.token1, poolKey.feeOrHook]
+                            ));
+                            chartPoolIds.set(type, poolId);
+                        }
+
+                        // Convert poolId to decimal string for ZAMM embed
+                        const poolIdDecimal = BigInt(poolId).toString();
+
+                        // Type labels
+                        const typeLabels = {
+                            hourly: 'Hourly',
+                            daily: 'Daily',
+                            weekly: 'Weekly',
+                            extreme: 'Extreme'
+                        };
+
+                        container.innerHTML = `
+                            <div class="card-chart-header">
+                                <span class="card-chart-title">${typeLabels[type] || type} YES/NO Prices</span>
+                                <button class="card-chart-expand" onclick="openOddsModal('${type}')">
+                                    <span>⛶</span> Expand
+                                </button>
+                            </div>
+                            <iframe
+                                src="https://www.zamm.finance/embed/pool/${poolIdDecimal}?theme=dark"
+                                title="ZAMM Pool Chart - ${type}"
+                                loading="lazy"
+                                allowfullscreen
+                            ></iframe>`;
+                        chartLoaded.add(type);
+                    } catch (e) {
+                        console.error('Failed to load chart:', e);
+                        container.innerHTML = '<div class="card-chart-loading" style="color:var(--red);">Failed to load chart</div>';
+                    }
+                }
+            }
         }
 
         /**

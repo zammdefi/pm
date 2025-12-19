@@ -218,8 +218,15 @@
 
         .bets-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            grid-template-columns: 1fr;
             gap: 1rem;
+        }
+
+        .market-row {
+            display: grid;
+            grid-template-columns: minmax(320px, 400px) 1fr;
+            gap: 1rem;
+            align-items: start;
         }
 
         .bet-card {
@@ -235,6 +242,45 @@
 
         .bet-card.resolved {
             opacity: 0.7;
+        }
+
+        .inline-orderbook {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 1rem;
+            min-height: 300px;
+        }
+
+        .inline-orderbook-header {
+            display: grid;
+            grid-template-columns: 1fr 56px 1fr;
+            gap: 0;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .inline-orderbook-ladder {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .inline-ob-cell {
+            transition: background 0.15s ease;
+        }
+
+        .inline-ob-cell:hover {
+            background: rgba(255, 255, 255, 0.08) !important;
+        }
+
+        .inline-ob-yes:hover {
+            background: rgba(0, 200, 83, 0.15) !important;
+        }
+
+        .inline-ob-no:hover {
+            background: rgba(255, 82, 82, 0.15) !important;
         }
 
         .bet-header {
@@ -364,20 +410,26 @@
 
         .bet-btn {
             padding: 0.75rem 0.5rem;
-            background: transparent;
-            border: 1px solid var(--border);
+            background: var(--surface);
+            border: 2px solid var(--border);
             border-radius: var(--radius);
             cursor: pointer;
             text-align: center;
             transition: all 0.15s;
         }
 
-        .bet-btn:hover { background: var(--surface-2); }
+        .bet-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 
-        .bet-btn.yes { border-color: var(--green); }
-        .bet-btn.yes:hover { background: var(--green-dim); }
-        .bet-btn.no { border-color: var(--red); }
-        .bet-btn.no:hover { background: var(--red-dim); }
+        .bet-btn.yes { border-color: var(--green); background: var(--green-dim); }
+        .bet-btn.yes:hover { background: var(--green); }
+        .bet-btn.yes:hover .bet-btn-label,
+        .bet-btn.yes:hover .bet-btn-odds,
+        .bet-btn.yes:hover .bet-btn-price { color: var(--bg); }
+        .bet-btn.no { border-color: var(--red); background: var(--red-dim); }
+        .bet-btn.no:hover { background: var(--red); }
+        .bet-btn.no:hover .bet-btn-label,
+        .bet-btn.no:hover .bet-btn-odds,
+        .bet-btn.no:hover .bet-btn-price { color: var(--bg); }
 
         .bet-btn-label {
             font-size: var(--font-xs);
@@ -721,6 +773,21 @@
 
         .info-text strong { color: var(--text); }
 
+        /* CHART */
+        .chart-container {
+            background: var(--surface);
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .chart-container iframe {
+            display: block;
+            width: 100%;
+            height: 400px;
+            border: none;
+        }
+
         /* EMPTY STATE */
         .empty-state {
             text-align: center;
@@ -741,6 +808,7 @@
             .bets-section, .create-section, .info-section { padding: 1rem; }
             .hero-section { padding: 1rem; }
             .treasury-display { padding: 0.75rem 1rem; }
+            .chart-container iframe { height: 350px; }
             .modal {
                 margin: 0.5rem;
                 padding: 0.75rem;
@@ -760,6 +828,9 @@
                 margin-top: 0.5rem;
             }
             .bets-grid { grid-template-columns: 1fr; }
+            .market-row { grid-template-columns: 1fr; }
+            .inline-orderbook { min-height: 200px; }
+            .chart-container iframe { height: 280px; }
             /* Trade modal position info - stack on mobile */
             #tradeMarketInfo > div { flex-direction: column; gap: 0.5rem; }
             #tradeMarketInfo > div > div:last-child { text-align: left; }
@@ -773,7 +844,7 @@
 
         @media (max-width: 380px) {
             /* Extra small screens */
-            .bet-buttons { flex-direction: column; gap: 0.5rem; }
+            .bet-buttons { grid-template-columns: 1fr; gap: 0.5rem; }
             .bet-btn { width: 100%; }
             /* Depth ladder - narrower center column */
             #depthLadder > div { grid-template-columns: 1fr 44px 1fr !important; }
@@ -799,8 +870,12 @@
                 <div class="live-stat-value blue" id="marketCount">0</div>
             </div>
             <div class="live-stat">
-                <div class="live-stat-label">TVL</div>
+                <div class="live-stat-label">Pool TVL</div>
                 <div class="live-stat-value green" id="totalTvl">--</div>
+            </div>
+            <div class="live-stat">
+                <div class="live-stat-label">Book TVL</div>
+                <div class="live-stat-value" style="color:#f59e0b;" id="orderbookTvl">--</div>
             </div>
         </div>
         <button class="btn" id="connectBtn" onclick="connectWallet()">Connect</button>
@@ -828,6 +903,19 @@
                         CryptoPunks <span style="opacity:0.5;">↗</span>
                     </a>
                 </div>
+            </div>
+        </section>
+
+        <!-- Chart Section -->
+        <section class="bets-section" style="padding-bottom:0;">
+            <h2 class="section-title">Odds <span id="featuredOdds" style="font-weight:400;color:var(--text-muted);font-size:var(--font-sm);">--</span></h2>
+            <div class="chart-container">
+                <iframe
+                    src="https://www.zamm.finance/embed/pool/39414537111466279853124615553549368953361141359364927629160955167830963634860?theme=dark"
+                    title="ZAMM Pool Chart"
+                    loading="lazy"
+                    allowfullscreen
+                ></iframe>
             </div>
         </section>
 
@@ -1013,7 +1101,7 @@
                             <button id="tradeMaxBtn" onclick="setTradeMax()" style="display:none;padding:0.25rem 0.5rem;background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius);color:var(--red);font-weight:600;font-size:10px;cursor:pointer;">Max</button>
                         </span>
                     </div>
-                    <input type="number" class="trade-input" id="tradeAmount" placeholder="0.1" step="0.01" min="0" oninput="handleTradeInput()">
+                    <input type="number" class="trade-input" id="tradeAmount" value="0.01" step="0.01" min="0" oninput="handleTradeInput()">
                 </div>
                 <div class="trade-preview">
                     <div class="trade-preview-row">
@@ -1166,7 +1254,7 @@
                         <span>Balance: <span id="limitBalance">--</span></span>
                     </div>
                     <div style="display:flex;gap:4px;">
-                        <input type="number" class="trade-input" id="limitAmount" placeholder="0.1" step="0.01" min="0" oninput="limitMaxRaw=null;updateLimitPreview()" style="flex:1;">
+                        <input type="number" class="trade-input" id="limitAmount" value="0.01" step="0.01" min="0" oninput="limitMaxRaw=null;updateLimitPreview()" style="flex:1;">
                         <button onclick="setLimitMax()" style="padding:0.5rem 1rem;background:var(--surface-2);border:1px solid #8b5cf6;border-radius:var(--radius);color:#8b5cf6;font-weight:600;font-size:var(--font-xs);cursor:pointer;">Max</button>
                     </div>
                 </div>
@@ -1232,9 +1320,9 @@
                 </div>
                 <!-- Legend -->
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:9px;color:var(--text-dim);">
-                    <span><span style="color:var(--green);">■</span> Bids</span>
-                    <span>Click row to fill | <span style="color:var(--blue);">AMM</span> = pool</span>
-                    <span><span style="color:var(--red);">■</span> Asks</span>
+                    <span><span style="color:var(--green);">■</span> Bids (buy)</span>
+                    <span>Depth in ETH | Click to fill</span>
+                    <span><span style="color:var(--red);">■</span> Asks (sell)</span>
                 </div>
             </div>
         </div>
@@ -1363,7 +1451,7 @@
         let swapSlippage = 0.5; // 0.5%
 
         // User position state
-        let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n };
+        let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n, lpTotalSupply: null };
 
         // Orderbook state - stores both YES and NO orderbooks
         let currentOrderbook = {
@@ -1577,9 +1665,10 @@
                     const noId = noIdResults[i];
 
                     let yesOdds = 50;
+                    let rYes = 0n, rNo = 0n;
                     if (poolState) {
-                        const rYes = poolState.rYes;
-                        const rNo = poolState.rNo;
+                        rYes = poolState.rYes;
+                        rNo = poolState.rNo;
                         if (rYes + rNo > 0n) {
                             yesOdds = Number(rNo * 100n / (rYes + rNo));
                         }
@@ -1598,6 +1687,8 @@
                         id: m.marketId,
                         noId: noId,
                         poolId: poolId,
+                        rYes: rYes,
+                        rNo: rNo,
                         description: m.description,
                         resolved: m.resolved,
                         outcome: m.outcome,
@@ -1629,6 +1720,14 @@
                 document.getElementById('resolvedCount').textContent = resolved.length;
                 document.getElementById('totalTvl').textContent = formatEth(totalTvl) + ' ETH';
 
+                // Update featured odds (first active market, or first market if all resolved)
+                const featuredMarket = active[0] || markets[0];
+                if (featuredMarket) {
+                    const yesOdds = featuredMarket.yesOdds;
+                    const noOdds = 100 - yesOdds;
+                    document.getElementById('featuredOdds').textContent = `YES ${yesOdds}% / NO ${noOdds}%`;
+                }
+
                 renderMarkets(markets);
 
             } catch (error) {
@@ -1656,6 +1755,24 @@
             }
 
             grid.innerHTML = markets.map(m => renderMarketCard(m)).join('');
+
+            // Load orderbook for first active market to populate inline view
+            const activeMarket = markets.find(m => !m.resolved);
+            if (activeMarket) {
+                loadInlineOrderbook(activeMarket);
+            }
+        }
+
+        async function loadInlineOrderbook(market) {
+            // Set minimal currentTrade data needed for orderbook loading
+            currentTrade.marketId = market.id;
+            currentTrade.yesId = market.id;
+            currentTrade.noId = market.noId;
+            currentTrade.rYes = market.rYes || 0n;
+            currentTrade.rNo = market.rNo || 0n;
+            currentTrade.isYes = true;
+
+            await loadOrderbook();
         }
 
         function renderMarketCard(market) {
@@ -1678,6 +1795,7 @@
             const noOdds = 100 - market.yesOdds;
 
             return `
+                <div class="market-row">
                 <div class="bet-card ${market.resolved ? 'resolved' : ''}">
                     <div class="bet-header">
                         <span class="bet-type">PNKSTR</span>
@@ -1716,14 +1834,14 @@
                         </div>
                         <div class="bet-buttons">
                             <button class="bet-btn yes" onclick="openTrade('${market.id}', true)">
-                                <div class="bet-btn-label">Yes</div>
+                                <div class="bet-btn-label">Buy Yes</div>
                                 <div class="bet-btn-odds">${market.yesOdds}%</div>
-                                <div class="bet-btn-price">${(market.yesOdds / 100).toFixed(2)} ETH</div>
+                                <div class="bet-btn-price">${(market.yesOdds / 100).toFixed(2)} ETH/share</div>
                             </button>
                             <button class="bet-btn no" onclick="openTrade('${market.id}', false)">
-                                <div class="bet-btn-label">No</div>
+                                <div class="bet-btn-label">Buy No</div>
                                 <div class="bet-btn-odds">${noOdds}%</div>
-                                <div class="bet-btn-price">${(noOdds / 100).toFixed(2)} ETH</div>
+                                <div class="bet-btn-price">${(noOdds / 100).toFixed(2)} ETH/share</div>
                             </button>
                         </div>
                     ` : `
@@ -1751,6 +1869,30 @@
                     ${market.ready && !market.resolved ? `
                         <button class="resolve-btn" onclick="resolveMarket('${market.id}')">Resolve Market</button>
                     ` : ''}
+                </div>
+                ${!market.resolved ? `
+                <div class="inline-orderbook" id="inlineOrderbook-${market.id}">
+                    <div class="inline-orderbook-header">
+                        <div style="text-align:center;">
+                            <div style="font-weight:700;color:var(--green);font-size:13px;">YES</div>
+                            <div style="font-size:10px;color:var(--text-dim);" id="inlineYesAmm-${market.id}">--</div>
+                        </div>
+                        <div style="text-align:center;font-size:9px;color:var(--text-dim);display:flex;align-items:center;justify-content:center;">Odds</div>
+                        <div style="text-align:center;">
+                            <div style="font-weight:700;color:var(--red);font-size:13px;">NO</div>
+                            <div style="font-size:10px;color:var(--text-dim);" id="inlineNoAmm-${market.id}">--</div>
+                        </div>
+                    </div>
+                    <div class="inline-orderbook-ladder" id="inlineLadder-${market.id}">
+                        <div style="text-align:center;color:var(--text-dim);padding:2rem;font-size:11px;">Loading orderbook...</div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:9px;color:var(--text-dim);">
+                        <span><span style="color:var(--green);">■</span> Bids</span>
+                        <span>Depth in ETH | Click to trade</span>
+                        <span><span style="color:var(--red);">■</span> Asks</span>
+                    </div>
+                </div>
+                ` : '<div></div>'}
                 </div>
             `;
         }
@@ -1789,10 +1931,12 @@
                 if (!seenNames.has(info.name.toLowerCase())) {
                     const safeName = (info.name || 'Unknown').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
                     const iconUrl = info.icon && (info.icon.startsWith('data:') || info.icon.startsWith('https://')) ? info.icon : null;
+                    // Escape URL to prevent XSS via attribute injection
+                    const safeIconUrl = iconUrl ? iconUrl.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])) : null;
                     detected.push({
                         key: `eip6963_${uuid}`,
                         name: safeName,
-                        icon: iconUrl ? `<img src="${iconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
+                        icon: safeIconUrl ? `<img src="${safeIconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
                         getProvider: () => provider
                     });
                     seenNames.add(info.name.toLowerCase());
@@ -1952,6 +2096,7 @@
                     showToast('Connection Failed', error.message || 'Could not connect wallet', 'error');
                 }
                 connectBtn.textContent = originalText;
+                connectBtn.classList.remove('connected');
             } finally {
                 connectBtn.disabled = false;
                 isConnecting = false;
@@ -2070,10 +2215,22 @@
             await loadBalance();
 
             document.getElementById('tradeModal').classList.add('active');
+
+            // Trigger preview with default amount
+            handleTradeInput();
         }
 
         function closeTradeModal() {
             document.getElementById('tradeModal').classList.remove('active');
+        }
+
+        // Open trade modal with limit tab pre-filled (for inline orderbook clicks)
+        async function openTradeWithPrice(marketId, isYes, price) {
+            await openTrade(marketId, isYes);
+            // Switch to limit mode and pre-fill price
+            setTradeMode('limit');
+            document.getElementById('limitPrice').value = price.toFixed(2);
+            updateLimitPreview();
         }
 
         // View market depth without opening trade modal
@@ -2307,28 +2464,32 @@
         }
 
         async function setLimitMax() {
-            if (limitIsBuy) {
-                // For buys, max is ETH balance
-                if (!connectedAddress) return;
-                const rpc = await getReadProvider();
-                const bal = await rpc.getBalance(connectedAddress);
-                if (bal > 0n) {
-                    // Leave a little for gas (0.001 ETH)
-                    const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
-                    limitMaxRaw = maxBal;
-                    document.getElementById('limitAmount').value = ethers.formatEther(maxBal);
-                    updateLimitPreview();
+            try {
+                if (limitIsBuy) {
+                    // For buys, max is ETH balance
+                    if (!connectedAddress) return;
+                    const rpc = await getReadProvider();
+                    const bal = await rpc.getBalance(connectedAddress);
+                    if (bal > 0n) {
+                        // Leave a little for gas (0.001 ETH)
+                        const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
+                        limitMaxRaw = maxBal;
+                        document.getElementById('limitAmount').value = ethers.formatEther(maxBal);
+                        updateLimitPreview();
+                    }
+                } else {
+                    // For sells, max is share balance (YES or NO based on currentTrade.isYes)
+                    const balance = currentTrade.isYes
+                        ? currentUserPosition.yesBalance
+                        : currentUserPosition.noBalance;
+                    if (balance && balance > 0n) {
+                        limitMaxRaw = balance;
+                        document.getElementById('limitAmount').value = ethers.formatEther(balance);
+                        updateLimitPreview();
+                    }
                 }
-            } else {
-                // For sells, max is share balance (YES or NO based on currentTrade.isYes)
-                const balance = currentTrade.isYes
-                    ? currentUserPosition.yesBalance
-                    : currentUserPosition.noBalance;
-                if (balance && balance > 0n) {
-                    limitMaxRaw = balance;
-                    document.getElementById('limitAmount').value = ethers.formatEther(balance);
-                    updateLimitPreview();
-                }
+            } catch (e) {
+                // Silently fail - max button just won't work
             }
         }
 
@@ -2361,25 +2522,29 @@
         }
 
         async function setLpMax() {
-            if (currentLpMode === 'add') {
-                // For add, max is ETH balance (leave some for gas)
-                if (!connectedAddress) return;
-                const rpc = await getReadProvider();
-                const bal = await rpc.getBalance(connectedAddress);
-                if (bal > 0n) {
-                    const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
-                    lpMaxRaw = maxBal;
-                    document.getElementById('lpAmount').value = ethers.formatEther(maxBal);
-                    updateLpPreview();
+            try {
+                if (currentLpMode === 'add') {
+                    // For add, max is ETH balance (leave some for gas)
+                    if (!connectedAddress) return;
+                    const rpc = await getReadProvider();
+                    const bal = await rpc.getBalance(connectedAddress);
+                    if (bal > 0n) {
+                        const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
+                        lpMaxRaw = maxBal;
+                        document.getElementById('lpAmount').value = ethers.formatEther(maxBal);
+                        updateLpPreview();
+                    }
+                } else {
+                    // For remove, max is LP balance
+                    const lpBal = currentUserPosition.lpBalance;
+                    if (lpBal && lpBal > 0n) {
+                        lpMaxRaw = lpBal;
+                        document.getElementById('lpAmount').value = ethers.formatEther(lpBal);
+                        updateLpPreview();
+                    }
                 }
-            } else {
-                // For remove, max is LP balance
-                const lpBal = currentUserPosition.lpBalance;
-                if (lpBal && lpBal > 0n) {
-                    lpMaxRaw = lpBal;
-                    document.getElementById('lpAmount').value = ethers.formatEther(lpBal);
-                    updateLpPreview();
-                }
+            } catch (e) {
+                // Silently fail - max button just won't work
             }
         }
 
@@ -2453,6 +2618,23 @@
         }
 
         // ======================== USER POSITION ========================
+        async function refreshPoolState() {
+            if (!currentTrade.marketId) return;
+            try {
+                const rpc = await getReadProvider();
+                const pammInterface = new ethers.Interface(PAMM_ABI);
+                const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
+                const results = await multicall.aggregate3([
+                    { target: PAMM_ADDRESS, allowFailure: false, callData: pammInterface.encodeFunctionData('getPoolState', [currentTrade.marketId, FEE_TIER]) }
+                ]);
+                const poolState = pammInterface.decodeFunctionResult('getPoolState', results[0].returnData);
+                currentTrade.rYes = poolState.rYes;
+                currentTrade.rNo = poolState.rNo;
+            } catch (e) {
+                console.error('Failed to refresh pool state:', e);
+            }
+        }
+
         async function loadUserPosition() {
             if (!connectedAddress || !currentTrade.marketId) return;
 
@@ -2559,19 +2741,25 @@
                 // Parse orders helper
                 const parseOrders = (hashes, orders, sortAsc) => {
                     const now = Math.floor(Date.now() / 1000);
-                    const parsed = orders.map((order, i) => ({
-                        hash: hashes[i],
-                        price: Number(order.shares) > 0 ? Number(order.collateral) / Number(order.shares) : 0,
-                        shares: order.shares,
-                        collateral: order.collateral,
-                        owner: order.owner,
-                        deadline: Number(order.deadline),
-                        isOwn: connectedAddress && order.owner.toLowerCase() === connectedAddress.toLowerCase(),
-                        isExpired: Number(order.deadline) <= now
-                    })).filter(o =>
+                    const parsed = orders.map((order, i) => {
+                        // Use BigInt arithmetic with 1e18 scaling for precision
+                        const priceScaled = order.shares > 0n
+                            ? (order.collateral * BigInt(1e18)) / order.shares
+                            : 0n;
+                        return {
+                            hash: hashes[i],
+                            price: Number(priceScaled) / 1e18,
+                            shares: order.shares,
+                            collateral: order.collateral,
+                            owner: order.owner,
+                            deadline: Number(order.deadline),
+                            isOwn: connectedAddress && order.owner.toLowerCase() === connectedAddress.toLowerCase(),
+                            isExpired: Number(order.deadline) <= now
+                        };
+                    }).filter(o =>
                         o.price > 0 &&
                         isFinite(o.price) &&
-                        !o.isExpired // Only filter expired orders, keep own orders for display
+                        !o.isExpired // Filter out expired orders (including user's own expired orders)
                     );
                     return sortAsc
                         ? parsed.sort((a, b) => a.price - b.price)
@@ -2637,6 +2825,8 @@
 
                 updateOrderbookUI();
                 updateLimitBookPreview();
+                updateInlineOrderbook();
+                updateOrderbookTvl();
 
             } catch (e) {
                 console.error('Failed to load orderbook:', e);
@@ -2673,7 +2863,7 @@
 
             // Asks (sell orders) - show in red
             for (const ask of topAsks) {
-                const size = (Number(ask.shares) / 1e18).toFixed(2);
+                const size = (Number(ask.shares) / 1e18).toFixed(2) + ' sh';
                 const price = (ask.price * 100).toFixed(1) + '%';
                 html += `<div></div>`;
                 html += `<div style="color:var(--red);text-align:center;">${price}</div>`;
@@ -2691,7 +2881,7 @@
 
             // Bids (buy orders) - show in green
             for (const bid of topBids) {
-                const size = (Number(bid.shares) / 1e18).toFixed(2);
+                const size = (Number(bid.shares) / 1e18).toFixed(2) + ' sh';
                 const price = (bid.price * 100).toFixed(1) + '%';
                 html += `<div style="color:var(--green);">${size}</div>`;
                 html += `<div style="color:var(--green);text-align:center;">${price}</div>`;
@@ -2702,12 +2892,142 @@
             container.innerHTML = html;
         }
 
+        function updateInlineOrderbook() {
+            if (!currentTrade.marketId) return;
+
+            const ladder = document.getElementById(`inlineLadder-${currentTrade.marketId}`);
+            const yesAmmEl = document.getElementById(`inlineYesAmm-${currentTrade.marketId}`);
+            const noAmmEl = document.getElementById(`inlineNoAmm-${currentTrade.marketId}`);
+            if (!ladder) return;
+
+            const yesBook = currentOrderbook.yes;
+            const noBook = currentOrderbook.no;
+            if (!yesBook || !noBook) return;
+            const yesAmm = yesBook.ammPrice || 0.5;
+            const noAmm = noBook.ammPrice || 0.5;
+
+            // Update AMM reference prices
+            if (yesAmmEl) yesAmmEl.textContent = yesBook.ammPrice ? `AMM: ${(yesBook.ammPrice * 100).toFixed(1)}%` : '--';
+            if (noAmmEl) noAmmEl.textContent = noBook.ammPrice ? `AMM: ${(noBook.ammPrice * 100).toFixed(1)}%` : '--';
+
+            // Collect resting orders only:
+            // - Bids below AMM (buyers want cheaper)
+            // - Asks above AMM (sellers want more)
+            const levels = new Map();
+
+            const addOrders = (orders, side, isYes, ammPrice) => {
+                orders.forEach(order => {
+                    const price = Math.round(order.price * 1000) / 1000;
+                    // Only show resting orders (bids below AMM, asks above AMM)
+                    const isResting = side === 'bids' ? price < ammPrice : price > ammPrice;
+                    if (!isResting) return;
+
+                    const eth = Number(order.shares) / 1e18 * order.price;
+                    if (!levels.has(price)) levels.set(price, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0 });
+                    const key = isYes ? (side === 'bids' ? 'yesBids' : 'yesAsks') : (side === 'bids' ? 'noBids' : 'noAsks');
+                    levels.get(price)[key] += eth; // Sum depth at each level
+                });
+            };
+
+            addOrders(yesBook.bids, 'bids', true, yesAmm);
+            addOrders(yesBook.asks, 'asks', true, yesAmm);
+            addOrders(noBook.bids, 'bids', false, noAmm);
+            addOrders(noBook.asks, 'asks', false, noAmm);
+
+            // Add AMM price rows
+            const yesAmmRounded = Math.round(yesAmm * 1000) / 1000;
+            const noAmmRounded = Math.round(noAmm * 1000) / 1000;
+            if (!levels.has(yesAmmRounded)) levels.set(yesAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, isYesAmm: true });
+            else levels.get(yesAmmRounded).isYesAmm = true;
+            if (!levels.has(noAmmRounded)) levels.set(noAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, isNoAmm: true });
+            else levels.get(noAmmRounded).isNoAmm = true;
+
+            const sortedLevels = [...levels.entries()].sort((a, b) => b[0] - a[0]);
+
+            if (sortedLevels.length === 0) {
+                ladder.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:1.5rem;font-size:11px;">No limit orders yet. Trade via AMM or place limit orders.</div>`;
+                return;
+            }
+
+            let maxDepth = 0.001;
+            sortedLevels.forEach(([, data]) => {
+                maxDepth = Math.max(maxDepth, data.yesBids, data.yesAsks, data.noBids, data.noAsks);
+            });
+
+            ladder.innerHTML = sortedLevels.map(([price, data]) => {
+                const pct = (price * 100).toFixed(1);
+                // Asks above AMM (red), Bids below AMM (green)
+                const yesDepth = data.yesAsks > 0 ? data.yesAsks : data.yesBids;
+                const noDepth = data.noAsks > 0 ? data.noAsks : data.noBids;
+                const yesBarWidth = (yesDepth / maxDepth * 100).toFixed(1);
+                const noBarWidth = (noDepth / maxDepth * 100).toFixed(1);
+                const yesIsAsk = data.yesAsks > 0;
+                const noIsAsk = data.noAsks > 0;
+
+                const isYesAmm = data.isYesAmm;
+                const isNoAmm = data.isNoAmm;
+                const isAmmRow = isYesAmm || isNoAmm;
+
+                const yesDepthStr = yesDepth > 0 ? (yesDepth >= 1 ? yesDepth.toFixed(2) : yesDepth.toFixed(3)) + 'Ξ' : '';
+                const noDepthStr = noDepth > 0 ? (noDepth >= 1 ? noDepth.toFixed(2) : noDepth.toFixed(3)) + 'Ξ' : '';
+
+                return `
+                    <div class="inline-ob-row" style="display:grid;grid-template-columns:1fr 50px 1fr;gap:0;align-items:center;height:24px;border-bottom:1px solid var(--border);${isAmmRow ? 'background:var(--surface-2);' : ''}">
+                        <div class="inline-ob-cell inline-ob-yes" style="position:relative;height:100%;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;overflow:hidden;cursor:pointer;"
+                             onclick="openTradeWithPrice('${currentTrade.marketId}', true, ${price})">
+                            ${yesDepth > 0 ? `<div style="position:absolute;right:0;top:0;bottom:0;width:${yesBarWidth}%;background:${yesIsAsk ? 'var(--red)' : 'var(--green)'};opacity:0.3;"></div>` : ''}
+                            ${isYesAmm ? '<span style="font-size:8px;color:var(--blue);margin-right:4px;z-index:1;font-weight:600;">AMM</span>' : ''}
+                            <span style="font-size:10px;color:${yesIsAsk ? 'var(--red)' : 'var(--green)'};z-index:1;font-weight:500;">${yesDepthStr}</span>
+                        </div>
+                        <div style="text-align:center;font-size:10px;font-weight:600;color:var(--text);height:100%;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);">${pct}%</div>
+                        <div class="inline-ob-cell inline-ob-no" style="position:relative;height:100%;display:flex;align-items:center;padding-left:6px;overflow:hidden;cursor:pointer;"
+                             onclick="openTradeWithPrice('${currentTrade.marketId}', false, ${price})">
+                            ${noDepth > 0 ? `<div style="position:absolute;left:0;top:0;bottom:0;width:${noBarWidth}%;background:${noIsAsk ? 'var(--red)' : 'var(--green)'};opacity:0.3;"></div>` : ''}
+                            <span style="font-size:10px;color:${noIsAsk ? 'var(--red)' : 'var(--green)'};z-index:1;font-weight:500;">${noDepthStr}</span>
+                            ${isNoAmm ? '<span style="font-size:8px;color:var(--blue);margin-left:4px;z-index:1;font-weight:600;">AMM</span>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateOrderbookTvl() {
+            const el = document.getElementById('orderbookTvl');
+            if (!el) return;
+            if (!currentOrderbook.yes || !currentOrderbook.no) {
+                el.textContent = '--';
+                return;
+            }
+
+            // Calculate TVL from all orders
+            // Bids: collateral (ETH) locked
+            // Asks: shares locked, valued at ask price
+            let totalEth = 0;
+
+            // Sum bid collateral (ETH locked by buyers)
+            [...currentOrderbook.yes.bids, ...currentOrderbook.no.bids].forEach(o => {
+                totalEth += Number(o.collateral) / 1e18;
+            });
+
+            // Sum ask value (shares * price = ETH equivalent)
+            [...currentOrderbook.yes.asks, ...currentOrderbook.no.asks].forEach(o => {
+                totalEth += (Number(o.shares) / 1e18) * o.price;
+            });
+
+            el.textContent = totalEth >= 1
+                ? totalEth.toFixed(2) + ' Ξ'
+                : totalEth > 0
+                    ? totalEth.toFixed(4) + ' Ξ'
+                    : '0';
+        }
+
         function updateOrderbookUI() {
             const container = document.getElementById('orderbookPreview');
             if (!container) return;
 
             // Get data for current trade side
             const book = currentTrade.isYes ? currentOrderbook.yes : currentOrderbook.no;
+            if (!book || !currentOrderbook.yes || !currentOrderbook.no) return;
             const { bids, asks, ammPrice } = book;
             const bestBidPrice = bids.length > 0 ? bids[0].price : null;
             const bestAskPrice = asks.length > 0 ? asks[0].price : null;
@@ -2768,6 +3088,7 @@
             const countEl = document.getElementById('myOrdersCount');
 
             if (!section || !list) return;
+            if (!currentOrderbook.yes || !currentOrderbook.no) return;
 
             // Collect all user's orders from both YES and NO sides
             const myOrders = [];
@@ -2850,34 +3171,45 @@
             const ladder = document.getElementById('depthLadder');
             const yesBook = currentOrderbook.yes;
             const noBook = currentOrderbook.no;
+            if (!yesBook || !noBook) return;
+            const yesAmm = yesBook.ammPrice || 0.5;
+            const noAmm = noBook.ammPrice || 0.5;
 
             // Update header AMM prices
             document.getElementById('yesAmmRef').textContent = yesBook.ammPrice ? `AMM ${(yesBook.ammPrice * 100).toFixed(1)}%` : '--';
             document.getElementById('noAmmRef').textContent = noBook.ammPrice ? `AMM ${(noBook.ammPrice * 100).toFixed(1)}%` : '--';
 
-            // Collect all price levels and compute cumulative depth
+            // Collect resting orders only (bids below AMM, asks above AMM)
             const levels = new Map(); // price -> { yesBids, yesAsks, noBids, noAsks, orders[] }
 
-            // Helper to add orders with cumulative ETH calculation
-            const addOrders = (orders, side, isYes) => {
-                let cumulative = 0;
-                // Bids: highest price first (best bid). Asks: lowest price first (best ask)
-                const sorted = [...orders].sort((a, b) => side === 'bids' ? b.price - a.price : a.price - b.price);
-                sorted.forEach(order => {
+            // Helper to add resting orders with depth at each level
+            const addOrders = (orders, side, isYes, ammPrice) => {
+                orders.forEach(order => {
                     const price = Math.round(order.price * 1000) / 1000; // Round to 0.1% precision
+                    // Only show resting orders (bids below AMM, asks above AMM)
+                    const isResting = side === 'bids' ? price < ammPrice : price > ammPrice;
+                    if (!isResting) return;
+
                     const eth = Number(order.shares) / 1e18 * order.price;
-                    cumulative += eth;
                     if (!levels.has(price)) levels.set(price, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, orders: [] });
                     const key = isYes ? (side === 'bids' ? 'yesBids' : 'yesAsks') : (side === 'bids' ? 'noBids' : 'noAsks');
-                    levels.get(price)[key] = cumulative;
+                    levels.get(price)[key] += eth; // Sum depth at each level
                     levels.get(price).orders.push({ ...order, side, isYes, eth });
                 });
             };
 
-            addOrders(yesBook.bids, 'bids', true);
-            addOrders(yesBook.asks, 'asks', true);
-            addOrders(noBook.bids, 'bids', false);
-            addOrders(noBook.asks, 'asks', false);
+            addOrders(yesBook.bids, 'bids', true, yesAmm);
+            addOrders(yesBook.asks, 'asks', true, yesAmm);
+            addOrders(noBook.bids, 'bids', false, noAmm);
+            addOrders(noBook.asks, 'asks', false, noAmm);
+
+            // Add AMM price rows as reference points
+            const yesAmmRounded = Math.round(yesAmm * 1000) / 1000;
+            const noAmmRounded = Math.round(noAmm * 1000) / 1000;
+            if (!levels.has(yesAmmRounded)) levels.set(yesAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, orders: [], isYesAmm: true });
+            else levels.get(yesAmmRounded).isYesAmm = true;
+            if (!levels.has(noAmmRounded)) levels.set(noAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, orders: [], isNoAmm: true });
+            else levels.get(noAmmRounded).isNoAmm = true;
 
             // Sort levels by price descending (high odds to low)
             const sortedLevels = [...levels.entries()].sort((a, b) => b[0] - a[0]);
@@ -2910,16 +3242,17 @@
             // Render ladder rows
             ladder.innerHTML = sortedLevels.map(([price, data]) => {
                 const pct = (price * 100).toFixed(1);
-                const yesDepth = Math.max(data.yesBids, data.yesAsks);
-                const noDepth = Math.max(data.noBids, data.noAsks);
+                // Asks (above AMM) or Bids (below AMM) - only one should be non-zero per side
+                const yesDepth = data.yesAsks > 0 ? data.yesAsks : data.yesBids;
+                const noDepth = data.noAsks > 0 ? data.noAsks : data.noBids;
                 const yesBarWidth = (yesDepth / maxDepth * 100).toFixed(1);
                 const noBarWidth = (noDepth / maxDepth * 100).toFixed(1);
-                const yesIsAsk = data.yesAsks > data.yesBids;
-                const noIsAsk = data.noAsks > data.noBids;
+                const yesIsAsk = data.yesAsks > 0;
+                const noIsAsk = data.noAsks > 0;
 
-                // Check if this is near AMM price (highlight row)
-                const isYesAmm = yesBook.ammPrice && Math.abs(price - yesBook.ammPrice) < 0.005;
-                const isNoAmm = noBook.ammPrice && Math.abs(price - noBook.ammPrice) < 0.005;
+                // Check if this is AMM price row
+                const isYesAmm = data.isYesAmm;
+                const isNoAmm = data.isNoAmm;
                 const isAmmRow = isYesAmm || isNoAmm;
 
                 // Get clickable order info (prefer the order type that has depth)
@@ -2936,9 +3269,9 @@
                     ? `onclick="cancelOrder('${noOrder.hash}')"`
                     : `onclick="fillOrderFromBook('${noOrder.hash}', ${noOrder.price}, '${noOrder.shares.toString()}', ${noOrder.side === 'bids'}, false)"`) : '';
 
-                // Format depth display
-                const yesDepthStr = yesDepth > 0 ? (yesDepth >= 1 ? yesDepth.toFixed(2) : yesDepth.toFixed(3)) : '';
-                const noDepthStr = noDepth > 0 ? (noDepth >= 1 ? noDepth.toFixed(2) : noDepth.toFixed(3)) : '';
+                // Format depth display (ETH value)
+                const yesDepthStr = yesDepth > 0 ? (yesDepth >= 1 ? yesDepth.toFixed(2) : yesDepth.toFixed(3)) + 'Ξ' : '';
+                const noDepthStr = noDepth > 0 ? (noDepth >= 1 ? noDepth.toFixed(2) : noDepth.toFixed(3)) + 'Ξ' : '';
 
                 return `
                     <div style="display:grid;grid-template-columns:1fr 56px 1fr;gap:0;align-items:center;height:26px;border-bottom:1px solid var(--border);${isAmmRow ? 'background:var(--surface-2);' : ''}">
@@ -3126,7 +3459,7 @@
             const amount = parseFloat(document.getElementById('tradeAmount').value) || 0;
             const routeEl = document.getElementById('previewRoute');
 
-            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n) {
+            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n || currentTrade.rNo === 0n) {
                 document.getElementById('previewShares').textContent = '--';
                 document.getElementById('previewPrice').textContent = '--';
                 document.getElementById('previewPayout').textContent = '--';
@@ -3150,10 +3483,19 @@
 
             // Check orderbook for better prices (use current side's book)
             const book = currentTrade.isYes ? currentOrderbook.yes : currentOrderbook.no;
+            if (!book) {
+                // Orderbook not loaded yet, show AMM-only preview
+                document.getElementById('previewShares').textContent = ammOutputNum.toFixed(4);
+                document.getElementById('previewPrice').textContent = ammExecutionPrice ? ammExecutionPrice.toFixed(4) : '--';
+                document.getElementById('previewPayout').textContent = isBuy ? ammOutputNum.toFixed(4) + ' ETH' : '--';
+                routeEl.textContent = 'AMM';
+                return;
+            }
             const { bids, asks } = book;
             const relevantOrders = isBuy ? asks : bids;
 
             // Simulate routing through limit orders then AMM
+            const MAX_ORDERS_TO_FILL = 10; // Match execution limit
             let betterOrders = [];
             let sharesFromOrders = 0;  // Shares received (buy) or ETH received (sell)
             let ethFromOrders = 0;     // ETH received from selling to bids
@@ -3161,14 +3503,18 @@
 
             if (relevantOrders && relevantOrders.length > 0 && ammExecutionPrice !== null) {
                 for (const order of relevantOrders) {
+                    // Stop if we've filled enough or hit order limit
+                    if (remainingAmount <= 0 || betterOrders.length >= MAX_ORDERS_TO_FILL) break;
                     // Skip own orders - can't fill your own orders
                     if (order.isOwn) continue;
                     // Compare against execution price (with impact), not spot
                     const isBetter = isBuy ? order.price <= ammExecutionPrice : order.price >= ammExecutionPrice;
-                    if (!isBetter || remainingAmount <= 0) continue;
+                    if (!isBetter) continue;
 
                     const orderShares = Number(order.shares) / 1e18;
                     const orderPrice = order.price;
+
+                    betterOrders.push(order);
 
                     if (isBuy) {
                         // Buy: we spend ETH to get shares from asks
@@ -3192,7 +3538,6 @@
                             remainingAmount = 0;
                         }
                     }
-                    betterOrders.push(order);
                 }
             }
 
@@ -3271,7 +3616,7 @@
         function updateSwapPreview() {
             const amount = parseFloat(document.getElementById('swapAmount').value) || 0;
 
-            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n) {
+            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n || currentTrade.rNo === 0n) {
                 document.getElementById('swapOutput').textContent = '--';
                 document.getElementById('swapFee').textContent = '--';
                 document.getElementById('swapMinOutput').textContent = '--';
@@ -3285,10 +3630,11 @@
             const outputNum = Number(output) / 1e18;
             const fee = amount * 0.003;
             const minOut = outputNum * (1 - swapSlippage / 100);
+            const outputSide = currentSwapDirection ? 'NO' : 'YES';
 
-            document.getElementById('swapOutput').textContent = outputNum.toFixed(4) + (currentSwapDirection ? ' NO' : ' YES');
-            document.getElementById('swapFee').textContent = fee.toFixed(6) + ' shares';
-            document.getElementById('swapMinOutput').textContent = minOut.toFixed(4);
+            document.getElementById('swapOutput').textContent = outputNum.toFixed(4) + ' ' + outputSide;
+            document.getElementById('swapFee').textContent = fee.toFixed(6) + ' (included)';
+            document.getElementById('swapMinOutput').textContent = minOut.toFixed(4) + ' ' + outputSide;
         }
 
         function updateLpPreview() {
@@ -3299,13 +3645,11 @@
             const rNoNum = Number(rNo) / 1e18;
 
             // Get total LP supply and user LP balance
-            const totalLpSupply = currentUserPosition.lpTotalSupply
+            const hasActualSupply = currentUserPosition.lpTotalSupply !== null && currentUserPosition.lpTotalSupply > 0n;
+            const totalLpSupply = hasActualSupply
                 ? Number(currentUserPosition.lpTotalSupply) / 1e18
                 : Math.sqrt(rYesNum * rNoNum);
             const userLp = Number(currentUserPosition.lpBalance || 0n) / 1e18;
-
-            // Pool TVL (approximate as average of reserves, which equals collateral locked)
-            const poolTvl = (rYesNum + rNoNum) / 2;
 
             if (!currentTrade.marketId || amount <= 0) {
                 document.getElementById('lpPreview').textContent = '--';
@@ -3324,9 +3668,10 @@
             }
 
             if (currentLpMode === 'add') {
-                // Adding liquidity: estimate LP tokens proportional to contribution
-                // estLp = (amount / poolTvl) * totalLpSupply
-                const estLp = poolTvl > 0 ? (amount / poolTvl) * totalLpSupply : amount;
+                // Adding liquidity: estimate LP tokens
+                // splitAndAddLiquidity adds equal YES+NO, so LP = min(amt/rYes, amt/rNo) * supply
+                const maxReserve = Math.max(rYesNum, rNoNum);
+                const estLp = maxReserve > 0 ? (amount / maxReserve) * totalLpSupply : amount;
                 const newTotalLp = totalLpSupply + estLp;
                 const newUserLp = userLp + estLp;
                 const currentShare = totalLpSupply > 0 ? (userLp / totalLpSupply) * 100 : 0;
@@ -3400,9 +3745,13 @@
                 const shares = amount / price;
                 document.getElementById('limitResult').textContent = shares.toFixed(4) + ' shares';
 
-                // Compare to pool: how many shares would pool give for same ETH?
-                if (poolPrice && poolPrice > 0) {
-                    const poolShares = amount / poolPrice;
+                // Compare to pool: how many shares would pool ACTUALLY give (with slippage)?
+                if (currentTrade.rYes > 0n && currentTrade.rNo > 0n) {
+                    const amtWei = ethers.parseEther(amount.toString());
+                    const poolSharesWei = currentTrade.isYes
+                        ? quoteBuyYes(amtWei, currentTrade.rYes, currentTrade.rNo)
+                        : quoteBuyNo(amtWei, currentTrade.rYes, currentTrade.rNo);
+                    const poolShares = Number(poolSharesWei) / 1e18;
                     const extraShares = shares - poolShares;
                     if (extraShares > 0) {
                         document.getElementById('limitSavings').textContent = '+' + extraShares.toFixed(4) + ' shares';
@@ -3420,9 +3769,13 @@
                 const ethReceived = amount * price;
                 document.getElementById('limitResult').textContent = ethReceived.toFixed(4) + ' ETH';
 
-                // Compare to pool: how much ETH would pool give for same shares?
-                if (poolPrice && poolPrice > 0) {
-                    const poolEth = amount * poolPrice;
+                // Compare to pool: how much ETH would pool ACTUALLY give (with slippage)?
+                if (currentTrade.rYes > 0n && currentTrade.rNo > 0n) {
+                    const amtWei = ethers.parseEther(amount.toString());
+                    const poolEthWei = currentTrade.isYes
+                        ? quoteSellYes(amtWei, currentTrade.rYes, currentTrade.rNo)
+                        : quoteSellNo(amtWei, currentTrade.rYes, currentTrade.rNo);
+                    const poolEth = Number(poolEthWei) / 1e18;
                     const extraEth = ethReceived - poolEth;
                     if (extraEth > 0) {
                         document.getElementById('limitSavings').textContent = '+' + extraEth.toFixed(4) + ' ETH';
@@ -3521,6 +3874,9 @@
                 }
             }
 
+            // Refresh pool state before trade to ensure fresh prices
+            await refreshPoolState();
+
             try {
                 if (!isBuy) {
                     const approved = await checkAndRequestApprovals('sell');
@@ -3557,6 +3913,7 @@
                 const { bids, asks } = book;
                 const relevantOrders = isBuy ? asks : bids; // Buy fills asks, sell fills bids
                 const betterOrders = [];
+                const MAX_ORDERS_TO_FILL = 10; // Limit to prevent gas issues
 
                 // Track expected output from orders and remaining amount for AMM
                 // Use BigInt for all calculations to match contract precision
@@ -3565,6 +3922,8 @@
 
                 if (relevantOrders.length > 0 && ammExecutionPrice !== null) {
                     for (const order of relevantOrders) {
+                        // Stop if we've filled enough or hit order limit
+                        if (remainingWei === 0n || betterOrders.length >= MAX_ORDERS_TO_FILL) break;
                         // Skip own orders - can't fill your own orders
                         if (order.isOwn) continue;
                         // For buying: ask price <= AMM execution price is better (lower = cheaper)
@@ -3572,36 +3931,36 @@
                         const isBetterThanAmm = isBuy
                             ? order.price <= ammExecutionPrice
                             : order.price >= ammExecutionPrice;
-                        if (isBetterThanAmm && remainingWei > 0n) {
-                            betterOrders.push(order.hash);
+                        if (!isBetterThanAmm) continue;
 
-                            if (isBuy) {
-                                // Buy: spend ETH to get shares from asks
-                                // orderCost in wei = order.collateral (that's the ETH needed to buy all shares)
-                                const orderCostWei = order.collateral;
-                                if (remainingWei >= orderCostWei) {
-                                    // Full fill
-                                    expectedFromOrders += order.shares;
-                                    remainingWei -= orderCostWei;
-                                } else {
-                                    // Partial fill: shares = remainingWei * order.shares / order.collateral
-                                    const partialShares = remainingWei * order.shares / order.collateral;
-                                    expectedFromOrders += partialShares;
-                                    remainingWei = 0n;
-                                }
+                        betterOrders.push(order.hash);
+
+                        if (isBuy) {
+                            // Buy: spend ETH to get shares from asks
+                            // orderCost in wei = order.collateral (that's the ETH needed to buy all shares)
+                            const orderCostWei = order.collateral;
+                            if (remainingWei >= orderCostWei) {
+                                // Full fill
+                                expectedFromOrders += order.shares;
+                                remainingWei -= orderCostWei;
                             } else {
-                                // Sell: sell shares to bids to get ETH
-                                // remainingWei here is actually remaining shares in wei
-                                if (remainingWei >= order.shares) {
-                                    // Full fill: ETH out = order.collateral
-                                    expectedFromOrders += order.collateral;
-                                    remainingWei -= order.shares;
-                                } else {
-                                    // Partial fill: ETH = remainingWei * order.collateral / order.shares
-                                    const partialEth = remainingWei * order.collateral / order.shares;
-                                    expectedFromOrders += partialEth;
-                                    remainingWei = 0n;
-                                }
+                                // Partial fill: shares = remainingWei * order.shares / order.collateral
+                                const partialShares = remainingWei * order.shares / order.collateral;
+                                expectedFromOrders += partialShares;
+                                remainingWei = 0n;
+                            }
+                        } else {
+                            // Sell: sell shares to bids to get ETH
+                            // remainingWei here is actually remaining shares in wei
+                            if (remainingWei >= order.shares) {
+                                // Full fill: ETH out = order.collateral
+                                expectedFromOrders += order.collateral;
+                                remainingWei -= order.shares;
+                            } else {
+                                // Partial fill: ETH = remainingWei * order.collateral / order.shares
+                                const partialEth = remainingWei * order.collateral / order.shares;
+                                expectedFromOrders += partialEth;
+                                remainingWei = 0n;
                             }
                         }
                     }
@@ -3674,14 +4033,15 @@
                 }
 
                 const routeInfo = useFillOrders ? ` (via ${betterOrders.length} limit order${betterOrders.length > 1 ? 's' : ''})` : '';
+                const expectedOutputNum = Number(expectedOutput) / 1e18;
                 await monitorTransaction(txPromise, {
                     pending: { title: `${isBuy ? 'Buying' : 'Selling'} ${side}`, body: `Confirm in your wallet...${routeInfo}` },
                     submitted: { title: `${isBuy ? 'Buying' : 'Selling'} ${side}`, body: 'Waiting for confirmation...' },
-                    success: { title: 'Trade Complete!', body: `${isBuy ? 'Bought' : 'Sold'} ${amount} ${side} shares${routeInfo}` },
+                    success: { title: 'Trade Complete!', body: isBuy ? `Bought ~${expectedOutputNum.toFixed(4)} ${side} shares for ${amount} ETH${routeInfo}` : `Sold ${amount} ${side} shares for ~${expectedOutputNum.toFixed(4)} ETH${routeInfo}` },
                     error: { title: 'Trade Failed', body: '' },
                     onSuccess: async () => {
                         tradeMaxRaw = null; // Clear max flag
-                        await Promise.all([loadUserPosition(), loadOrderbook(), loadData()]);
+                        await Promise.all([refreshPoolState(), loadUserPosition(), loadOrderbook(), loadData()]);
                         loadBalance();
                     }
                 });
@@ -3711,6 +4071,9 @@
 
             const fromLabel = currentSwapDirection ? 'YES' : 'NO';
             const toLabel = currentSwapDirection ? 'NO' : 'YES';
+
+            // Refresh pool state before swap to ensure fresh prices
+            await refreshPoolState();
 
             try {
                 // Need ZAMM approved as operator on PAMM
@@ -3752,7 +4115,7 @@
                         error: { title: 'Swap Failed', body: '' },
                         onSuccess: async () => {
                             swapMaxRaw = null; // Clear max flag
-                            await loadUserPosition();
+                            await Promise.all([refreshPoolState(), loadUserPosition(), loadData()]);
                             loadBalance();
                         }
                     }
@@ -3785,6 +4148,15 @@
                 }
             }
 
+            // Validate pool exists for adding liquidity
+            if (currentLpMode === 'add' && (!currentTrade.rYes || currentTrade.rYes === 0n)) {
+                showToast('Pool Not Seeded', 'This market has no liquidity pool yet', 'error');
+                return;
+            }
+
+            // Refresh pool state before LP action to ensure fresh reserves
+            await refreshPoolState();
+
             try {
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
                 const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
@@ -3792,15 +4164,24 @@
                 // Calculate expected outputs for slippage protection
                 const rYesNum = Number(currentTrade.rYes) / 1e18;
                 const rNoNum = Number(currentTrade.rNo) / 1e18;
-                const totalLpSupply = currentUserPosition.lpTotalSupply
+                // Use actual LP supply if available, otherwise estimate from reserves (only accurate for initial add)
+                const hasActualSupply = currentUserPosition.lpTotalSupply !== null && currentUserPosition.lpTotalSupply > 0n;
+                const totalLpSupply = hasActualSupply
                     ? Number(currentUserPosition.lpTotalSupply) / 1e18
                     : Math.sqrt(rYesNum * rNoNum);
-                const poolTvl = (rYesNum + rNoNum) / 2;
 
                 if (currentLpMode === 'add') {
                     // Expected LP tokens from adding liquidity
-                    const estLp = poolTvl > 0 ? (amount / poolTvl) * totalLpSupply : amount;
-                    const minLiquidity = ethers.parseEther((estLp * (100 - slippageTolerance) / 100).toFixed(18));
+                    // splitAndAddLiquidity: collateral -> split into YES+NO -> add to pool
+                    // LP minted = min(amount/rYes, amount/rNo) * totalSupply
+                    // Since we add equal amounts of YES and NO, use the larger reserve for min ratio
+                    const maxReserve = Math.max(rYesNum, rNoNum);
+                    const estLp = maxReserve > 0 && hasActualSupply
+                        ? (amount / maxReserve) * totalLpSupply
+                        : amount;
+                    const minLiquidity = hasActualSupply && maxReserve > 0
+                        ? ethers.parseEther((estLp * (100 - slippageTolerance) / 100).toFixed(18))
+                        : 0n;
 
                     await monitorTransaction(
                         pamm.splitAndAddLiquidity(
@@ -3819,7 +4200,7 @@
                             error: { title: 'Add Liquidity Failed', body: '' },
                             onSuccess: async () => {
                                 lpMaxRaw = null; // Clear max flag
-                                await loadUserPosition();
+                                await Promise.all([refreshPoolState(), loadUserPosition(), loadData()]);
                                 loadBalance();
                             }
                         }
@@ -3892,7 +4273,7 @@
                         error: { title: 'Withdraw Failed', body: '' },
                         onSuccess: async () => {
                             lpMaxRaw = null; // Clear max flag
-                            await loadUserPosition();
+                            await Promise.all([refreshPoolState(), loadUserPosition(), loadData()]);
                             loadBalance();
                         }
                     });
@@ -3963,22 +4344,21 @@
             }
 
             // Calculate shares and collateral based on order type
-            // Use limitMaxRaw for exact BigInt precision when available
+            // Use BigInt arithmetic throughout to avoid floating point precision loss
+            const WAD = 10n ** 18n; // 1e18 as BigInt (avoids JS Number precision limits)
             let sharesWei, collateralWei;
-            let shares, collateral;
+            const priceWei = ethers.parseEther(price.toFixed(18));
 
             if (limitIsBuy) {
                 // BUY: user provides ETH (amount), wants shares
+                // shares = collateral / price, so sharesWei = collateralWei * 1e18 / priceWei
                 collateralWei = limitMaxRaw || ethers.parseEther(amount.toString());
-                collateral = Number(ethers.formatEther(collateralWei));
-                shares = collateral / price;
-                sharesWei = ethers.parseEther(shares.toFixed(18));
+                sharesWei = collateralWei * WAD / priceWei;
             } else {
                 // SELL: user provides shares (amount), wants ETH
+                // collateral = shares * price, so collateralWei = sharesWei * priceWei / 1e18
                 sharesWei = limitMaxRaw || ethers.parseEther(amount.toString());
-                shares = Number(ethers.formatEther(sharesWei));
-                collateral = shares * price;
-                collateralWei = ethers.parseEther(collateral.toFixed(18));
+                collateralWei = sharesWei * priceWei / WAD;
 
                 // Check balance
                 const userShares = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
@@ -3987,6 +4367,10 @@
                     return;
                 }
             }
+
+            // Calculate display values for toast message
+            const shares = Number(sharesWei) / 1e18;
+            const collateral = Number(collateralWei) / 1e18;
 
             try {
                 if (!limitIsBuy) {
