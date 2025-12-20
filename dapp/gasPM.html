@@ -581,31 +581,38 @@
             gap: 0.5rem;
             width: 100%;
             margin-top: 0.5rem;
-            padding: 0.5rem;
-            background: transparent;
+            padding: 0.6rem 0.75rem;
+            background: var(--surface-2);
             border: 1px solid var(--border);
             border-radius: var(--radius);
             color: var(--text-muted);
             font-size: var(--font-xs);
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
         }
 
         .card-chart-toggle:hover {
-            background: var(--surface-2);
+            background: var(--surface-3);
             color: var(--text);
             border-color: var(--text-dim);
         }
 
+        .card-chart-toggle:active {
+            transform: scale(0.98);
+        }
+
         .card-chart-toggle.active {
-            background: var(--surface-2);
+            background: var(--surface-3);
             border-color: var(--green);
             color: var(--green);
         }
 
         .card-chart-toggle-icon {
-            transition: transform 0.3s ease;
-            font-size: 10px;
+            transition: transform 0.2s ease;
+            font-size: 8px;
         }
 
         .card-chart-toggle.active .card-chart-toggle-icon {
@@ -615,69 +622,84 @@
         .card-chart-container {
             max-height: 0;
             overflow: hidden;
-            transition: max-height 0.4s ease, margin 0.3s ease, opacity 0.3s ease;
+            transition: max-height 0.3s ease-out, opacity 0.2s ease;
             opacity: 0;
             margin-top: 0;
             border-radius: var(--radius);
         }
 
         .card-chart-container.open {
-            max-height: 400px;
+            max-height: 340px;
             opacity: 1;
-            margin-top: 0.75rem;
+            margin-top: 0.5rem;
         }
 
         .card-chart-container iframe {
             display: block;
             width: 100%;
-            height: 320px;
+            height: 280px;
             border: none;
-            border-radius: 0 0 var(--radius) var(--radius);
-            background: var(--surface-2);
+            border-radius: var(--radius);
+            background: #0a0a0a;
         }
 
         .card-chart-loading {
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 320px;
-            background: var(--surface-2);
+            height: 280px;
+            background: #0a0a0a;
             border-radius: var(--radius);
-            color: var(--text-muted);
+            color: var(--text-dim);
             font-size: var(--font-xs);
         }
 
-        .card-chart-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.5rem 0.75rem;
-            background: var(--surface-2);
-            border-radius: var(--radius) var(--radius) 0 0;
-            border-bottom: 1px solid var(--border);
-        }
-        .card-chart-title {
-            font-size: var(--font-xs);
-            color: var(--text-muted);
-            font-weight: 500;
-        }
         .card-chart-expand {
-            background: transparent;
-            border: 1px solid var(--border);
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            padding: 4px 8px;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.1);
             border-radius: 4px;
             color: var(--text-muted);
-            padding: 4px 8px;
             font-size: 10px;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            transition: all 0.15s;
+            transition: all 0.15s ease;
+            z-index: 5;
+            opacity: 0;
         }
+
+        .card-chart-wrapper {
+            position: relative;
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .card-chart-wrapper iframe {
+            display: block;
+            width: 100%;
+            height: 280px;
+            border: none;
+            background: #0a0a0a;
+        }
+
+        .card-chart-wrapper:hover .card-chart-expand,
+        .card-chart-wrapper:focus-within .card-chart-expand {
+            opacity: 1;
+        }
+
         .card-chart-expand:hover {
-            background: var(--surface);
+            background: rgba(0,0,0,0.8);
             color: var(--text);
-            border-color: var(--text-dim);
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        @media (hover: none) {
+            .card-chart-expand {
+                opacity: 1;
+            }
         }
 
         /* Odds Chart Modal */
@@ -757,6 +779,90 @@
         .odds-modal-stat-value {
             font-size: var(--font-lg);
             font-weight: 600;
+        }
+
+        /* Depth Modal */
+        .depth-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(4px);
+            z-index: 2500;
+            justify-content: center;
+            align-items: center;
+        }
+        .depth-modal-overlay.active { display: flex; }
+        .depth-modal {
+            background: var(--surface);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 520px;
+            max-height: 85vh;
+            overflow: hidden;
+        }
+        .depth-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .depth-modal-title {
+            font-size: var(--font-md);
+            font-weight: 600;
+        }
+        .depth-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .depth-modal-close:hover { color: var(--text); }
+        .depth-ladder-row {
+            display: grid;
+            grid-template-columns: 1fr 56px 1fr;
+            gap: 0;
+            align-items: center;
+            height: 28px;
+            border-bottom: 1px solid var(--border);
+        }
+        .depth-ladder-row:hover { background: var(--surface-2); }
+        .depth-ladder-row.amm-row { background: var(--surface-2); }
+        .depth-cell {
+            position: relative;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            padding: 0 8px;
+        }
+        .depth-cell.clickable { cursor: pointer; }
+        .depth-cell.clickable:hover { background: rgba(255,255,255,0.05); }
+        .depth-bar {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            opacity: 0.3;
+        }
+        .depth-bar.up { background: var(--green); right: 0; }
+        .depth-bar.down { background: var(--red); left: 0; }
+        .depth-bar.own { opacity: 0.4; background: var(--amber); }
+        .depth-center {
+            text-align: center;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text);
+            background: var(--surface);
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
         }
 
         /* CREATE SECTION */
@@ -1390,21 +1496,40 @@
             .odds-modal-stat-value {
                 font-size: var(--font-base);
             }
-            .card-chart-header {
-                padding: 0.4rem 0.5rem;
-            }
-            .card-chart-expand {
-                padding: 3px 6px;
-                font-size: 9px;
+            .card-chart-toggle {
+                padding: 0.7rem 0.75rem;
             }
             .card-chart-container.open {
-                max-height: 360px;
+                max-height: 280px;
             }
+            .card-chart-wrapper iframe,
             .card-chart-container iframe {
-                height: 280px;
+                height: 220px;
             }
             .card-chart-loading {
-                height: 280px;
+                height: 220px;
+            }
+            .card-chart-expand {
+                opacity: 1;
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .card-chart-toggle {
+                padding: 0.75rem 0.75rem;
+                font-size: 11px;
+            }
+            .card-chart-container.open {
+                max-height: 240px;
+            }
+            .card-chart-wrapper iframe,
+            .card-chart-container iframe {
+                height: 180px;
+            }
+            .card-chart-loading {
+                height: 180px;
             }
         }
 
@@ -1665,9 +1790,10 @@
                         <span>Ends top of hour UTC</span>
                         <span class="countdown-value" id="hourlyCountdown">--</span>
                     </div>
-                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
+                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
                         <span>TVL: <span id="hourlyPoolTvl" style="color:var(--blue);">--</span></span>
                         <span>Orders: <span id="hourlyOrderbook" style="color:var(--amber);">--</span></span>
+                        <a id="hourlyZammLink" href="#" target="_blank" title="View on ZAMM" style="display:none;align-items:center;gap:3px;color:var(--text-muted);text-decoration:none;font-size:10px;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'"><img src="https://content.wrappr.wtf/ipfs/bafybeibuct6mftnmgzkbn4tq47elpokbkahkjxq7z6qceptlcsvpxletou" style="width:12px;height:12px;border-radius:2px;">ZAMM</a>
                     </div>
                     <div class="position-display" id="hourlyPosition" style="display:none;">
                         <div class="position-row"><span>Your UP</span><span id="hourlyUpBal">0</span></div>
@@ -1715,9 +1841,10 @@
                         <span>Ends midnight UTC</span>
                         <span class="countdown-value" id="dailyCountdown">--</span>
                     </div>
-                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
+                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
                         <span>TVL: <span id="dailyPoolTvl" style="color:var(--blue);">--</span></span>
                         <span>Orders: <span id="dailyOrderbook" style="color:var(--amber);">--</span></span>
+                        <a id="dailyZammLink" href="#" target="_blank" title="View on ZAMM" style="display:none;align-items:center;gap:3px;color:var(--text-muted);text-decoration:none;font-size:10px;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'"><img src="https://content.wrappr.wtf/ipfs/bafybeibuct6mftnmgzkbn4tq47elpokbkahkjxq7z6qceptlcsvpxletou" style="width:12px;height:12px;border-radius:2px;">ZAMM</a>
                     </div>
                     <div class="position-display" id="dailyPosition" style="display:none;">
                         <div class="position-row"><span>Your UP</span><span id="dailyUpBal">0</span></div>
@@ -1765,9 +1892,10 @@
                         <span>Ends Sunday UTC</span>
                         <span class="countdown-value" id="weeklyCountdown">--</span>
                     </div>
-                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
+                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
                         <span>TVL: <span id="weeklyPoolTvl" style="color:var(--blue);">--</span></span>
                         <span>Orders: <span id="weeklyOrderbook" style="color:var(--amber);">--</span></span>
+                        <a id="weeklyZammLink" href="#" target="_blank" title="View on ZAMM" style="display:none;align-items:center;gap:3px;color:var(--text-muted);text-decoration:none;font-size:10px;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'"><img src="https://content.wrappr.wtf/ipfs/bafybeibuct6mftnmgzkbn4tq47elpokbkahkjxq7z6qceptlcsvpxletou" style="width:12px;height:12px;border-radius:2px;">ZAMM</a>
                     </div>
                     <div class="position-display" id="weeklyPosition" style="display:none;">
                         <div class="position-row"><span>Your UP</span><span id="weeklyUpBal">0</span></div>
@@ -1814,9 +1942,10 @@
                         <span>Resolves early if touched!</span>
                         <span class="countdown-value" id="extremeCountdown">--</span>
                     </div>
-                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
+                    <div class="liquidity-stats" style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem;font-size:var(--font-xs);color:var(--text-muted);">
                         <span>TVL: <span id="extremePoolTvl" style="color:var(--blue);">--</span></span>
                         <span>Orders: <span id="extremeOrderbook" style="color:var(--amber);">--</span></span>
+                        <a id="extremeZammLink" href="#" target="_blank" title="View on ZAMM" style="display:none;align-items:center;gap:3px;color:var(--text-muted);text-decoration:none;font-size:10px;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'"><img src="https://content.wrappr.wtf/ipfs/bafybeibuct6mftnmgzkbn4tq47elpokbkahkjxq7z6qceptlcsvpxletou" style="width:12px;height:12px;border-radius:2px;">ZAMM</a>
                     </div>
                     <div class="position-display" id="extremePosition" style="display:none;">
                         <div class="position-row"><span>Your YES</span><span id="extremeYesBal">0</span></div>
@@ -1840,7 +1969,7 @@
             </p>
             <div class="create-grid">
                 <!-- Hourly -->
-                <div class="create-card" id="createHourlyCard">
+                <div class="create-card" id="createHourlyCard" style="display:none;">
                     <div class="create-card-title">Hourly Comparison</div>
                     <div class="create-card-desc">Will gas go up or down this hour? Resolves at top of hour UTC.</div>
                     <div class="create-input-group">
@@ -1851,7 +1980,7 @@
                 </div>
 
                 <!-- Daily -->
-                <div class="create-card" id="createDailyCard">
+                <div class="create-card" id="createDailyCard" style="display:none;">
                     <div class="create-card-title">Daily Comparison</div>
                     <div class="create-card-desc">Will gas go up or down today? Resolves at midnight UTC.</div>
                     <div class="create-input-group">
@@ -1862,7 +1991,7 @@
                 </div>
 
                 <!-- Weekly -->
-                <div class="create-card" id="createWeeklyCard">
+                <div class="create-card" id="createWeeklyCard" style="display:none;">
                     <div class="create-card-title">Weekly Comparison</div>
                     <div class="create-card-desc">Will gas go up or down this week? Resolves Sunday midnight.</div>
                     <div class="create-input-group">
@@ -1873,7 +2002,7 @@
                 </div>
 
                 <!-- Extreme -->
-                <div class="create-card" id="createExtremeCard">
+                <div class="create-card" id="createExtremeCard" style="display:none;">
                     <div class="create-card-title">100 Gwei Challenge</div>
                     <div class="create-card-desc">Will gas hit 100 gwei before end of 2025? Resolves early if hit.</div>
                     <div class="create-input-group">
@@ -1991,16 +2120,19 @@
             <!-- Orderbook -->
             <div class="orderbook" id="orderbookContainer">
                 <div class="orderbook-title">
-                    <span class="orderbook-title-text"><span id="orderbookShareType">YES</span> Order Book</span>
-                    <span class="orderbook-depth-info">Depth: <span id="orderbookTotalDepth">--</span> ETH</span>
+                    <span class="orderbook-title-text"><span id="orderbookShareType">YES</span> Pool</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="orderbook-depth-info" style="display:none;">Depth: <span id="orderbookTotalDepth">--</span> ETH</span>
+                        <button onclick="openDepthModal()" style="font-size:9px;padding:2px 6px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;">Full Depth →</button>
+                    </div>
                 </div>
-                <div class="orderbook-header">
+                <div class="orderbook-header" style="display:none;">
                     <span>Price <span style="font-weight:400;opacity:0.7">(= Odds)</span></span>
                     <span>Size</span>
                     <span>Total</span>
                 </div>
                 <div class="orderbook-body">
-                    <div id="asksLabel" class="orderbook-section-label" style="display:flex;justify-content:space-between;padding:2px 8px;background:rgba(239,68,68,0.1);font-size:9px;color:var(--red);">
+                    <div id="asksLabel" class="orderbook-section-label" style="display:none;justify-content:space-between;padding:2px 8px;background:rgba(239,68,68,0.1);font-size:9px;color:var(--red);">
                         <span>ASKS (Sellers)</span>
                         <span style="opacity:0.7;">Click to buy from</span>
                     </div>
@@ -2017,7 +2149,7 @@
                             <div class="orderbook-spread-pct">Spread: <span id="spreadPct">--%</span></div>
                         </div>
                     </div>
-                    <div id="bidsLabel" class="orderbook-section-label" style="display:flex;justify-content:space-between;padding:2px 8px;background:rgba(34,197,94,0.1);font-size:9px;color:var(--green);">
+                    <div id="bidsLabel" class="orderbook-section-label" style="display:none;justify-content:space-between;padding:2px 8px;background:rgba(34,197,94,0.1);font-size:9px;color:var(--green);">
                         <span>BIDS (Buyers)</span>
                         <span style="opacity:0.7;">Click to sell to</span>
                     </div>
@@ -2096,6 +2228,16 @@
                 <div id="lpExplainer" style="font-size:var(--font-xs);color:var(--text-muted);margin-bottom:0.75rem;padding:0.5rem;background:var(--bg);border-radius:var(--radius);">
                     Earn 0.30% fees on every trade. Your ETH is split into YES + NO shares and deposited to the pool.
                 </div>
+                <!-- Slippage for LP -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;padding:0.5rem;background:var(--surface-2);border-radius:var(--radius);">
+                    <span style="font-size:var(--font-xs);color:var(--text-dim);">Slippage</span>
+                    <div style="display:flex;gap:4px;">
+                        <button id="lpSlip05" class="slip-btn" onclick="setLpSlippage(0.5)">0.5%</button>
+                        <button id="lpSlip1" class="slip-btn slip-active" onclick="setLpSlippage(1)">1%</button>
+                        <button id="lpSlip2" class="slip-btn" onclick="setLpSlippage(2)">2%</button>
+                        <input type="number" id="lpSlipCustom" placeholder="Custom" step="0.1" min="0.1" max="50" style="width:60px;padding:4px 6px;font-size:var(--font-xs);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);" onchange="setLpSlippage(parseFloat(this.value))">
+                    </div>
+                </div>
                 <!-- Your Position Summary -->
                 <div id="lpPositionSummary" style="background:var(--surface-2);padding:0.75rem;margin-bottom:0.75rem;border-radius:var(--radius);font-size:var(--font-xs);">
                     <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
@@ -2141,6 +2283,7 @@
                         <button id="swapSlip05" class="slip-btn slip-active" onclick="setSwapSlippage(0.5)">0.5%</button>
                         <button id="swapSlip1" class="slip-btn" onclick="setSwapSlippage(1)">1%</button>
                         <button id="swapSlip2" class="slip-btn" onclick="setSwapSlippage(2)">2%</button>
+                        <input type="number" id="swapSlipCustom" placeholder="Custom" step="0.1" min="0.1" max="50" style="width:60px;padding:4px 6px;font-size:var(--font-xs);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);" onchange="setSwapSlippage(parseFloat(this.value))">
                     </div>
                 </div>
                 <div class="trade-preview">
@@ -2321,6 +2464,45 @@
         </div>
     </div>
 
+    <!-- Depth Modal -->
+    <div class="depth-modal-overlay" id="depthModal" onclick="if(event.target === this) closeDepthModal()">
+        <div class="depth-modal">
+            <div class="depth-modal-header">
+                <div class="depth-modal-title"><span id="depthModalMarketType">Daily</span> Market Depth</div>
+                <button class="depth-modal-close" onclick="closeDepthModal()">&times;</button>
+            </div>
+            <div style="padding:0.75rem;">
+                <!-- Header with AMM prices -->
+                <div style="display:grid;grid-template-columns:1fr 56px 1fr;gap:0;margin-bottom:0.25rem;padding-bottom:0.5rem;border-bottom:2px solid var(--border);">
+                    <div style="text-align:center;">
+                        <div style="font-weight:700;color:var(--green);font-size:13px;" id="depthUpLabel">UP</div>
+                        <div id="depthUpAmm" style="font-size:10px;color:var(--text-dim);">--</div>
+                    </div>
+                    <div style="text-align:center;font-size:9px;color:var(--text-dim);display:flex;align-items:center;justify-content:center;">Odds</div>
+                    <div style="text-align:center;">
+                        <div style="font-weight:700;color:var(--red);font-size:13px;" id="depthDownLabel">DOWN</div>
+                        <div id="depthDownAmm" style="font-size:10px;color:var(--text-dim);">--</div>
+                    </div>
+                </div>
+                <!-- Depth Ladder -->
+                <div id="depthLadder" style="background:var(--surface);border-radius:var(--radius);max-height:360px;overflow-y:auto;">
+                    <div style="text-align:center;color:var(--text-dim);padding:2rem;font-size:11px;">Loading...</div>
+                </div>
+                <!-- Actions -->
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+                    <button id="depthTradeUpBtn" onclick="depthTradeUp()" style="flex:1;padding:0.5rem;background:var(--green);color:var(--bg);border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:var(--font-xs);">Trade UP</button>
+                    <button id="depthTradeDownBtn" onclick="depthTradeDown()" style="flex:1;padding:0.5rem;background:var(--red);color:white;border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:var(--font-xs);">Trade DOWN</button>
+                </div>
+                <!-- Legend -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:9px;color:var(--text-dim);">
+                    <span><span style="color:var(--green);">■</span> Bids (buy)</span>
+                    <span>Depth in ETH | Click to fill</span>
+                    <span><span style="color:var(--red);">■</span> Asks (sell)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Odds Chart Modal (Full Screen) -->
     <div class="odds-modal-overlay" id="oddsModal" onclick="if(event.target === this) closeOddsModal()">
         <div class="odds-modal-header">
@@ -2458,13 +2640,14 @@
 
         let markets = { hourly: null, daily: null, weekly: null, extreme: null };
         let resolvedMarkets = [];
-        const chartPoolIds = new Map(); // type -> poolId for ZAMM embed
+        const chartPoolIds = new Map(); // type -> { poolId, yesIsToken0 } for ZAMM embed
         const marketMetaCache = new Map(); // marketId -> { noId, poolKey, poolId }
         const chartLoaded = new Set(); // track which chart iframes have been loaded
         let currentTrade = { type: null, isYes: true, marketId: null };
         let currentTradeMode = 'buy'; // 'buy' or 'sell'
         let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n };
         let slippageTolerance = 0.5; // 0.5% default slippage tolerance
+        let lpSlippageTolerance = 1; // 1% default LP slippage (higher due to split/merge)
 
         // Chart data
         let chartDataPoints = [];   // Historical baseFee in gwei
@@ -3013,6 +3196,7 @@
 
                 // Process markets
                 let collateralMap = new Map(); // marketId -> collateralLocked
+                let pendingComparisons = []; // Collect comparison markets for sorted assignment
                 for (let i = 0; i < marketInfos.length; i++) {
                     const info = marketInfos[i];
                     if (!marketResults[i].success) continue;
@@ -3072,21 +3256,11 @@
                         const startValue = startValuesMap.get(info.marketId.toString()) || 0n;
                         const startGwei = Number(startValue) / 1e9;
                         const timeToClose = close - now;
-
-                        // For expired markets, use negative timeToClose to determine original category
-                        // Hourly: expired within last hour or closes within next hour
-                        // Daily: expired within last day or closes within next day
-                        // Weekly: expired within last week or closes within next week
-                        if (timeToClose <= 3600 && timeToClose > -3600 && !markets.hourly) {
-                            markets.hourly = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve, tvl: Number(collateralLocked) / 1e18 };
-                            updateCard('hourly', startGwei, twapGwei, yesPrice, noPrice, needsResolve);
-                        } else if (timeToClose <= 86400 && timeToClose > -86400 && !markets.daily) {
-                            markets.daily = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve, tvl: Number(collateralLocked) / 1e18 };
-                            updateCard('daily', startGwei, twapGwei, yesPrice, noPrice, needsResolve);
-                        } else if (timeToClose <= 604800 && timeToClose > -604800 && !markets.weekly) {
-                            markets.weekly = { id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve, tvl: Number(collateralLocked) / 1e18 };
-                            updateCard('weekly', startGwei, twapGwei, yesPrice, noPrice, needsResolve);
-                        }
+                        // Collect for later sorting and assignment
+                        pendingComparisons.push({
+                            id: info.marketId, close, startGwei, yesPrice, noPrice, needsResolve,
+                            tvl: Number(collateralLocked) / 1e18, timeToClose
+                        });
                     } else if (desc.includes('spikes to') || desc.includes('Gas spikes')) {
                         if (!markets.extreme) {
                             markets.extreme = { id: info.marketId, close, yesPrice, noPrice, needsResolve, conditionMet: info.conditionMet, tvl: Number(collateralLocked) / 1e18 };
@@ -3105,6 +3279,34 @@
                                 }
                             }
                         }
+                    }
+                }
+
+                // Sort comparison markets by timeToClose descending (longest remaining first)
+                // This ensures weekly markets (with more time) get assigned before daily markets
+                pendingComparisons.sort((a, b) => b.timeToClose - a.timeToClose);
+
+                // Assign comparison markets to slots based on close time pattern
+                for (const m of pendingComparisons) {
+                    const closeDate = new Date(m.close * 1000);
+                    const isMidnightUTC = closeDate.getUTCHours() === 0 && closeDate.getUTCMinutes() === 0;
+                    const isSunday = closeDate.getUTCDay() === 0;
+                    const isHourlyWindow = m.timeToClose <= 3600 && m.timeToClose > -3600;
+
+                    // Hourly: closes within the hour (takes priority to avoid hourly being classified as weekly/daily)
+                    if (isHourlyWindow && !markets.hourly) {
+                        markets.hourly = { id: m.id, close: m.close, startGwei: m.startGwei, yesPrice: m.yesPrice, noPrice: m.noPrice, needsResolve: m.needsResolve, tvl: m.tvl };
+                        updateCard('hourly', m.startGwei, twapGwei, m.yesPrice, m.noPrice, m.needsResolve);
+                    }
+                    // Weekly: closes Sunday midnight UTC (weekly pattern) - must have > 1 hour remaining to distinguish from hourly
+                    else if (isMidnightUTC && isSunday && m.timeToClose <= 604800 && m.timeToClose > -604800 && !markets.weekly) {
+                        markets.weekly = { id: m.id, close: m.close, startGwei: m.startGwei, yesPrice: m.yesPrice, noPrice: m.noPrice, needsResolve: m.needsResolve, tvl: m.tvl };
+                        updateCard('weekly', m.startGwei, twapGwei, m.yesPrice, m.noPrice, m.needsResolve);
+                    }
+                    // Daily: closes at midnight (any day) - if Sunday, weekly slot must already be taken
+                    else if (isMidnightUTC && m.timeToClose <= 86400 && m.timeToClose > -86400 && !markets.daily) {
+                        markets.daily = { id: m.id, close: m.close, startGwei: m.startGwei, yesPrice: m.yesPrice, noPrice: m.noPrice, needsResolve: m.needsResolve, tvl: m.tvl };
+                        updateCard('daily', m.startGwei, twapGwei, m.yesPrice, m.noPrice, m.needsResolve);
                     }
                 }
 
@@ -3128,13 +3330,54 @@
                 const rpc = provider || await getRpcProvider();
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
                 const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpc);
+                const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
+                const pammInterface = new ethers.Interface(PAMM_ABI);
 
                 let totalTvl = 0;
                 let totalOrderbookLiq = 0;
                 let activeCount = 0;
 
-                // Load stats for each active market
+                // Collect active markets for batch poolKey fetch
                 const marketTypes = ['hourly', 'daily', 'weekly', 'extreme'];
+                const activeMarkets = [];
+                for (const type of marketTypes) {
+                    const market = markets[type];
+                    if (market && market.id) {
+                        activeMarkets.push({ type, market });
+                    }
+                }
+
+                // Batch fetch noIds for all active markets to compute poolIds
+                let poolIdMap = new Map(); // type -> poolId
+                if (activeMarkets.length > 0) {
+                    try {
+                        const noIdCalls = activeMarkets.map(({ market }) => ({
+                            target: PAMM_ADDRESS,
+                            allowFailure: true,
+                            callData: pammInterface.encodeFunctionData('getNoId', [market.id])
+                        }));
+                        const noIdResults = await multicall.aggregate3(noIdCalls);
+
+                        for (let i = 0; i < activeMarkets.length; i++) {
+                            if (noIdResults[i].success) {
+                                const noId = pammInterface.decodeFunctionResult('getNoId', noIdResults[i].returnData)[0];
+                                const yesId = activeMarkets[i].market.id;
+                                // Compute poolId same as pnkPM.html
+                                const id0 = yesId < noId ? yesId : noId;
+                                const id1 = yesId < noId ? noId : yesId;
+                                const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+                                    ['uint256', 'uint256', 'address', 'address', 'uint256'],
+                                    [id0, id1, PAMM_ADDRESS, PAMM_ADDRESS, FEE_TIER]
+                                ));
+                                poolIdMap.set(activeMarkets[i].type, poolId);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Failed to batch fetch noIds:', e);
+                    }
+                }
+
+                // Load stats for each active market
                 for (const type of marketTypes) {
                     const market = markets[type];
                     if (!market || !market.id) continue;
@@ -3159,6 +3402,15 @@
                         // Update individual card
                         const poolEl = document.getElementById(`${type}PoolTvl`);
                         if (poolEl) poolEl.textContent = formatEth(marketTvl);
+
+                        // Update ZAMM link
+                        const zammLink = document.getElementById(`${type}ZammLink`);
+                        const poolId = poolIdMap.get(type);
+                        if (zammLink && poolId) {
+                            const poolIdDecimal = BigInt(poolId).toString();
+                            zammLink.href = `https://zamm.finance/p/${poolIdDecimal}`;
+                            zammLink.style.display = 'flex';
+                        }
 
                         // Get orderbook depth
                         try {
@@ -3718,10 +3970,10 @@
             };
             title.textContent = `${typeLabels[type] || type} Odds Chart`;
 
-            // Get the chart URL
-            const poolId = chartPoolIds.get(type);
-            if (poolId) {
-                const poolIdDecimal = BigInt(poolId).toString();
+            // Get the chart URL - ZAMM handles Y/N orientation
+            const chartData = chartPoolIds.get(type);
+            if (chartData) {
+                const poolIdDecimal = BigInt(chartData.poolId).toString();
                 iframe.src = `https://www.zamm.finance/embed/pool/${poolIdDecimal}?theme=dark`;
             }
 
@@ -5713,6 +5965,302 @@
             }
         }
 
+        // ======================== DEPTH MODAL ========================
+        let depthModalData = { upBook: null, downBook: null, marketId: null, type: null };
+
+        async function openDepthModal() {
+            if (!currentTrade.marketId) return;
+
+            const type = currentTrade.type;
+            const marketId = currentTrade.marketId;
+            const isExtreme = type === 'extreme';
+            const upLabel = isExtreme ? 'YES' : 'UP';
+            const downLabel = isExtreme ? 'NO' : 'DOWN';
+
+            // Update labels
+            document.getElementById('depthUpLabel').textContent = upLabel;
+            document.getElementById('depthDownLabel').textContent = downLabel;
+            document.getElementById('depthTradeUpBtn').textContent = `Trade ${upLabel}`;
+            document.getElementById('depthTradeDownBtn').textContent = `Trade ${downLabel}`;
+            document.getElementById('depthModalMarketType').textContent = { hourly: 'Hourly', daily: 'Daily', weekly: 'Weekly', extreme: 'Extreme' }[type] || type;
+
+            document.getElementById('depthModal').classList.add('active');
+            document.getElementById('depthLadder').innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:2rem;font-size:11px;">Loading...</div>';
+
+            try {
+                const rpc = provider || await getRpcProvider();
+                const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpc);
+
+                // Fetch both UP and DOWN orderbooks
+                const depth = 20;
+                const [upOrderbook, downOrderbook, poolState] = await Promise.all([
+                    pmRouter.getOrderbook(marketId, true, depth),
+                    pmRouter.getOrderbook(marketId, false, depth),
+                    pamm.getPoolState(marketId, FEE_TIER).catch(() => null)
+                ]);
+
+                // Calculate AMM prices
+                let upAmmPrice = 0.5, downAmmPrice = 0.5;
+                if (poolState) {
+                    const [rYes, rNo, pYesNum, pYesDen] = poolState;
+                    upAmmPrice = Number(pYesNum) / Number(pYesDen);
+                    downAmmPrice = 1 - upAmmPrice;
+                }
+
+                // Process orderbooks
+                const formatOrder = (order, hash) => {
+                    const shares = Number(order.shares || 0);
+                    const collateral = Number(order.collateral || 0);
+                    if (shares <= 0) return null;
+                    return { price: collateral / shares, shares: order.shares, collateral: order.collateral, hash, owner: order.owner };
+                };
+
+                depthModalData = {
+                    upBook: {
+                        bids: upOrderbook[1].map((o, i) => formatOrder(o, upOrderbook[0][i])).filter(o => o),
+                        asks: upOrderbook[3].map((o, i) => formatOrder(o, upOrderbook[2][i])).filter(o => o),
+                        ammPrice: upAmmPrice
+                    },
+                    downBook: {
+                        bids: downOrderbook[1].map((o, i) => formatOrder(o, downOrderbook[0][i])).filter(o => o),
+                        asks: downOrderbook[3].map((o, i) => formatOrder(o, downOrderbook[2][i])).filter(o => o),
+                        ammPrice: downAmmPrice
+                    },
+                    marketId,
+                    type
+                };
+
+                // Update AMM price displays
+                document.getElementById('depthUpAmm').textContent = `AMM ${(upAmmPrice * 100).toFixed(1)}%`;
+                document.getElementById('depthDownAmm').textContent = `AMM ${(downAmmPrice * 100).toFixed(1)}%`;
+
+                renderDepthLadder();
+            } catch (e) {
+                console.error('Failed to load depth:', e);
+                document.getElementById('depthLadder').innerHTML = '<div style="text-align:center;color:var(--red);padding:2rem;font-size:11px;">Failed to load depth data</div>';
+            }
+        }
+
+        function closeDepthModal() {
+            document.getElementById('depthModal').classList.remove('active');
+        }
+
+        function renderDepthLadder() {
+            const ladder = document.getElementById('depthLadder');
+            const { upBook, downBook, type } = depthModalData;
+            if (!upBook || !downBook) return;
+
+            const upAmm = upBook.ammPrice || 0.5;
+            const downAmm = downBook.ammPrice || 0.5;
+            const isExtreme = type === 'extreme';
+            const upLabel = isExtreme ? 'YES' : 'UP';
+            const downLabel = isExtreme ? 'NO' : 'DOWN';
+            const userAddr = connectedAddress ? connectedAddress.toLowerCase() : '';
+
+            // Collect orders at each price level
+            const levels = new Map();
+
+            const addOrders = (orders, side, isUp, ammPrice) => {
+                orders.forEach(order => {
+                    const price = Math.round(order.price * 1000) / 1000;
+                    // Only show resting orders (bids below AMM, asks above AMM)
+                    const isResting = side === 'bids' ? price < ammPrice : price > ammPrice;
+                    if (!isResting) return;
+
+                    const eth = Number(order.shares) / 1e18 * order.price;
+                    const isOwn = order.owner?.toLowerCase() === userAddr;
+                    if (!levels.has(price)) levels.set(price, { upBids: 0, upAsks: 0, downBids: 0, downAsks: 0, orders: [] });
+                    const key = isUp ? (side === 'bids' ? 'upBids' : 'upAsks') : (side === 'bids' ? 'downBids' : 'downAsks');
+                    levels.get(price)[key] += eth;
+                    levels.get(price).orders.push({ ...order, side, isUp, eth, isOwn });
+                });
+            };
+
+            addOrders(upBook.bids, 'bids', true, upAmm);
+            addOrders(upBook.asks, 'asks', true, upAmm);
+            addOrders(downBook.bids, 'bids', false, downAmm);
+            addOrders(downBook.asks, 'asks', false, downAmm);
+
+            // Add AMM price rows
+            const upAmmRounded = Math.round(upAmm * 1000) / 1000;
+            const downAmmRounded = Math.round(downAmm * 1000) / 1000;
+            if (!levels.has(upAmmRounded)) levels.set(upAmmRounded, { upBids: 0, upAsks: 0, downBids: 0, downAsks: 0, orders: [], isUpAmm: true });
+            else levels.get(upAmmRounded).isUpAmm = true;
+            if (!levels.has(downAmmRounded)) levels.set(downAmmRounded, { upBids: 0, upAsks: 0, downBids: 0, downAsks: 0, orders: [], isDownAmm: true });
+            else levels.get(downAmmRounded).isDownAmm = true;
+
+            // Sort by price descending
+            const sortedLevels = [...levels.entries()].sort((a, b) => b[0] - a[0]);
+            const hasOrders = sortedLevels.some(([, d]) => d.orders.length > 0);
+
+            if (!hasOrders) {
+                ladder.innerHTML = `
+                    <div style="text-align:center;padding:1.5rem;color:var(--text-dim);">
+                        <div style="font-size:12px;margin-bottom:1rem;">No limit orders</div>
+                        <div style="display:flex;justify-content:center;gap:2rem;font-size:11px;">
+                            <span><span style="color:var(--green);">${upLabel}</span> AMM: ${(upAmm * 100).toFixed(1)}%</span>
+                            <span><span style="color:var(--red);">${downLabel}</span> AMM: ${(downAmm * 100).toFixed(1)}%</span>
+                        </div>
+                    </div>`;
+                return;
+            }
+
+            // Find max depth for bar scaling
+            let maxDepth = 0.001;
+            sortedLevels.forEach(([, d]) => maxDepth = Math.max(maxDepth, d.upBids, d.upAsks, d.downBids, d.downAsks));
+
+            ladder.innerHTML = sortedLevels.map(([price, data]) => {
+                const pct = (price * 100).toFixed(1);
+                const upDepth = data.upAsks > 0 ? data.upAsks : data.upBids;
+                const downDepth = data.downAsks > 0 ? data.downAsks : data.downBids;
+                const upBarWidth = (upDepth / maxDepth * 100).toFixed(1);
+                const downBarWidth = (downDepth / maxDepth * 100).toFixed(1);
+                const upIsAsk = data.upAsks > 0;
+                const downIsAsk = data.downAsks > 0;
+                const isAmmRow = data.isUpAmm || data.isDownAmm;
+
+                // Get order info for clicks
+                const upOrder = data.orders.find(o => o.isUp && ((upIsAsk && o.side === 'asks') || (!upIsAsk && o.side === 'bids')));
+                const downOrder = data.orders.find(o => !o.isUp && ((downIsAsk && o.side === 'asks') || (!downIsAsk && o.side === 'bids')));
+                const upIsOwn = upOrder?.isOwn;
+                const downIsOwn = downOrder?.isOwn;
+
+                // Click handlers
+                const upClick = upOrder ? `onclick="fillOrderFromDepth('${upOrder.hash}', ${upOrder.price}, '${upOrder.shares.toString()}', ${upOrder.side === 'bids'}, true)"` : '';
+                const downClick = downOrder ? `onclick="fillOrderFromDepth('${downOrder.hash}', ${downOrder.price}, '${downOrder.shares.toString()}', ${downOrder.side === 'bids'}, false)"` : '';
+
+                // Format depth
+                const formatDepth = d => d > 0 ? (d >= 1 ? d.toFixed(2) : d.toFixed(3)) + 'Ξ' : '';
+
+                return `
+                    <div class="depth-ladder-row${isAmmRow ? ' amm-row' : ''}">
+                        <div class="depth-cell${upOrder ? ' clickable' : ''}" style="justify-content:flex-end;" ${upClick}>
+                            ${upDepth > 0 ? `<div class="depth-bar up${upIsOwn ? ' own' : ''}" style="width:${upBarWidth}%;${upIsAsk ? 'background:var(--red);' : ''}"></div>` : ''}
+                            ${upIsOwn ? '<span style="font-size:8px;color:var(--amber);margin-right:4px;z-index:1;font-weight:600;">YOU</span>' : ''}
+                            ${data.isUpAmm ? '<span style="font-size:8px;color:var(--blue);margin-right:6px;z-index:1;font-weight:600;">AMM</span>' : ''}
+                            <span style="font-size:10px;color:${upIsOwn ? 'var(--amber)' : (upIsAsk ? 'var(--red)' : 'var(--green)')};z-index:1;font-weight:600;">${formatDepth(upDepth)}</span>
+                        </div>
+                        <div class="depth-center${isAmmRow ? '" style="background:var(--surface-2);' : ''}">${pct}%</div>
+                        <div class="depth-cell${downOrder ? ' clickable' : ''}" ${downClick}>
+                            ${downDepth > 0 ? `<div class="depth-bar down${downIsOwn ? ' own' : ''}" style="width:${downBarWidth}%;${downIsAsk ? 'background:var(--red);' : ''}"></div>` : ''}
+                            <span style="font-size:10px;color:${downIsOwn ? 'var(--amber)' : (downIsAsk ? 'var(--red)' : 'var(--green)')};z-index:1;font-weight:600;">${formatDepth(downDepth)}</span>
+                            ${downIsOwn ? '<span style="font-size:8px;color:var(--amber);margin-left:4px;z-index:1;font-weight:600;">YOU</span>' : ''}
+                            ${data.isDownAmm ? '<span style="font-size:8px;color:var(--blue);margin-left:6px;z-index:1;font-weight:600;">AMM</span>' : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function depthTradeUp() {
+            closeDepthModal();
+            if (depthModalData.marketId && depthModalData.type) {
+                openTrade(depthModalData.type, true);
+            }
+        }
+
+        function depthTradeDown() {
+            closeDepthModal();
+            if (depthModalData.marketId && depthModalData.type) {
+                openTrade(depthModalData.type, false);
+            }
+        }
+
+        // Open depth modal from card (without requiring trade modal to be open first)
+        async function openDepthModalForType(type) {
+            const market = markets[type];
+            if (!market || !market.id) return;
+
+            // Set up currentTrade context for the depth modal
+            currentTrade.marketId = market.id;
+            currentTrade.type = type;
+            currentTrade.isYes = true;
+
+            await openDepthModal();
+        }
+
+        async function fillOrderFromDepth(orderHash, price, sharesStr, isBid, isUp) {
+            if (!signer) {
+                closeDepthModal();
+                showWalletModal();
+                return;
+            }
+
+            const shares = BigInt(sharesStr);
+            const shareAmount = Number(shares) / 1e18;
+            const ethAmount = shareAmount * price;
+            const isExtreme = depthModalData.type === 'extreme';
+            const upLabel = isExtreme ? 'YES' : 'UP';
+            const downLabel = isExtreme ? 'NO' : 'DOWN';
+            const side = isUp ? upLabel : downLabel;
+            const userIsBuying = !isBid;
+            const marketId = depthModalData.marketId;
+
+            try {
+                const rpc = provider || await getRpcProvider();
+                const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
+
+                // Validate user has sufficient balance
+                if (userIsBuying) {
+                    // Check ETH balance
+                    const ethBal = await rpc.getBalance(connectedAddress);
+                    const collateralWei = ethers.parseEther(ethAmount.toFixed(18));
+                    if (collateralWei > ethBal) {
+                        const needed = ethAmount.toFixed(4);
+                        const have = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
+                        showToast('Insufficient ETH', `Need ${needed} ETH, have ${have} ETH`, 'error', 4000);
+                        return;
+                    }
+                } else {
+                    // Check shares balance - need to fetch the correct token ID
+                    const tokenId = isUp ? marketId : await pamm.getNoId(marketId);
+                    const userShares = await pamm.balanceOf(connectedAddress, tokenId);
+                    if (shares > userShares) {
+                        const needed = shareAmount.toFixed(4);
+                        const have = parseFloat(ethers.formatEther(userShares)).toFixed(4);
+                        showToast('Insufficient Shares', `Need ${needed} ${side}, have ${have} ${side}`, 'error', 4000);
+                        return;
+                    }
+
+                    // Check and request approval for selling
+                    const approved = await checkAndRequestApprovals('sell');
+                    if (!approved) return;
+                }
+
+                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+
+                let txPromise;
+                if (userIsBuying) {
+                    // User is buying shares (filling an ask/sell order)
+                    const collateralWei = ethers.parseEther(ethAmount.toFixed(18));
+                    txPromise = pmRouter.fillOrder(orderHash, shares, connectedAddress, { value: collateralWei });
+                } else {
+                    // User is selling shares (filling a bid/buy order)
+                    txPromise = pmRouter.fillOrder(orderHash, shares, connectedAddress);
+                }
+
+                closeDepthModal();
+                await monitorTransaction(txPromise, {
+                    pending: { title: `Filling ${side} Order`, body: 'Confirm in your wallet...' },
+                    submitted: { title: `Filling ${side} Order`, body: 'Waiting for confirmation...' },
+                    success: { title: 'Order Filled!', body: `${userIsBuying ? 'Bought' : 'Sold'} ${shareAmount.toFixed(4)} ${side} shares` },
+                    error: { title: 'Fill Failed', body: '' },
+                    onSuccess: async () => {
+                        await Promise.all([
+                            loadUserPosition(marketId),
+                            loadOrderbook(marketId, currentTrade.isYes)
+                        ]);
+                        loadBalance();
+                    }
+                });
+            } catch (e) {
+                if (!isUserRejection(e)) {
+                    console.error('Fill order failed:', e);
+                    showToast('Fill Failed', 'Check console for details', 'error', 4000);
+                }
+            }
+        }
+
         async function fillOrderFromBook(order, isBid, idx) {
             if (!signer) {
                 showStatus('Connect wallet to fill orders', 'error');
@@ -5736,7 +6284,7 @@
             // Validate user has sufficient balance
             if (userIsBuying) {
                 // Check ETH balance
-                const ethBal = await provider.getBalance(connectedAddress);
+                const ethBal = await rpc.getBalance(connectedAddress);
                 if (order.collateral > ethBal) {
                     const needed = collateral.toFixed(4);
                     const have = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
@@ -5840,11 +6388,34 @@
             document.getElementById('swapSlip05').className = pct === 0.5 ? 'slip-btn slip-active' : 'slip-btn';
             document.getElementById('swapSlip1').className = pct === 1 ? 'slip-btn slip-active' : 'slip-btn';
             document.getElementById('swapSlip2').className = pct === 2 ? 'slip-btn slip-active' : 'slip-btn';
+            // Clear custom input if preset was clicked
+            const customInput = document.getElementById('swapSlipCustom');
+            if ([0.5, 1, 2].includes(pct)) {
+                customInput.value = '';
+            }
 
             // Update display
             document.getElementById('swapSlipDisplay').textContent = pct + '%';
 
             updateSwapPreview();
+        }
+
+        function setLpSlippage(pct) {
+            if (!pct || pct <= 0) pct = 1;
+            if (pct > 50) pct = 50; // Cap at 50% for safety
+            lpSlippageTolerance = pct;
+
+            // Update LP slippage button states
+            document.getElementById('lpSlip05').className = pct === 0.5 ? 'slip-btn slip-active' : 'slip-btn';
+            document.getElementById('lpSlip1').className = pct === 1 ? 'slip-btn slip-active' : 'slip-btn';
+            document.getElementById('lpSlip2').className = pct === 2 ? 'slip-btn slip-active' : 'slip-btn';
+            // Clear custom input if preset was clicked
+            const customInput = document.getElementById('lpSlipCustom');
+            if ([0.5, 1, 2].includes(pct)) {
+                customInput.value = '';
+            }
+
+            updateLpPreview();
         }
 
         // Track current trade direction (buy/sell) and swap direction (yesToNo)
@@ -7025,22 +7596,39 @@
                 // Use raw max value if available (from Max button), otherwise parse input
                 const amtWei = lpMaxRaw || ethers.parseEther(amt.toString());
 
-                // 1% slippage protection for LP operations
-                const lpSlippage = 0.01;
-                const minAmount = amtWei * BigInt(Math.floor((1 - lpSlippage) * 10000)) / 10000n;
+                // Use configurable LP slippage tolerance
+                const slippage = lpSlippageTolerance / 100;
+                // Deadline: 20 minutes from now
+                const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+
+                // Get pool state for calculations
+                const rYes = currentOrderbook.rYes || 0n;
+                const rNo = currentOrderbook.rNo || 0n;
+                const rYesNum = Number(rYes) / 1e18;
+                const rNoNum = Number(rNo) / 1e18;
+                const poolTvl = currentTrade.tvl > 0 ? currentTrade.tvl : (rYesNum + rNoNum) / 2;
+                const totalLpSupply = currentUserPosition.lpTotalSupply
+                    ? Number(currentUserPosition.lpTotalSupply) / 1e18
+                    : Math.sqrt(rYesNum * rNoNum);
 
                 let txPromise;
                 if (currentLpMode === 'add') {
+                    // Calculate expected LP tokens: estLp = (amt / poolTvl) * totalLpSupply
+                    const estLp = poolTvl > 0 && totalLpSupply > 0
+                        ? (amt / poolTvl) * totalLpSupply
+                        : amt; // For new pool, 1:1
+                    const minLiquidity = ethers.parseEther(Math.max(0, estLp * (1 - slippage)).toFixed(18));
+
                     // Add liquidity: splitAndAddLiquidity
                     txPromise = pamm.splitAndAddLiquidity(
                         currentTrade.marketId,
                         amtWei,
                         FEE_TIER,
-                        0, // amount0Min - tokens go to pool, less critical
+                        0, // amount0Min - tokens go to pool atomically, less MEV risk
                         0, // amount1Min
-                        minAmount / 2n, // minLiquidity - protect against sandwich
+                        minLiquidity, // minLiquidity - protect against sandwich
                         connectedAddress,
-                        0, // deadline
+                        deadline,
                         { value: amtWei }
                     );
 
@@ -7063,15 +7651,23 @@
                     const approved = await checkAndRequestApprovals('lp_remove');
                     if (!approved) return;
 
+                    // Calculate expected ETH out: ethOut = min(yesOut, noOut)
+                    // where yesOut = shareOfPool * rYesNum, noOut = shareOfPool * rNoNum
+                    const shareOfPool = totalLpSupply > 0 ? amt / totalLpSupply : 0;
+                    const yesOut = shareOfPool * rYesNum;
+                    const noOut = shareOfPool * rNoNum;
+                    const expectedEthOut = Math.min(yesOut, noOut);
+                    const minCollateralOut = ethers.parseEther(Math.max(0, expectedEthOut * (1 - slippage)).toFixed(18));
+
                     txPromise = pamm.removeLiquidityToCollateral(
                         currentTrade.marketId,
                         FEE_TIER,
                         amtWei,
-                        0, // amount0Min
+                        0, // amount0Min - handled by minCollateralOut
                         0, // amount1Min
-                        minAmount, // minCollateralOut - protect against sandwich
+                        minCollateralOut, // minCollateralOut - protect against sandwich
                         connectedAddress,
-                        0 // deadline
+                        deadline
                     );
 
                     await monitorTransaction(txPromise, {
@@ -7948,23 +8544,23 @@
                             return;
                         }
 
-                        // Get or compute poolId
-                        let poolId = chartPoolIds.get(type);
-                        if (!poolId) {
+                        // Get poolId from cache or compute it
+                        let chartData = chartPoolIds.get(type);
+                        if (!chartData) {
                             const rpc = provider || await getRpcProvider();
                             const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
                             const poolKey = await pamm.poolKey(market.id, FEE_TIER);
-                            poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+                            const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
                                 ['uint256', 'uint256', 'address', 'address', 'uint256'],
                                 [poolKey.id0, poolKey.id1, poolKey.token0, poolKey.token1, poolKey.feeOrHook]
                             ));
-                            chartPoolIds.set(type, poolId);
+                            chartData = { poolId };
+                            chartPoolIds.set(type, chartData);
                         }
 
-                        // Convert poolId to decimal string for ZAMM embed
-                        const poolIdDecimal = BigInt(poolId).toString();
+                        // ZAMM embed handles Y/N orientation automatically
+                        const poolIdDecimal = BigInt(chartData.poolId).toString();
 
-                        // Type labels
                         const typeLabels = {
                             hourly: 'Hourly',
                             daily: 'Daily',
@@ -7973,18 +8569,14 @@
                         };
 
                         container.innerHTML = `
-                            <div class="card-chart-header">
-                                <span class="card-chart-title">${typeLabels[type] || type} YES/NO Prices</span>
-                                <button class="card-chart-expand" onclick="openOddsModal('${type}')">
-                                    <span>⛶</span> Expand
-                                </button>
-                            </div>
-                            <iframe
-                                src="https://www.zamm.finance/embed/pool/${poolIdDecimal}?theme=dark"
-                                title="ZAMM Pool Chart - ${type}"
-                                loading="lazy"
-                                allowfullscreen
-                            ></iframe>`;
+                            <div class="card-chart-wrapper">
+                                <button class="card-chart-expand" onclick="openOddsModal('${type}')">⛶</button>
+                                <iframe
+                                    src="https://www.zamm.finance/embed/pool/${poolIdDecimal}?theme=dark"
+                                    title="${typeLabels[type] || type} Odds"
+                                    loading="lazy"
+                                ></iframe>
+                            </div>`;
                         chartLoaded.add(type);
                     } catch (e) {
                         console.error('Failed to load chart:', e);
