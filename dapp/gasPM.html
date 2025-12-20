@@ -2708,9 +2708,31 @@
             await loadData();
             updateCountdowns();
             setInterval(updateCountdowns, 1000);
-            setInterval(loadData, 60000);
+            startSmartPolling();
             setupChart();
             startPulseAnimation();
+        }
+
+        // Smart polling - pauses when tab is hidden, refreshes on return
+        let pollInterval = null;
+        function startSmartPolling() {
+            const ACTIVE_INTERVAL = 60000;   // 60s when active
+            const HIDDEN_INTERVAL = 300000;  // 5 min when hidden
+
+            function poll() {
+                clearInterval(pollInterval);
+                const interval = document.hidden ? HIDDEN_INTERVAL : ACTIVE_INTERVAL;
+                pollInterval = setInterval(loadData, interval);
+            }
+
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    loadData(); // Refresh immediately when tab becomes visible
+                }
+                poll(); // Adjust polling interval
+            });
+
+            poll(); // Start polling
         }
 
         function startPulseAnimation() {
@@ -7699,21 +7721,26 @@
             }
         }
 
+        let tradeInputTimer = null;
         function handleTradeInput() {
             // Clear raw max values when user manually edits input
             tradeMaxRaw = null;
             swapMaxRaw = null;
             lpMaxRaw = null;
 
-            if (currentTradeMode === 'lp') {
-                updateLpPreview();
-            } else if (currentTradeMode === 'swap') {
-                updateSwapPreview();
-            } else if (currentTradeMode === 'mint') {
-                updateMintPreview();
-            } else {
-                updatePreview();
-            }
+            // Debounce expensive preview calculations
+            clearTimeout(tradeInputTimer);
+            tradeInputTimer = setTimeout(() => {
+                if (currentTradeMode === 'lp') {
+                    updateLpPreview();
+                } else if (currentTradeMode === 'swap') {
+                    updateSwapPreview();
+                } else if (currentTradeMode === 'mint') {
+                    updateMintPreview();
+                } else {
+                    updatePreview();
+                }
+            }, 80);
         }
 
         async function loadBalance() {
@@ -8273,6 +8300,13 @@
                 timeout = setTimeout(() => {
                     dismissToast(toastId);
                 }, duration);
+            } else if (type === 'pending') {
+                // Auto-cleanup pending toasts after 70s (just after tx monitor's 60s timeout)
+                timeout = setTimeout(() => {
+                    if (activeToasts.has(toastId)) {
+                        updateToast(toastId, 'Timeout', 'Transaction may still be pending. Check Etherscan.', 'info', 8000);
+                    }
+                }, 70000);
             }
 
             activeToasts.set(toastId, { element: toast, timeout });

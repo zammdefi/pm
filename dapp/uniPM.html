@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>pnkPM - PNKSTR Bets</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2309090b' width='100' height='100' rx='12'/><text x='50' y='55' font-family='system-ui,sans-serif' font-size='16' font-weight='600' fill='%23ec4899' text-anchor='middle'>Pnk</text><text x='50' y='72' font-family='system-ui,sans-serif' font-size='14' font-weight='600' fill='%233b82f6' text-anchor='middle'>PM</text></svg>" type="image/svg+xml">
+    <title>uniPM - Uniswap Bets</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2309090b' width='100' height='100' rx='12'/><text x='50' y='55' font-family='system-ui,sans-serif' font-size='16' font-weight='600' fill='%23FF007A' text-anchor='middle'>uni</text><text x='50' y='72' font-family='system-ui,sans-serif' font-size='14' font-weight='600' fill='%233b82f6' text-anchor='middle'>PM</text></svg>" type="image/svg+xml">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.15.0/ethers.umd.min.js" integrity="sha512-UXYETj+vXKSURF1UlgVRLzWRS9ZiQTv3lcL4rbeLyqTXCPNZC6PTLF/Ik3uxm2Zo+E109cUpJPZfLxJsCgKSng==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.10.0/dist/index.umd.js" integrity="sha384-ACTo60vL1/AfeYkCCXRvB1G0ugjHF0/SHU9YN7e4/KH/mitAIYpLcw5PKXW/+ekM" crossorigin="anonymous"></script>
     <style>
@@ -24,8 +24,8 @@
             --blue-dim: rgba(59, 130, 246, 0.15);
             --amber: #f59e0b;
             --amber-dim: rgba(245, 158, 11, 0.15);
-            --pink: #ec4899;
-            --pink-dim: rgba(236, 72, 153, 0.15);
+            --pink: #FF007A;
+            --pink-dim: rgba(255, 0, 122, 0.15);
             --purple: #a855f7;
             --gray: #27272a;
             --light-gray: #3f3f46;
@@ -167,7 +167,16 @@
         .hero-subtitle {
             color: var(--text-muted);
             font-size: var(--font-sm);
+            margin-bottom: 0.5rem;
+        }
+
+        .hero-subtext {
+            color: var(--text-dim);
+            font-size: var(--font-xs);
             margin-bottom: 1.5rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         .treasury-display {
@@ -503,6 +512,28 @@
             margin: 0 auto;
         }
 
+
+        .market-tab {
+            font-family: inherit;
+            font-size: var(--font-sm);
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .market-tab:hover {
+            color: var(--text);
+        }
+
+        .market-tab.active {
+            color: var(--pink);
+            border-bottom-color: var(--pink);
+        }
         .create-card {
             background: var(--surface);
             border-radius: var(--radius);
@@ -564,6 +595,90 @@
 
         .create-btn:hover { opacity: 0.9; }
         .create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* CUSTOM COLLATERAL DROPDOWN */
+        .collateral-dropdown {
+            position: relative;
+            width: 100%;
+        }
+
+        .collateral-dropdown-selected {
+            width: 100%;
+            padding: 0.625rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-size: var(--font-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: border-color 0.15s;
+        }
+
+        .collateral-dropdown-selected:hover {
+            border-color: var(--pink);
+        }
+
+        .collateral-dropdown-selected.active {
+            border-color: var(--pink);
+        }
+
+        .collateral-dropdown-icon {
+            flex-shrink: 0;
+        }
+
+        .collateral-dropdown-text {
+            flex: 1;
+        }
+
+        .collateral-dropdown-arrow {
+            flex-shrink: 0;
+            color: var(--text-dim);
+            font-size: 10px;
+        }
+
+        .collateral-dropdown-options {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-top: 0.25rem;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .collateral-dropdown-options.active {
+            display: block;
+        }
+
+        .collateral-dropdown-option {
+            padding: 0.625rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .collateral-dropdown-option:hover {
+            background: var(--surface-2);
+        }
+
+        .collateral-dropdown-option:first-child {
+            border-top-left-radius: var(--radius);
+            border-top-right-radius: var(--radius);
+        }
+
+        .collateral-dropdown-option:last-child {
+            border-bottom-left-radius: var(--radius);
+            border-bottom-right-radius: var(--radius);
+        }
 
         /* TRADE MODAL */
         .modal-overlay {
@@ -856,18 +971,37 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <header class="header">
-        <div style="display:flex;align-items:center;">
-            <div class="logo">pnk<span>PM</span></div>
-            <a href="https://www.punkstrategy.fun/" target="_blank" rel="noopener" class="tagline" style="text-decoration: none; transition: color 0.2s;">PNKSTR Prediction Markets ↗</a>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+            <svg width="24" height="24" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="opacity:0.7;">
+                <g fill="none" fill-rule="evenodd">
+                    <circle fill="#FF007A" fill-rule="nonzero" cx="16" cy="16" r="16"/>
+                    <g fill="#FFF">
+                        <path d="M12.261 5.767c-.285-.044-.297-.05-.163-.07.257-.04.865.015 1.284.114.977.233 1.866.828 2.816 1.885l.252.28.36-.057c1.52-.245 3.067-.05 4.36.547.356.164.917.491.987.576.023.026.064.199.091.383.096.637.048 1.125-.146 1.49-.106.198-.112.26-.041.43a.416.416 0 00.372.236c.322 0 .668-.52.828-1.243l.064-.287.126.143c.692.784 1.235 1.853 1.328 2.613l.025.199-.117-.18c-.2-.31-.4-.522-.658-.693-.464-.307-.955-.411-2.255-.48-1.174-.062-1.839-.162-2.497-.377-1.121-.365-1.686-.852-3.018-2.599-.591-.776-.957-1.205-1.32-1.55-.827-.786-1.639-1.198-2.678-1.36z" fill-rule="nonzero"/>
+                        <path d="M22.422 7.5c.03-.52.1-.863.242-1.176.056-.124.109-.226.117-.226a.773.773 0 01-.055.204c-.103.304-.12.72-.049 1.203.09.614.142.702.79 1.365.305.311.659.703.787.872l.233.306-.233-.219c-.285-.267-.941-.79-1.086-.864-.097-.05-.112-.049-.172.01-.055.056-.067.138-.074.529-.012.608-.095 1-.296 1.39-.108.21-.125.166-.027-.073.073-.178.08-.256.08-.845 0-1.184-.141-1.468-.966-1.956a9.046 9.046 0 00-.764-.396 2.916 2.916 0 01-.374-.182c.023-.023.827.211 1.15.336.482.185.561.209.62.186.039-.015.058-.129.077-.464zm-9.607 2.025c-.579-.797-.937-2.02-.86-2.934l.024-.283.132.024c.248.045.675.204.875.326.548.333.786.772 1.027 1.898.071.33.164.703.207.83.068.203.328.678.54.987.152.222.05.327-.286.297-.514-.047-1.21-.527-1.659-1.145zm8.905 5.935c-2.707-1.09-3.66-2.036-3.66-3.632 0-.235.008-.427.017-.427.01 0 .115.077.233.172.549.44 1.164.628 2.865.876 1.001.147 1.565.265 2.085.437 1.652.548 2.674 1.66 2.918 3.174.07.44.029 1.265-.086 1.7-.09.344-.367.963-.44.987-.02.006-.04-.071-.046-.178-.028-.568-.315-1.122-.798-1.537-.549-.471-1.286-.847-3.089-1.572zm-1.9.452a4.808 4.808 0 00-.131-.572l-.07-.206.129.144c.177.2.318.454.436.794.091.259.101.336.1.757 0 .414-.011.5-.095.734a2.32 2.32 0 01-.571.908c-.495.504-1.13.782-2.048.898-.16.02-.624.054-1.033.075-1.03.054-1.707.164-2.316.378a.488.488 0 01-.174.042c-.024-.025.39-.272.733-.437.483-.233.963-.36 2.04-.539.532-.089 1.082-.196 1.221-.239 1.318-.404 1.995-1.446 1.778-2.737z" fill-rule="nonzero"/>
+                        <path d="M21.06 18.116c-.36-.773-.442-1.52-.245-2.216.021-.074.055-.135.075-.135a.73.73 0 01.189.102c.166.112.498.3 1.383.782 1.105.603 1.735 1.07 2.164 1.602.375.467.607.999.719 1.647.063.367.026 1.25-.068 1.62-.297 1.166-.988 2.082-1.972 2.616a2.53 2.53 0 01-.288.143c-.014 0 .038-.133.117-.297.33-.692.369-1.366.118-2.116-.153-.459-.466-1.02-1.097-1.966-.734-1.1-.914-1.394-1.095-1.782zm-10.167 4.171c1.005-.848 2.254-1.45 3.393-1.635.49-.08 1.308-.048 1.762.068.728.186 1.38.604 1.719 1.101.33.486.473.91.62 1.852.06.372.123.745.142.83.11.488.327.879.595 1.075.425.311 1.158.33 1.878.05a.981.981 0 01.236-.074c.026.026-.336.269-.592.397a2.014 2.014 0 01-.983.238c-.66 0-1.208-.335-1.665-1.02-.09-.135-.292-.538-.45-.897-.482-1.1-.72-1.436-1.28-1.803-.489-.32-1.118-.377-1.591-.145-.622.305-.795 1.1-.35 1.603.177.2.507.373.777.406a.83.83 0 00.939-.83c0-.332-.128-.52-.448-.665-.437-.197-.907.033-.905.444.001.175.077.285.253.365.113.05.115.055.023.036-.401-.084-.495-.567-.172-.888.387-.386 1.188-.216 1.463.31.116.221.129.662.028.928-.225.595-.883.907-1.55.737-.454-.116-.639-.241-1.186-.805-.951-.98-1.32-1.17-2.692-1.384l-.263-.041.3-.253z" fill-rule="nonzero"/>
+                        <path d="M6.196 3.35l.096.117c3.708 4.54 5.624 6.896 5.746 7.064.2.278.125.527-.219.723-.191.109-.585.219-.781.219-.223 0-.474-.107-.657-.28-.129-.123-.65-.901-1.853-2.768a188.53 188.53 0 00-1.712-2.633c-.049-.046-.048-.045 1.618 2.936 1.046 1.872 1.4 2.533 1.4 2.622 0 .18-.05.274-.272.522-.37.413-.535.877-.655 1.837-.134 1.077-.51 1.837-1.554 3.138-.61.762-.71.902-.865 1.209-.194.386-.247.603-.269 1.091-.023.516.022.85.18 1.343.138.432.282.718.65 1.288.318.493.501.859.501 1.002 0 .114.022.114.515.003 1.179-.266 2.136-.735 2.675-1.309.333-.355.411-.551.414-1.038.001-.318-.01-.385-.096-.568-.14-.298-.395-.546-.957-.93-.737-.504-1.051-.91-1.138-1.467-.072-.457.011-.78.419-1.634.421-.884.526-1.26.597-2.151.045-.576.108-.803.274-.985.172-.19.328-.255.755-.313.696-.095 1.139-.275 1.503-.61.316-.292.448-.573.468-.995l.016-.32-.177-.206c-.254-.296-2.355-2.614-6.304-6.956l-.106-.115-.212.165zM7.91 19.732a.566.566 0 00-.174-.746c-.228-.152-.583-.08-.583.118 0 .06.033.104.108.143.127.065.136.139.037.288-.101.152-.093.286.023.377.186.146.45.065.59-.18zm5.524-7.176c-.327.1-.644.447-.743.81-.06.221-.026.61.064.73.145.194.286.245.666.242.744-.005 1.39-.324 1.466-.723.062-.327-.223-.78-.614-.98-.202-.102-.631-.143-.839-.079zm.87.68c.115-.163.064-.34-.13-.458-.372-.227-.934-.04-.934.312 0 .174.293.365.561.365.18 0 .424-.107.503-.219z"/>
+                    </g>
+                </g>
+            </svg>
+            <div class="logo">uni<span>PM</span></div>
+            <a href="https://uniswap.org/" target="_blank" rel="noopener" class="tagline" style="text-decoration: none; transition: color 0.2s;">Uniswap Prediction Markets ↗</a>
         </div>
         <div class="header-center">
             <div class="live-stat">
-                <div class="live-stat-label">PNKSTR Punks</div>
+                <div class="live-stat-label">V4 Fee Switch</div>
                 <div class="live-stat-value pink" id="livePunks">--</div>
             </div>
             <div class="live-stat">
                 <div class="live-stat-label">Markets</div>
                 <div class="live-stat-value blue" id="marketCount">0</div>
+            </div>
+            <div class="live-stat">
+                <div class="live-stat-label">UNI Price</div>
+                <div class="live-stat-value" style="color:#FF007A;" id="uniPrice">--</div>
+            </div>
+            <div class="live-stat">
+                <div class="live-stat-label">UNI Supply</div>
+                <div class="live-stat-value" style="color:#FF007A;" id="uniTotalSupply">--</div>
             </div>
             <div class="live-stat">
                 <div class="live-stat-label">Pool TVL</div>
@@ -878,41 +1012,49 @@
                 <div class="live-stat-value" style="color:#f59e0b;" id="orderbookTvl">--</div>
             </div>
         </div>
-        <button class="btn" id="connectBtn" onclick="connectWallet()">Connect</button>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+            <div id="walletBalances" style="display:none;font-size:var(--font-xs);text-align:right;margin-right:0.5rem;">
+                <div style="color:var(--text-muted);">ETH: <span id="ethBalance" style="color:var(--text);">--</span></div>
+                <div style="color:var(--text-muted);">UNI: <span id="uniBalance" style="color:var(--pink);">--</span></div>
+            </div>
+            <button class="btn" id="connectBtn" onclick="connectWallet()">Connect</button>
+        </div>
     </header>
 
     <main class="main">
         <!-- Hero Section -->
         <section class="hero-section">
-            <h1 class="hero-title">PNKSTR Treasury CryptoPunks</h1>
-            <p class="hero-subtitle">Prediction markets on PNKSTR's CryptoPunks holdings</p>
+            <h1 class="hero-title">Uniswap Prediction Markets</h1>
+            <p class="hero-subtitle">Bet on V4 fee activation, UNI token balances, and Uniswap ecosystem metrics</p>
+            <p class="hero-subtext">All markets use an on-chain <a href="https://etherscan.io/address/0x00000000002205020E387b6a378c05639047BcFB#code" target="_blank" style="color:var(--pink);text-decoration:none;">Resolver</a> that settles automatically when conditions are met or deadlines pass</p>
             <div class="treasury-display">
                 <div>
-                    <div class="treasury-label">Current Balance</div>
-                    <div class="treasury-balance"><span id="heroBalance">--</span> Punks</div>
+                    <div class="treasury-label">V4 Fee Controller</div>
+                    <div class="treasury-balance"><span id="heroBalance">--</span></div>
                 </div>
                 <div style="border-left:1px solid var(--border);padding-left:1rem;">
-                    <div class="treasury-label">Treasury</div>
-                    <a href="https://etherscan.io/address/0x1244EAe9FA2c064453B5F605d708C0a0Bfba4838" target="_blank" style="color:var(--text-muted);font-size:var(--font-xs);text-decoration:none;display:flex;align-items:center;gap:4px;">
-                        0x1244...4838 <span style="opacity:0.5;">↗</span>
+                    <div class="treasury-label">Pool Manager</div>
+                    <a href="https://etherscan.io/address/0x000000000004444c5dc75cB358380D2e3dE08A90" target="_blank" style="color:var(--text-muted);font-size:var(--font-xs);text-decoration:none;display:flex;align-items:center;gap:4px;">
+                        0x0000...08A90 <span style="opacity:0.5;">↗</span>
                     </a>
                 </div>
                 <div style="border-left:1px solid var(--border);padding-left:1rem;">
-                    <div class="treasury-label">Token</div>
-                    <a href="https://etherscan.io/address/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" target="_blank" style="color:var(--text-muted);font-size:var(--font-xs);text-decoration:none;display:flex;align-items:center;gap:4px;">
-                        CryptoPunks <span style="opacity:0.5;">↗</span>
+                    <div class="treasury-label">UNI Token</div>
+                    <a href="https://etherscan.io/token/0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984" target="_blank" style="color:var(--text-muted);font-size:var(--font-xs);text-decoration:none;display:flex;align-items:center;gap:4px;">
+                        0x1f98...F984 <span style="opacity:0.5;">↗</span>
                     </a>
                 </div>
             </div>
         </section>
 
         <!-- Chart Section -->
-        <section class="bets-section" style="padding-bottom:0;">
+        <section class="bets-section" id="chartSection" style="padding-bottom:0;display:none;">
             <h2 class="section-title">Odds <span id="featuredOdds" style="font-weight:400;color:var(--text-muted);font-size:var(--font-sm);">--</span></h2>
             <div class="chart-container">
                 <iframe
-                    src="https://www.zamm.finance/embed/pool/39414537111466279853124615553549368953361141359364927629160955167830963634860?theme=dark"
-                    title="PNK Market Odds"
+                    id="chartIframe"
+                    src=""
+                    title="Market Odds"
                     loading="lazy"
                 ></iframe>
             </div>
@@ -943,52 +1085,413 @@
             </div>
         </section>
 
-        <!-- Create Section (hidden for now - demo market created) -->
-        <section class="create-section" id="createSection" style="display:none !important;">
+        <!-- Create Section -->
+        <section class="create-section" id="createSection" style="display:none;">
             <h2 class="section-title">Create Market</h2>
-            <div class="create-card">
-                <div class="create-card-title">PNKSTR Punks Balance Market</div>
-                <div class="create-card-desc">Create a market on whether PNKSTR treasury will hold more than a target number of CryptoPunks by a deadline.</div>
+
+            <!-- Market Type Tabs -->
+            <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;border-bottom:1px solid var(--border);">
+                <button id="tabFeeSwitch" class="market-tab active" onclick="switchMarketTab('feeSwitch')">
+                    V4 Fee Switch
+                </button>
+                <button id="tabUniBalance" class="market-tab" onclick="switchMarketTab('uniBalance')">
+                    UNI Balance
+                </button>
+                <button id="tabUniVotes" class="market-tab" onclick="switchMarketTab('uniVotes')">
+                    UNI Voting Power
+                </button>
+                <button id="tabTotalSupply" class="market-tab" onclick="switchMarketTab('totalSupply')">
+                    UNI Total Supply
+                </button>
+                <button id="tabUniPrice" class="market-tab" onclick="switchMarketTab('uniPrice')">
+                    UNI Price
+                </button>
+            </div>
+
+            <!-- Fee Switch Market Creator -->
+            <div id="creatorFeeSwitch" class="create-card">
+                <div class="create-card-title">V4 Protocol Fee Controller Market</div>
+                <div class="create-card-desc">Create a market on whether Uniswap V4 will activate protocol fees by a deadline.</div>
 
                 <div class="create-input-group">
-                    <label class="create-label">Target Punks (Greater Than)</label>
-                    <input type="number" class="create-input" id="createThreshold" value="40" min="1" step="1">
+                    <label class="create-label">Condition</label>
+                    <input type="text" class="create-input" value="protocolFeeController() != 0" readonly style="background:var(--surface-2);cursor:not-allowed;">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">Market resolves YES if Uniswap V4 activates protocol fees</div>
                 </div>
 
                 <div class="create-input-group">
                     <label class="create-label">Deadline</label>
-                    <select class="create-input" id="createDeadline">
-                        <option value="eoy2025">End of 2025 (Dec 31, 23:59:59 UTC)</option>
-                        <option value="custom">Custom...</option>
+                    <select class="create-input" id="createDeadlineFeeSwitch" onchange="if(this.value==='custom'){document.getElementById('customDeadlineGroupFeeSwitch').style.display='block'}else{document.getElementById('customDeadlineGroupFeeSwitch').style.display='none'}">
+                        <option value="eoy2026">End of 2026 (Dec 31, 23:59:59 UTC)</option>
+                        <option value="custom">Custom Unix Timestamp...</option>
                     </select>
                 </div>
 
-                <div class="create-input-group" id="customDeadlineGroup" style="display:none;">
+                <div class="create-input-group" id="customDeadlineGroupFeeSwitch" style="display:none;">
                     <label class="create-label">Custom Deadline (Unix Timestamp)</label>
-                    <input type="number" class="create-input" id="createCustomDeadline" placeholder="1735689599">
+                    <input type="number" class="create-input" id="createCustomDeadlineFeeSwitch" placeholder="1798761599">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        <a href="https://www.unixtimestamp.com/" target="_blank" style="color:var(--pink);">Unix Timestamp Converter ↗</a>
+                    </div>
                 </div>
 
                 <div class="create-input-group">
                     <label class="create-label">Early Close on Success</label>
-                    <select class="create-input" id="createCanClose">
-                        <option value="true">Yes - Resolve early when condition met</option>
+                    <select class="create-input" id="createCanCloseFeeSwitch">
+                        <option value="true" selected>Yes - Resolve early when condition met</option>
                         <option value="false">No - Wait until deadline</option>
                     </select>
                 </div>
 
                 <div class="create-input-group">
-                    <label class="create-label">Seed Liquidity (ETH)</label>
-                    <input type="number" class="create-input" id="createSeed" value="0.1" step="0.01" min="0.001">
+                    <label class="create-label">Collateral Token</label>
+                    <div id="createCollateralFeeSwitch"></div>
+                    <script>
+                        document.getElementById('createCollateralFeeSwitch').innerHTML = createCollateralDropdown('createCollateralFeeSwitch', 'FeeSwitch');
+                    </script>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Choose which token to use for betting. UNI requires approval.
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label" id="seedLabelFeeSwitch">Seed Liquidity (ETH)</label>
+                    <input type="number" class="create-input" id="createSeedFeeSwitch" value="0.1" step="0.01" min="0.001">
                 </div>
 
                 <div style="background:var(--surface-2);padding:0.75rem;border-radius:var(--radius);margin-bottom:1rem;font-size:var(--font-xs);">
                     <div style="color:var(--text-dim);margin-bottom:0.5rem;">Preview:</div>
-                    <div id="createPreview" style="color:var(--text);">
-                        PNKSTR CryptoPunks balance > 40 by Dec 31, 2025
+                    <div id="createPreviewFeeSwitch" style="color:var(--text);">
+                        Uniswap V4 protocolFeeController() != 0 by Dec 31, 2026
                     </div>
                 </div>
 
-                <button class="create-btn" onclick="createMarket()">Create Market</button>
+                <button class="create-btn" onclick="createFeeSwitchMarket()">Create Fee Switch Market</button>
+            </div>
+
+            <!-- UNI Balance Market Creator -->
+            <div id="creatorUniBalance" class="create-card" style="display:none;">
+                <div class="create-card-title">UNI Token Balance Market</div>
+                <div class="create-card-desc">Create a market on whether an address will hold a target amount of UNI tokens by a deadline. Perfect for tracking treasury or multisig holdings.</div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Target Address (or ENS name)</label>
+                    <input type="text" class="create-input" id="createTargetAddress" placeholder="vitalik.eth or 0x..." onblur="resolveENS(this.value)">
+                    <div id="resolvedAddress" style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;display:none;">
+                        <span id="resolvedAddressText"></span>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Condition</label>
+                    <select class="create-input" id="createOperator">
+                        <option value="1">Greater than (>)</option>
+                        <option value="2">Less than (<)</option>
+                        <option value="3">Greater than or equal (>=)</option>
+                        <option value="4">Less than or equal (<=)</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Target Balance (UNI tokens)</label>
+                    <input type="number" class="create-input" id="createUniThreshold" placeholder="1000000" step="0.01" min="0">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">Enter amount in UNI (e.g., 1000000 = 1M UNI tokens)</div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Deadline</label>
+                    <select class="create-input" id="createDeadlineUniBalance" onchange="if(this.value==='custom'){document.getElementById('customDeadlineGroupUniBalance').style.display='block'}else{document.getElementById('customDeadlineGroupUniBalance').style.display='none'}">
+                        <option value="eoy2026">End of 2026 (Dec 31, 23:59:59 UTC)</option>
+                        <option value="custom">Custom Unix Timestamp...</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group" id="customDeadlineGroupUniBalance" style="display:none;">
+                    <label class="create-label">Custom Deadline (Unix Timestamp)</label>
+                    <input type="number" class="create-input" id="createCustomDeadlineUniBalance" placeholder="1798761599">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        <a href="https://www.unixtimestamp.com/" target="_blank" style="color:var(--pink);">Unix Timestamp Converter ↗</a>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Early Close on Success</label>
+                    <select class="create-input" id="createCanCloseUniBalance">
+                        <option value="true" selected>Yes - Resolve early when condition met</option>
+                        <option value="false">No - Wait until deadline</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Collateral Token</label>
+                    <div id="createCollateralUniBalance"></div>
+                    <script>
+                        document.getElementById('createCollateralUniBalance').innerHTML = createCollateralDropdown('createCollateralUniBalance', 'UniBalance');
+                    </script>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Choose which token to use for betting. UNI requires approval.
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label" id="seedLabelUniBalance">Seed Liquidity (ETH)</label>
+                    <input type="number" class="create-input" id="createSeedUniBalance" value="0.1" step="0.01" min="0.001">
+                </div>
+
+                <div style="background:var(--surface-2);padding:0.75rem;border-radius:var(--radius);margin-bottom:1rem;font-size:var(--font-xs);">
+                    <div style="color:var(--text-dim);margin-bottom:0.5rem;">Preview:</div>
+                    <div id="createPreviewUniBalance" style="color:var(--text);">
+                        UNI balance of [address] > [amount] by Dec 31, 2026
+                    </div>
+                </div>
+
+                <button class="create-btn" onclick="createUniBalanceMarket()">Create UNI Balance Market</button>
+            </div>
+
+            <!-- UNI Delegation Market Creator -->
+            <div id="creatorUniVotes" class="create-card" style="display:none;">
+                <div class="create-card-title">UNI Voting Power Market</div>
+                <div class="create-card-desc">Create a market on whether an address will have a target amount of delegated UNI voting power by a deadline. Track governance influence over time.</div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Target Address (or ENS name)</label>
+                    <input type="text" class="create-input" id="createTargetAddressVotes" placeholder="vitalik.eth or 0x..." onblur="resolveENSVotes(this.value)">
+                    <div id="resolvedAddressVotes" style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;display:none;">
+                        <span id="resolvedAddressTextVotes"></span>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Condition</label>
+                    <select class="create-input" id="createOperatorVotes">
+                        <option value="1">Greater than (>)</option>
+                        <option value="2">Less than (<)</option>
+                        <option value="3">Greater than or equal (>=)</option>
+                        <option value="4">Less than or equal (<=)</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Target Voting Power (UNI votes)</label>
+                    <input type="number" class="create-input" id="createUniVotesThreshold" placeholder="1000000" step="0.01" min="0">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Enter amount in UNI votes (e.g., 1000000 = 1M UNI voting power). See
+                        <a href="https://docs.uniswap.org/concepts/governance/guide-to-voting" target="_blank" style="color:var(--pink);">delegation docs ↗</a>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Deadline</label>
+                    <select class="create-input" id="createDeadlineUniVotes" onchange="if(this.value==='custom'){document.getElementById('customDeadlineGroupUniVotes').style.display='block'}else{document.getElementById('customDeadlineGroupUniVotes').style.display='none'}">
+                        <option value="eoy2026">End of 2026 (Dec 31, 23:59:59 UTC)</option>
+                        <option value="custom">Custom Unix Timestamp...</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group" id="customDeadlineGroupUniVotes" style="display:none;">
+                    <label class="create-label">Custom Deadline (Unix Timestamp)</label>
+                    <input type="number" class="create-input" id="createCustomDeadlineUniVotes" placeholder="1798761599">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        <a href="https://www.unixtimestamp.com/" target="_blank" style="color:var(--pink);">Unix Timestamp Converter ↗</a>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Early Close on Success</label>
+                    <select class="create-input" id="createCanCloseUniVotes">
+                        <option value="true" selected>Yes - Resolve early when condition met</option>
+                        <option value="false">No - Wait until deadline</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Collateral Token</label>
+                    <div id="createCollateralUniVotes"></div>
+                    <script>
+                        document.getElementById('createCollateralUniVotes').innerHTML = createCollateralDropdown('createCollateralUniVotes', 'UniVotes');
+                    </script>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Choose which token to use for betting. UNI requires approval.
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label" id="seedLabelUniVotes">Seed Liquidity (ETH)</label>
+                    <input type="number" class="create-input" id="createSeedUniVotes" value="0.1" step="0.01" min="0.001">
+                </div>
+
+                <div style="background:var(--surface-2);padding:0.75rem;border-radius:var(--radius);margin-bottom:1rem;font-size:var(--font-xs);">
+                    <div style="color:var(--text-dim);margin-bottom:0.5rem;">Preview:</div>
+                    <div id="createPreviewUniVotes" style="color:var(--text);">
+                        UNI voting power of [address] > [amount] by Dec 31, 2026
+                    </div>
+                </div>
+
+                <button class="create-btn" onclick="createUniVotesMarket()">Create Voting Power Market</button>
+            </div>
+
+            <!-- Total Supply Market Creator -->
+            <div id="creatorTotalSupply" class="create-card" style="display:none;">
+                <div class="create-card-title">UNI Total Supply Market</div>
+                <div class="create-card-desc">Create a market on whether UNI total supply will change by a deadline. Track token emissions, burns, or supply stability. Uses EQ (==) to bet supply stays the same, or NEQ (!=) to bet it changes.</div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Market Type</label>
+                    <select class="create-input" id="createSupplyMarketType">
+                        <option value="eq">Supply Stays Same (==) - YES if no change</option>
+                        <option value="neq">Supply Changes (!=) - YES if any change</option>
+                    </select>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Choose whether to bet supply remains unchanged or changes
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Current Total Supply</label>
+                    <input type="text" class="create-input" id="currentTotalSupply" readonly style="background:var(--surface-2);cursor:not-allowed;" value="Loading...">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        This value will be fetched from the UNI token contract
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Deadline</label>
+                    <select class="create-input" id="createDeadlineTotalSupply" onchange="if(this.value==='custom'){document.getElementById('customDeadlineGroupTotalSupply').style.display='block'}else{document.getElementById('customDeadlineGroupTotalSupply').style.display='none'}">
+                        <option value="eoy2026">End of 2026 (Dec 31, 23:59:59 UTC)</option>
+                        <option value="custom">Custom Unix Timestamp...</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group" id="customDeadlineGroupTotalSupply" style="display:none;">
+                    <label class="create-label">Custom Deadline (Unix Timestamp)</label>
+                    <input type="number" class="create-input" id="createCustomDeadlineTotalSupply" placeholder="1798761599">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        <a href="https://www.unixtimestamp.com/" target="_blank" style="color:var(--pink);">Unix Timestamp Converter ↗</a>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Early Close on Success</label>
+                    <select class="create-input" id="createCanCloseTotalSupply">
+                        <option value="false">No - Wait until deadline</option>
+                        <option value="true">Yes - Resolve early when condition met</option>
+                    </select>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        For NEQ markets, early close allows immediate resolution when supply changes
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Collateral Token</label>
+                    <div id="createCollateralTotalSupply"></div>
+                    <script>
+                        document.getElementById('createCollateralTotalSupply').innerHTML = createCollateralDropdown('createCollateralTotalSupply', 'TotalSupply');
+                    </script>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Choose which token to use for betting. UNI requires approval.
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label" id="seedLabelTotalSupply">Seed Liquidity (ETH)</label>
+                    <input type="number" class="create-input" id="createSeedTotalSupply" value="0.1" step="0.01" min="0.001">
+                </div>
+
+                <div style="background:var(--surface-2);padding:0.75rem;border-radius:var(--radius);margin-bottom:1rem;font-size:var(--font-xs);">
+                    <div style="color:var(--text-dim);margin-bottom:0.5rem;">Preview:</div>
+                    <div id="createPreviewTotalSupply" style="color:var(--text);">
+                        UNI totalSupply() == [current] by Dec 31, 2026
+                    </div>
+                </div>
+
+                <button class="create-btn" onclick="createTotalSupplyMarket()">Create Supply Market</button>
+            </div>
+
+            <!-- UNI Price Market Creator -->
+            <div id="creatorUniPrice" class="create-card" style="display:none;">
+                <div class="create-card-title">UNI/USD Price Market</div>
+                <div class="create-card-desc">Create a market on UNI token price reaching or crossing a USD threshold by a deadline. Uses real-time Chainlink oracle data (8 decimal precision).</div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Current UNI Price (Live)</label>
+                    <input type="text" class="create-input" id="currentUniPrice" readonly style="background:var(--surface-2);cursor:not-allowed;" value="Loading...">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Fetched from <a href="https://data.chain.link/ethereum/mainnet/crypto-usd/uni-usd" target="_blank" style="color:var(--pink);">Chainlink UNI/USD Oracle ↗</a>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Target Price (USD)</label>
+                    <input type="number" class="create-input" id="createTargetPrice" placeholder="10.00" step="0.01" min="0.01" oninput="updateUniPricePreview()">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        The USD price threshold for this market (e.g., $10.00)
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Condition</label>
+                    <select class="create-input" id="createPriceOperator" onchange="updateUniPricePreview()">
+                        <option value="3">At or above (>=) - YES if price reaches target or higher</option>
+                        <option value="1">Above (>) - YES if price exceeds target</option>
+                        <option value="2">At or below (<=) - YES if price drops to target or lower</option>
+                        <option value="0">Below (<) - YES if price falls below target</option>
+                    </select>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Choose the price condition that makes YES win
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Deadline</label>
+                    <select class="create-input" id="createDeadlineUniPrice" onchange="if(this.value==='custom'){document.getElementById('customDeadlineGroupUniPrice').style.display='block';updateUniPricePreview()}else{document.getElementById('customDeadlineGroupUniPrice').style.display='none';updateUniPricePreview()}">
+                        <option value="eoy2026">End of 2026 (Dec 31, 23:59:59 UTC)</option>
+                        <option value="custom">Custom Unix Timestamp...</option>
+                    </select>
+                </div>
+
+                <div class="create-input-group" id="customDeadlineGroupUniPrice" style="display:none;">
+                    <label class="create-label">Custom Deadline (Unix Timestamp)</label>
+                    <input type="number" class="create-input" id="createCustomDeadlineUniPrice" placeholder="1798761599" oninput="updateUniPricePreview()">
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        <a href="https://www.unixtimestamp.com/" target="_blank" style="color:var(--pink);">Unix Timestamp Converter ↗</a>
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Early Close on Success</label>
+                    <select class="create-input" id="createCanCloseUniPrice" onchange="updateUniPricePreview()">
+                        <option value="true">Yes - Resolve early when price hits target</option>
+                        <option value="false">No - Must wait until deadline</option>
+                    </select>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Early close allows immediate resolution when condition is met
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label">Collateral Token</label>
+                    <div id="createCollateralUniPrice"></div>
+                    <script>
+                        document.getElementById('createCollateralUniPrice').innerHTML = createCollateralDropdown('createCollateralUniPrice', 'UniPrice');
+                    </script>
+                    <div style="font-size:var(--font-xs);color:var(--text-dim);margin-top:0.25rem;">
+                        Choose which token to use for betting. UNI requires approval.
+                    </div>
+                </div>
+
+                <div class="create-input-group">
+                    <label class="create-label" id="seedLabelUniPrice">Seed Liquidity (ETH)</label>
+                    <input type="number" class="create-input" id="createSeedUniPrice" value="0.1" step="0.01" min="0.001">
+                </div>
+
+                <div style="background:var(--surface-2);padding:0.75rem;border-radius:var(--radius);margin-bottom:1rem;font-size:var(--font-xs);">
+                    <div style="color:var(--text-dim);margin-bottom:0.5rem;">Preview:</div>
+                    <div id="createPreviewUniPrice" style="color:var(--text);">
+                        UNI price >= $10.00 by Dec 31, 2026
+                    </div>
+                </div>
+
+                <button class="create-btn" onclick="createUniPriceMarket()">Create Price Market</button>
             </div>
         </section>
 
@@ -996,17 +1499,24 @@
         <section class="info-section">
             <h2 class="section-title">How It Works</h2>
             <div class="info-text">
-                <strong>PNKSTR Treasury:</strong> These markets track the CryptoPunks balance of the PNKSTR treasury address (0x1244...4838). The balance is read directly from the CryptoPunks contract on-chain.<br><br>
-                <strong>Resolution:</strong> If the condition is met (e.g., balance >= 40), YES wins. Otherwise, NO wins. Markets with early close can resolve as soon as the condition passes.<br><br>
-                <strong>Trading:</strong> Price = Probability. If YES shows 60%, one share costs ~0.60 ETH and pays 1 ETH if YES wins. Losing shares pay nothing.
+                <strong>V4 Fee Switch Markets:</strong> Track whether Uniswap V4 activates protocol fees by checking if protocolFeeController() returns a non-zero address. Read directly from the <a href="https://etherscan.io/address/0x000000000004444c5dc75cB358380D2e3dE08A90" target="_blank" style="color:var(--pink);">V4 PoolManager</a> on-chain.<br><br>
+                <strong>UNI Balance Markets:</strong> Track UNI token holdings of any address (treasury, multisig, EOA). Uses the <a href="https://etherscan.io/token/0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984" target="_blank" style="color:var(--pink);">UNI token contract</a> balanceOf() with 18 decimals. Supports ENS names for easy targeting.<br><br>
+                <strong>UNI Voting Power Markets:</strong> Track delegated UNI voting power using getCurrentVotes(). Perfect for monitoring governance influence. <a href="https://docs.uniswap.org/concepts/governance/guide-to-voting" target="_blank" style="color:var(--pink);">Learn about delegation ↗</a><br><br>
+                <strong>UNI Total Supply Markets:</strong> Bet on whether UNI totalSupply() will change by a deadline. Use EQ (==) to bet supply stays the same, or NEQ (!=) to bet it changes. Track token burns, emissions, or supply stability over time.<br><br>
+                <strong>UNI Price Markets:</strong> Predict UNI token price movements using live <a href="https://data.chain.link/ethereum/mainnet/crypto-usd/uni-usd" target="_blank" style="color:var(--pink);">Chainlink UNI/USD oracle</a> data. Set target prices (e.g., $10.00) and conditions (>=, >, <=, <). Oracle uses 8 decimal precision for accurate USD pricing. Perfect for price predictions and volatility bets.<br><br>
+                <strong>Resolution:</strong> Markets resolve YES if the condition is met by the deadline, otherwise NO. Early close allows instant resolution when condition becomes true.<br><br>
+                <strong>Trading:</strong> Price = Probability. If YES shows 60%, one share costs ~0.60 ETH and pays 1 ETH if YES wins. Losing shares pay nothing.<br><br>
+                <strong>Related:</strong>
+                <a href="https://blog.uniswap.org/unification" target="_blank" style="color:var(--pink);">Uniswap Fee Unification Blog Post ↗</a> · 
+                <a href="https://snapshot.org/#/s:uniswapgovernance.eth/proposal/0x58d854c1f2468db6b67baab026cca1329c7bcaa5bf834146aa7563a5b45ad09f" target="_blank" style="color:var(--pink);">Governance Proposal ↗</a>
             </div>
         </section>
 
         <!-- Footer -->
         <footer style="text-align:center;padding:2rem 0;margin-top:1rem;border-top:1px solid var(--border);color:var(--text-dim);font-size:var(--font-xs);">
             <div style="display:flex;justify-content:center;align-items:center;gap:1.5rem;">
-                <a href="https://cryptopunks.app/" target="_blank" style="color:var(--text-muted);text-decoration:none;">CryptoPunks</a>
-                <a href="https://etherscan.io/address/0x1244EAe9FA2c064453B5F605d708C0a0Bfba4838" target="_blank" style="color:var(--text-muted);text-decoration:none;">PNKSTR Treasury</a>
+                <a href="https://uniswap.org/" target="_blank" style="color:var(--text-muted);text-decoration:none;">Uniswap</a>
+                <a href="https://etherscan.io/address/0x000000000004444c5dc75cB358380D2e3dE08A90" target="_blank" style="color:var(--text-muted);text-decoration:none;">UniV4 PoolManager</a>
                 <a href="https://zamm.finance/" target="_blank" style="display:flex;align-items:center;gap:0.5rem;color:var(--text-muted);text-decoration:none;">
                     <img src="https://content.wrappr.wtf/ipfs/bafybeibuct6mftnmgzkbn4tq47elpokbkahkjxq7z6qceptlcsvpxletou" style="width:20px;height:20px;border-radius:4px;">
                     Built on zAMM
@@ -1329,20 +1839,41 @@
 
     <script>
         // ======================== CONSTANTS ========================
-        const CRYPTOPUNKS_ADDRESS = '0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB';
-        const PNKSTR_TREASURY = '0x1244EAe9FA2c064453B5F605d708C0a0Bfba4838';
+        const UNI_TOKEN_ADDRESS = '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984';
+        const UNIV4_ADDRESS = '0x000000000004444c5dc75cB358380D2e3dE08A90';
         const RESOLVER_ADDRESS = '0x00000000002205020E387b6a378c05639047BcFB';
         const PAMM_ADDRESS = '0x000000000044bfe6c2BBFeD8862973E0612f07C0';
         const PMROUTER_ADDRESS = '0x000000000055fF709f26efB262fba8B0AE8c35Dc';
         const ZAMM_ADDRESS = '0x000000000000040470635EB91b7CE4D132D616eD';
         const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+        const CHAINLINK_UNI_USD_ORACLE = '0x553303d460EE0afB37EdFf9bE42922D8FF63220e'; // uni-usd.data.eth
+        const ADMIN_ADDRESS = '0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20'; // Admin wallet for market creation
         const FEE_TIER = 30n; // 0.30%
-        const EOY_2025 = 1767225599; // Dec 31, 2025 23:59:59 UTC
+        const EOY_2026 = 1798761599; // Dec 31, 2026 23:59:59 UTC
 
+        // protocolFeeController() selector
         // balanceOf(address) selector
         const BALANCE_OF_SELECTOR = '0x70a08231';
-        // Expected callData for PNKSTR treasury balance check
-        const PNKSTR_BALANCE_CALLDATA = BALANCE_OF_SELECTOR + '000000000000000000000000' + PNKSTR_TREASURY.slice(2).toLowerCase();
+        // protocolFeeController() selector
+        const PROTOCOL_FEE_CONTROLLER_SELECTOR = '0x91d14854';
+        // getCurrentVotes(address) selector
+        const GET_CURRENT_VOTES_SELECTOR = '0x9ab24eb0';
+        // getPriorVotes(address,uint256) selector
+        const GET_PRIOR_VOTES_SELECTOR = '0x782d6fe1';
+        // totalSupply() selector
+        const TOTAL_SUPPLY_SELECTOR = '0x18160ddd';
+        // latestAnswer() selector (Chainlink oracle)
+        const LATEST_ANSWER_SELECTOR = '0x50d25bcd';
+
+        // Market type identifiers
+        const MARKET_TYPE = {
+            V4_FEE_SWITCH: 'V4_FEE_SWITCH',
+            UNI_BALANCE: 'UNI_BALANCE',
+            UNI_VOTES: 'UNI_VOTES',
+            TOTAL_SUPPLY: 'TOTAL_SUPPLY',
+            UNI_PRICE_USD: 'UNI_PRICE_USD',
+            UNKNOWN: 'UNKNOWN'
+        };
 
         const RPC_ENDPOINTS = [
             'https://1rpc.io/eth',
@@ -1366,8 +1897,20 @@
             throw new Error('All RPC endpoints failed');
         }
 
-        const CRYPTOPUNKS_ABI = [
-            'function balanceOf(address owner) view returns (uint256)'
+        const UNI_TOKEN_ABI = [
+            'function balanceOf(address owner) view returns (uint256)',
+            'function decimals() view returns (uint8)',
+            'function symbol() view returns (string)',
+            'function getCurrentVotes(address account) view returns (uint256)',
+            'function getPriorVotes(address account, uint256 blockNumber) view returns (uint256)',
+            'function delegates(address delegator) view returns (address)',
+            'function totalSupply() view returns (uint256)',
+            'function approve(address spender, uint256 amount) returns (bool)',
+            'function allowance(address owner, address spender) view returns (uint256)'
+        ];
+
+        const UNIV4_ABI = [
+            'function protocolFeeController() view returns (address)'
         ];
 
         const RESOLVER_ABI = [
@@ -1415,6 +1958,89 @@
             'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) view returns (tuple(bool success, bytes returnData)[])'
         ];
 
+        // ======================== MARKET TYPE DETECTION ========================
+        function detectMarketType(condition) {
+            const { targetA, callDataA } = condition;
+
+            // V4 Fee Switch: target is UniV4, calling protocolFeeController()
+            if (targetA.toLowerCase() === UNIV4_ADDRESS.toLowerCase() &&
+                callDataA.toLowerCase() === PROTOCOL_FEE_CONTROLLER_SELECTOR.toLowerCase()) {
+                return MARKET_TYPE.V4_FEE_SWITCH;
+            }
+
+            // Chainlink UNI/USD Oracle Price Markets
+            if (targetA.toLowerCase() === CHAINLINK_UNI_USD_ORACLE.toLowerCase()) {
+                const selector = callDataA.toLowerCase().slice(0, 10);
+                if (selector === LATEST_ANSWER_SELECTOR.toLowerCase()) {
+                    return MARKET_TYPE.UNI_PRICE_USD;
+                }
+            }
+
+            // UNI Token markets
+            if (targetA.toLowerCase() === UNI_TOKEN_ADDRESS.toLowerCase()) {
+                const selector = callDataA.toLowerCase().slice(0, 10);
+
+                // UNI Balance: calling balanceOf(address)
+                if (selector === BALANCE_OF_SELECTOR.toLowerCase()) {
+                    return MARKET_TYPE.UNI_BALANCE;
+                }
+
+                // UNI Voting Power: calling getCurrentVotes(address)
+                if (selector === GET_CURRENT_VOTES_SELECTOR.toLowerCase()) {
+                    return MARKET_TYPE.UNI_VOTES;
+                }
+
+                // UNI Total Supply: calling totalSupply()
+                if (selector === TOTAL_SUPPLY_SELECTOR.toLowerCase()) {
+                    return MARKET_TYPE.TOTAL_SUPPLY;
+                }
+            }
+
+            return MARKET_TYPE.UNKNOWN;
+        }
+
+        function getMarketTypeLabel(marketType) {
+            switch (marketType) {
+                case MARKET_TYPE.V4_FEE_SWITCH: return 'UNIV4';
+                case MARKET_TYPE.UNI_BALANCE: return 'UNI-BAL';
+                case MARKET_TYPE.UNI_VOTES: return 'UNI-VOTES';
+                case MARKET_TYPE.TOTAL_SUPPLY: return 'UNI-SUPPLY';
+                case MARKET_TYPE.UNI_PRICE_USD: return 'UNI-PRICE';
+                default: return 'OTHER';
+            }
+        }
+
+        function getMarketTypeDescription(marketType, condition) {
+            const opSymbols = { 0: '<', 1: '>', 2: '<=', 3: '>=', 4: '==', 5: '!=' };
+            const opSym = opSymbols[condition.op] || '?';
+
+            switch (marketType) {
+                case MARKET_TYPE.V4_FEE_SWITCH:
+                    return 'V4 fee controller activated';
+
+                case MARKET_TYPE.UNI_PRICE_USD:
+                    const priceUSD = (Number(condition.threshold) / 1e8).toFixed(2);
+                    return `UNI price ${opSym} $${priceUSD}`;
+
+                case MARKET_TYPE.UNI_BALANCE:
+                    const address = '0x' + condition.callDataA.slice(34);
+                    const balanceThreshold = ethers.formatUnits(condition.threshold, 18);
+                    return `UNI balance of ${address.slice(0,6)}...${address.slice(-4)} ${opSym} ${balanceThreshold}`;
+
+                case MARKET_TYPE.UNI_VOTES:
+                    const delegatee = '0x' + condition.callDataA.slice(34);
+                    const votesThreshold = ethers.formatUnits(condition.threshold, 18);
+                    return `UNI votes for ${delegatee.slice(0,6)}...${delegatee.slice(-4)} ${opSym} ${votesThreshold}`;
+
+                case MARKET_TYPE.TOTAL_SUPPLY:
+                    const supplyThreshold = ethers.formatUnits(condition.threshold, 18);
+                    return `UNI totalSupply() ${opSym} ${supplyThreshold}`;
+
+                default:
+                    return 'Unknown market type';
+            }
+        }
+
         // Compute pool ID from pool key (keccak256 of encoded key)
         function computePoolId(id0, id1, token0, token1, feeOrHook) {
             const abiCoder = ethers.AbiCoder.defaultAbiCoder();
@@ -1435,10 +2061,14 @@
         let walletEventHandlers = null;
         const eip6963Providers = new Map();
 
-        let pnkstrMarkets = []; // Markets related to PNKSTR
-        let currentTrade = { marketId: null, isYes: true, yesId: null, noId: null, rYes: 0n, rNo: 0n };
+        let univ4Markets = []; // Markets related to UniV4
+        let currentTrade = { marketId: null, collateral: null, isYes: true, yesId: null, noId: null, rYes: 0n, rNo: 0n };
         let pendingToasts = new Map(); // Track pending toasts by ID
         let toastIdCounter = 0;
+
+        // UNI token state
+        let uniBalance = 0n;
+        let uniApprovalAmount = 0n;
 
         // Trade mode state
         let currentTradeMode = 'trade'; // 'trade', 'swap', 'limit', 'lp'
@@ -1463,7 +2093,7 @@
             initEIP6963();
 
             // Auto-reconnect wallet if previously connected
-            const savedWallet = localStorage.getItem('pnkpm_wallet');
+            const savedWallet = localStorage.getItem('unipm_wallet');
             if (savedWallet) {
                 // Small delay to let EIP-6963 providers announce themselves
                 setTimeout(async () => {
@@ -1471,7 +2101,7 @@
                         await connectWithWallet(savedWallet);
                     } catch (e) {
                         console.warn('Auto-reconnect failed:', e);
-                        localStorage.removeItem('pnkpm_wallet');
+                        localStorage.removeItem('unipm_wallet');
                     }
                 }, 100);
             }
@@ -1499,16 +2129,55 @@
             try {
                 const rpc = await getReadProvider();
 
-                // Load PNKSTR balance
-                const punks = new ethers.Contract(CRYPTOPUNKS_ADDRESS, CRYPTOPUNKS_ABI, rpc);
-                const balance = await punks.balanceOf(PNKSTR_TREASURY);
-                const balanceNum = Number(balance);
+                // Load UniV4 protocolFeeController, UNI total supply, and UNI price
+                const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
+                const oracleABI = ['function latestAnswer() external view returns (int256)'];
+                const results = await multicall.aggregate3([
+                    {
+                        target: UNIV4_ADDRESS,
+                        allowFailure: true,
+                        callData: new ethers.Interface(UNIV4_ABI).encodeFunctionData('protocolFeeController', [])
+                    },
+                    {
+                        target: UNI_TOKEN_ADDRESS,
+                        allowFailure: true,
+                        callData: new ethers.Interface(UNI_TOKEN_ABI).encodeFunctionData('totalSupply', [])
+                    },
+                    {
+                        target: CHAINLINK_UNI_USD_ORACLE,
+                        allowFailure: true,
+                        callData: new ethers.Interface(oracleABI).encodeFunctionData('latestAnswer', [])
+                    }
+                ]);
 
-                document.getElementById('livePunks').textContent = balanceNum;
-                document.getElementById('heroBalance').textContent = balanceNum;
+                // Parse fee controller
+                if (results[0].success) {
+                    try {
+                        const controller = new ethers.Interface(UNIV4_ABI).decodeFunctionResult('protocolFeeController', results[0].returnData)[0];
+                        const isActive = controller !== ethers.ZeroAddress;
+                        document.getElementById('livePunks').textContent = isActive ? 'Active' : '😴';
+                        document.getElementById('heroBalance').textContent = isActive ? 'Active' : '😴';
+                    } catch {}
+                }
 
-                // Find PNKSTR-related markets by scanning ConditionCreated events
-                await loadPnkstrMarkets(rpc);
+                // Parse UNI total supply
+                if (results[1].success) {
+                    try {
+                        const supply = new ethers.Interface(UNI_TOKEN_ABI).decodeFunctionResult('totalSupply', results[1].returnData)[0];
+                        document.getElementById('uniTotalSupply').textContent = formatSupplyShorthand(supply);
+                    } catch {}
+                }
+
+                // Parse UNI price from Chainlink oracle
+                if (results[2].success) {
+                    try {
+                        const price = new ethers.Interface(oracleABI).decodeFunctionResult('latestAnswer', results[2].returnData)[0];
+                        document.getElementById('uniPrice').textContent = '$' + formatOraclePrice(price);
+                    } catch {}
+                }
+
+                // Find UniV4-related markets by scanning ConditionCreated events
+                await loadUniswapMarkets(rpc);
                 loadDataRetries = 0; // Reset on success
 
             } catch (error) {
@@ -1551,24 +2220,48 @@
             poll(); // Start polling
         }
 
-        // Known PNKSTR market IDs (hardcoded for stability)
-        const KNOWN_PNKSTR_MARKETS = [
-            32134417008196240812336678454075505952526867228548827945664500580851657114937n
-        ];
-
-        async function loadPnkstrMarkets(rpc) {
+        // ======================== DYNAMIC MARKET DISCOVERY ========================
+        async function loadUniswapMarkets(rpc) {
             try {
+                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, rpc);
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
-                const punks = new ethers.Contract(CRYPTOPUNKS_ADDRESS, CRYPTOPUNKS_ABI, rpc);
                 const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
                 const pammInterface = new ethers.Interface(PAMM_ABI);
                 const resolverInterface = new ethers.Interface(RESOLVER_ABI);
 
-                // Use known market IDs for stability
-                const marketIds = KNOWN_PNKSTR_MARKETS;
+                // Scan for ConditionCreated events from Resolver
+                // Look back ~1 week of blocks (~50k blocks at 12s/block)
+                const currentBlock = await rpc.getBlockNumber();
+                const fromBlock = Math.max(0, currentBlock - 50000);
 
-                // Batch fetch market data via multicall: getMarket + conditions for each
-                const marketCalls = marketIds.flatMap(id => [
+                const filter = resolver.filters.ConditionCreated();
+                const events = await resolver.queryFilter(filter, fromBlock, currentBlock);
+
+                console.log(`Found ${events.length} ConditionCreated events`);
+
+                // Extract market IDs and filter for Uniswap-related markets
+                const candidateMarkets = [];
+                for (const event of events) {
+                    const marketId = event.args.marketId;
+                    const targetA = event.args.targetA;
+
+                    // Only include markets targeting UniV4 or UNI token
+                    if (targetA.toLowerCase() === UNIV4_ADDRESS.toLowerCase() ||
+                        targetA.toLowerCase() === UNI_TOKEN_ADDRESS.toLowerCase()) {
+                        candidateMarkets.push(marketId);
+                    }
+                }
+
+                console.log(`Found ${candidateMarkets.length} Uniswap-related markets`);
+
+                if (candidateMarkets.length === 0) {
+                    univ4Markets = [];
+                    renderMarkets();
+                    return;
+                }
+
+                // Batch fetch market data
+                const marketCalls = candidateMarkets.flatMap(id => [
                     { target: PAMM_ADDRESS, allowFailure: true, callData: pammInterface.encodeFunctionData('getMarket', [id]) },
                     { target: RESOLVER_ADDRESS, allowFailure: true, callData: resolverInterface.encodeFunctionData('conditions', [id]) }
                 ]);
@@ -1577,7 +2270,7 @@
 
                 // Parse market data
                 let allMarketsData = [];
-                for (let i = 0; i < marketIds.length; i++) {
+                for (let i = 0; i < candidateMarkets.length; i++) {
                     const marketResult = marketRaw[i * 2];
                     const conditionResult = marketRaw[i * 2 + 1];
 
@@ -1587,24 +2280,33 @@
                         const market = pammInterface.decodeFunctionResult('getMarket', marketResult.returnData);
                         const condition = resolverInterface.decodeFunctionResult('conditions', conditionResult.returnData);
 
+                        const marketType = detectMarketType(condition);
+                        if (marketType === MARKET_TYPE.UNKNOWN) continue; // Skip non-Uniswap markets
+
                         allMarketsData.push({
-                            marketId: marketIds[i],
+                            marketId: candidateMarkets[i],
+                            collateral: market.collateral,
                             resolved: market.resolved,
                             outcome: market.outcome,
                             canClose: market.canClose,
                             close: Number(market.close),
                             collateralLocked: market.collateralLocked,
                             description: market.description,
-                            condition
+                            condition,
+                            marketType
                         });
-                    } catch { continue; }
+                    } catch (e) {
+                        console.error('Failed to parse market:', e);
+                        continue;
+                    }
                 }
 
-                // Batch fetch pool states, noIds, previews, and punk balance via multicall
-                const punksInterface = new ethers.Interface(CRYPTOPUNKS_ABI);
+                console.log(`Parsed ${allMarketsData.length} valid Uniswap markets`);
 
+                // Batch fetch additional data
                 const dataCalls = [];
-                // Pool state calls for each market
+
+                // Pool states
                 for (const m of allMarketsData) {
                     dataCalls.push({
                         target: PAMM_ADDRESS,
@@ -1612,7 +2314,8 @@
                         callData: pammInterface.encodeFunctionData('getPoolState', [m.marketId, FEE_TIER])
                     });
                 }
-                // NoId calls for each candidate (for ZAMM pool link)
+
+                // NoIds
                 for (const m of allMarketsData) {
                     dataCalls.push({
                         target: PAMM_ADDRESS,
@@ -1620,7 +2323,8 @@
                         callData: pammInterface.encodeFunctionData('getNoId', [m.marketId])
                     });
                 }
-                // Preview calls for unresolved markets
+
+                // Previews for unresolved markets
                 for (const m of allMarketsData) {
                     if (!m.resolved) {
                         dataCalls.push({
@@ -1630,11 +2334,31 @@
                         });
                     }
                 }
-                // Punk balance call
+
+                // Current values for each market type
+                const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                const univ4 = new ethers.Contract(UNIV4_ADDRESS, UNIV4_ABI, rpc);
+
+                // Get current V4 fee controller status
                 dataCalls.push({
-                    target: CRYPTOPUNKS_ADDRESS,
+                    target: UNIV4_ADDRESS,
                     allowFailure: true,
-                    callData: punksInterface.encodeFunctionData('balanceOf', [PNKSTR_TREASURY])
+                    callData: new ethers.Interface(UNIV4_ABI).encodeFunctionData('protocolFeeController', [])
+                });
+
+                // Get UNI total supply
+                dataCalls.push({
+                    target: UNI_TOKEN_ADDRESS,
+                    allowFailure: true,
+                    callData: new ethers.Interface(UNI_TOKEN_ABI).encodeFunctionData('totalSupply', [])
+                });
+
+                // Get UNI price from Chainlink oracle
+                const oracleABI = ['function latestAnswer() external view returns (int256)'];
+                dataCalls.push({
+                    target: CHAINLINK_UNI_USD_ORACLE,
+                    allowFailure: true,
+                    callData: new ethers.Interface(oracleABI).encodeFunctionData('latestAnswer', [])
                 });
 
                 const dataRaw = dataCalls.length > 0 ? await multicall.aggregate3(dataCalls) : [];
@@ -1671,139 +2395,157 @@
                 for (const m of allMarketsData) {
                     if (!m.resolved) {
                         const r = dataRaw[idx++];
-                        if (r.success) {
+                        if (r && r.success) {
                             try {
                                 previewResults.push(resolverInterface.decodeFunctionResult('preview', r.returnData));
                             } catch { previewResults.push(null); }
                         } else {
                             previewResults.push(null);
                         }
-                    } else {
-                        previewResults.push(null);
                     }
                 }
-                // Punk balance
-                const balanceR = dataRaw[idx];
-                const currentBalance = balanceR?.success
-                    ? punksInterface.decodeFunctionResult('balanceOf', balanceR.returnData)[0]
-                    : 0n;
 
-                // Build final market list
-                const markets = [];
-                let totalTvl = 0n;
+                // Fee controller status
+                const feeControllerResult = dataRaw[idx];
+                if (feeControllerResult && feeControllerResult.success) {
+                    try {
+                        const controller = new ethers.Interface(UNIV4_ABI).decodeFunctionResult('protocolFeeController', feeControllerResult.returnData)[0];
+                        const isActive = controller !== ethers.ZeroAddress;
+                        document.getElementById('livePunks').textContent = isActive ? 'Active' : '😴';
+                        document.getElementById('heroBalance').textContent = isActive ? 'Active' : '😴';
+                    } catch {}
+                }
+                idx++;
+
+                // UNI total supply
+                const totalSupplyResult = dataRaw[idx];
+                if (totalSupplyResult && totalSupplyResult.success) {
+                    try {
+                        const supply = new ethers.Interface(UNI_TOKEN_ABI).decodeFunctionResult('totalSupply', totalSupplyResult.returnData)[0];
+                        document.getElementById('uniTotalSupply').textContent = formatSupplyShorthand(supply);
+                    } catch {}
+                }
+                idx++;
+
+                // UNI price from Chainlink oracle
+                const uniPriceResult = dataRaw[idx];
+                if (uniPriceResult && uniPriceResult.success) {
+                    try {
+                        const price = new ethers.Interface(oracleABI).decodeFunctionResult('latestAnswer', uniPriceResult.returnData)[0];
+                        document.getElementById('uniPrice').textContent = '$' + formatOraclePrice(price);
+                    } catch {}
+                }
+
+                // Assemble final market objects
+                univ4Markets = [];
+                let previewIdx = 0;
 
                 for (let i = 0; i < allMarketsData.length; i++) {
                     const m = allMarketsData[i];
-                    const poolState = poolResults[i];
-                    const preview = previewResults[i];
+                    const pool = poolResults[i];
                     const noId = noIdResults[i];
 
-                    let yesOdds = 50;
-                    let rYes = 0n, rNo = 0n;
-                    if (poolState) {
-                        rYes = poolState.rYes;
-                        rNo = poolState.rNo;
-                        if (rYes + rNo > 0n) {
-                            yesOdds = Number(rNo * 100n / (rYes + rNo));
-                        }
+                    let preview = null;
+                    if (!m.resolved) {
+                        preview = previewResults[previewIdx++];
                     }
 
-                    const tvl = m.collateralLocked;
-                    totalTvl += tvl;
-
-                    // Compute poolId for ZAMM link
-                    const yesId = m.marketId;
-                    const id0 = yesId < noId ? yesId : noId;
-                    const id1 = yesId < noId ? noId : yesId;
-                    const poolId = noId ? computePoolId(id0, id1, PAMM_ADDRESS, PAMM_ADDRESS, FEE_TIER) : null;
-
-                    markets.push({
-                        id: m.marketId,
-                        noId: noId,
-                        poolId: poolId,
-                        rYes: rYes,
-                        rNo: rNo,
-                        description: m.description,
-                        resolved: m.resolved,
-                        outcome: m.outcome,
-                        canClose: m.canClose,
-                        close: m.close,
-                        collateralLocked: m.collateralLocked,
-                        threshold: m.condition.threshold || 0n,
-                        op: Number(m.condition.op) || 1,
-                        currentValue: preview?.value ?? currentBalance,
-                        conditionMet: preview?.condTrue ?? false,
-                        ready: preview?.ready ?? false,
-                        yesOdds,
-                        tvl
+                    univ4Markets.push({
+                        ...m,
+                        pool,
+                        noId,
+                        preview,
+                        typeLabel: getMarketTypeLabel(m.marketType)
                     });
                 }
 
-                // Sort by close time (newest first)
-                markets.sort((a, b) => b.close - a.close);
-                pnkstrMarkets = markets;
+                // Update chart iframe if we have markets
+                updateChartSection();
 
-                // Update UI
-                const active = markets.filter(m => !m.resolved);
-                const ready = markets.filter(m => !m.resolved && m.ready);
-                const resolved = markets.filter(m => m.resolved);
+                // Render markets
+                renderMarkets();
 
-                document.getElementById('marketCount').textContent = markets.length;
-                document.getElementById('activeCount').textContent = active.length;
-                document.getElementById('readyCount').textContent = ready.length;
-                document.getElementById('resolvedCount').textContent = resolved.length;
-                document.getElementById('totalTvl').textContent = formatEth(totalTvl) + ' ETH';
-
-                // Update featured odds (first active market, or first market if all resolved)
-                const featuredMarket = active[0] || markets[0];
-                if (featuredMarket) {
-                    const yesOdds = featuredMarket.yesOdds;
-                    const noOdds = 100 - yesOdds;
-                    document.getElementById('featuredOdds').textContent = `YES ${yesOdds}% / NO ${noOdds}%`;
-                }
-
-                renderMarkets(markets);
+                console.log(`Loaded ${univ4Markets.length} Uniswap markets`);
 
             } catch (error) {
-                console.error('Failed to load PNKSTR markets:', error);
-                document.getElementById('marketsGrid').innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">⚠️</div>
-                        <p>Failed to load markets. Please refresh.</p>
-                    </div>
-                `;
+                console.error('Failed to load Uniswap markets:', error);
+                univ4Markets = [];
+                renderMarkets();
             }
         }
 
-        function renderMarkets(markets) {
+        // ======================== CHART UPDATE ========================
+        function updateChartSection() {
+            const chartSection = document.getElementById('chartSection');
+            const chartIframe = document.getElementById('chartIframe');
+
+            if (univ4Markets.length === 0) {
+                // Hide chart if no markets
+                if (chartSection) chartSection.style.display = 'none';
+            } else {
+                // Show chart with first market's pool
+                if (chartSection) chartSection.style.display = 'block';
+
+                const firstMarket = univ4Markets[0];
+                if (chartIframe && firstMarket.noId) {
+                    const poolId = firstMarket.noId; // Use noId as poolId for ZAMM
+                    chartIframe.src = `https://www.zamm.finance/embed/pool/${poolId}?theme=dark`;
+                }
+            }
+        }
+
+        function renderMarkets() {
             const grid = document.getElementById('marketsGrid');
 
-            if (markets.length === 0) {
+            if (!univ4Markets || univ4Markets.length === 0) {
                 grid.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📭</div>
-                        <p>No PNKSTR markets found. Create one below!</p>
+                        <p>No Uniswap markets found. Create one below!</p>
                     </div>
                 `;
+                updateMarketTabsVisibility();
                 return;
             }
 
-            grid.innerHTML = markets.map(m => renderMarketCard(m)).join('');
+            grid.innerHTML = univ4Markets.map(m => renderMarketCard(m)).join('');
 
-            // Load orderbook for first active market to populate inline view
-            const activeMarket = markets.find(m => !m.resolved);
-            if (activeMarket) {
-                loadInlineOrderbook(activeMarket);
+            // Update stats
+            const totalTvl = univ4Markets.reduce((sum, m) => sum + (m.collateralLocked || 0n), 0n);
+            const activeMarkets = univ4Markets.filter(m => !m.resolved);
+            const readyMarkets = univ4Markets.filter(m => !m.resolved && m.preview?.ready);
+            const resolvedMarkets = univ4Markets.filter(m => m.resolved);
+
+            document.getElementById('marketCount').textContent = univ4Markets.length;
+            document.getElementById('activeCount').textContent = activeMarkets.length;
+            document.getElementById('readyCount').textContent = readyMarkets.length;
+            document.getElementById('resolvedCount').textContent = resolvedMarkets.length;
+            document.getElementById('totalTvl').textContent = formatEth(totalTvl) + ' ETH';
+
+            // Update featured odds
+            const featuredMarket = activeMarkets[0] || univ4Markets[0];
+            if (featuredMarket && featuredMarket.pool) {
+                const rYes = featuredMarket.pool.rYes || 0n;
+                const rNo = featuredMarket.pool.rNo || 0n;
+                const total = rYes + rNo;
+                if (total > 0n) {
+                    const yesOdds = Number(rNo * 100n / total);
+                    const noOdds = 100 - yesOdds;
+                    document.getElementById('featuredOdds').textContent = `YES ${yesOdds}% / NO ${noOdds}%`;
+                }
             }
+
+            // Update tab visibility based on existing markets
+            updateMarketTabsVisibility();
         }
 
         async function loadInlineOrderbook(market) {
             // Set minimal currentTrade data needed for orderbook loading
-            currentTrade.marketId = market.id;
-            currentTrade.yesId = market.id;
+            currentTrade.marketId = market.marketId;
+            currentTrade.yesId = market.marketId;
             currentTrade.noId = market.noId;
-            currentTrade.rYes = market.rYes || 0n;
-            currentTrade.rNo = market.rNo || 0n;
+            currentTrade.rYes = market.pool?.rYes || 0n;
+            currentTrade.rNo = market.pool?.rNo || 0n;
             currentTrade.isYes = true;
 
             await loadOrderbook();
@@ -1813,11 +2555,20 @@
             const now = Math.floor(Date.now() / 1000);
             const timeLeft = market.close - now;
 
+            // Calculate yesOdds from pool state
+            let yesOdds = 50;
+            const rYes = market.pool?.rYes || 0n;
+            const rNo = market.pool?.rNo || 0n;
+            const total = rYes + rNo;
+            if (total > 0n) {
+                yesOdds = Number(rNo * 100n / total);
+            }
+
             let status, statusClass;
             if (market.resolved) {
                 status = market.outcome ? 'YES Won' : 'NO Won';
                 statusClass = 'resolved';
-            } else if (market.ready) {
+            } else if (market.preview?.ready) {
                 status = 'Ready to Resolve';
                 statusClass = 'ready';
             } else {
@@ -1825,57 +2576,69 @@
                 statusClass = 'active';
             }
 
-            const opSymbol = ['<', '>', '<=', '>=', '==', '!='][market.op] || '?';
-            const noOdds = 100 - market.yesOdds;
+            const opSymbol = ['<', '>', '<=', '>=', '==', '!='][market.condition.op] || '?';
+            const noOdds = 100 - yesOdds;
+            const currentValue = market.preview?.value || 0n;
+            const typeLabel = market.typeLabel || 'OTHER';
+            const collateralSymbol = getCollateralSymbol(market.collateral);
+            const collateralIcon = getCollateralIcon(market.collateral, '14');
+
+            // Compute ZAMM pool link
+            let poolId = null;
+            if (market.noId) {
+                const yesId = market.marketId;
+                const id0 = yesId < market.noId ? yesId : market.noId;
+                const id1 = yesId < market.noId ? market.noId : yesId;
+                poolId = computePoolId(id0, id1, PAMM_ADDRESS, PAMM_ADDRESS, FEE_TIER);
+            }
 
             return `
                 <div class="market-row">
                 <div class="bet-card ${market.resolved ? 'resolved' : ''}">
                     <div class="bet-header">
-                        <span class="bet-type">PNKSTR</span>
+                        <span class="bet-type">${typeLabel}</span>
                         <span class="bet-status ${statusClass}">${status}</span>
+                        <span style="font-size:10px;color:var(--text-dim);margin-left:auto;">${collateralIcon} ${collateralSymbol}</span>
                     </div>
-                    <div class="bet-title">Punks ${opSymbol} ${market.threshold.toString()}</div>
-                    <div class="bet-question">Will PNKSTR hold ${opSymbol} ${market.threshold} punks by ${formatDate(market.close)}?</div>
+                    <div class="bet-title">${escapeHtml(market.description)}</div>
+                    <div class="bet-question">${getMarketTypeDescription(market.marketType, market.condition)}</div>
                     <details class="onchain-details">
                         <summary>on-chain ↓</summary>
-                        <div class="onchain-desc">${escapeHtml(market.description)}</div>
+                        <div class="onchain-desc">Market ID: ${market.marketId.toString()}</div>
                     </details>
 
                     <div class="condition-display">
                         <div class="condition-point">
                             <div class="condition-label">Current</div>
-                            <a href="https://etherscan.io/token/0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB?a=0x1244EAe9FA2c064453B5F605d708C0a0Bfba4838" target="_blank" style="text-decoration:none;">
-                                <div class="condition-value" style="color:var(--pink);">${market.currentValue.toString()} <span style="opacity:0.4;font-size:0.6em;">↗</span></div>
-                            </a>
+                            <div class="condition-value" style="color:var(--pink);">${currentValue.toString()}</div>
                         </div>
                         <div class="condition-op">${opSymbol}</div>
                         <div class="condition-point">
                             <div class="condition-label">Target</div>
-                            <div class="condition-value">${market.threshold.toString()}</div>
+                            <div class="condition-value">${market.condition.threshold.toString()}</div>
                         </div>
                     </div>
 
                     ${!market.resolved ? `
-                        <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0.75rem;margin-bottom:0.75rem;background:${market.yesOdds > 50 ? 'var(--green-dim)' : market.yesOdds < 50 ? 'var(--red-dim)' : 'var(--surface-2)'};border-radius:var(--radius);font-size:var(--font-xs);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0.75rem;margin-bottom:0.75rem;background:${yesOdds > 50 ? 'var(--green-dim)' : yesOdds < 50 ? 'var(--red-dim)' : 'var(--surface-2)'};border-radius:var(--radius);font-size:var(--font-xs);">
                             <div>
-                                <span style="color:${market.yesOdds > 50 ? 'var(--green)' : market.yesOdds < 50 ? 'var(--red)' : 'var(--text-muted)'};">
-                                    ${market.yesOdds > 50 ? '▲ Market favors YES' : market.yesOdds < 50 ? '▼ Market favors NO' : '◆ Market is neutral'}
+                                <span style="color:${yesOdds > 50 ? 'var(--green)' : yesOdds < 50 ? 'var(--red)' : 'var(--text-muted)'};">
+                                    ${yesOdds > 50 ? '▲ Market favors YES' : yesOdds < 50 ? '▼ Market favors NO' : '◆ Market is neutral'}
                                 </span>
-                                <span style="color:var(--text-dim);margin-left:0.5rem;">(${Math.abs(market.yesOdds - 50)}% edge)</span>
+                                <span style="color:var(--text-dim);margin-left:0.5rem;">(${Math.abs(yesOdds - 50)}% edge)</span>
                             </div>
-                            <button onclick="viewMarketDepth('${market.id}')" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--text-muted);cursor:pointer;">Depth</button>
+                            <button onclick="viewMarketDepth('${market.marketId}')" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--text-muted);cursor:pointer;">Depth</button>
                         </div>
                         <div class="bet-buttons">
-                            <button class="bet-btn yes" onclick="openTrade('${market.id}', true)">
+                            <button class="bet-btn yes" onclick="openTrade('${market.marketId}', true)">
                                 <div class="bet-btn-label">Buy Yes</div>
-                                <div class="bet-btn-odds">${market.yesOdds}%</div>
-                                <div class="bet-btn-price">${(market.yesOdds / 100).toFixed(2)} ETH/share</div>
+                                <div class="bet-btn-odds">${yesOdds}%</div>
+                                <div class="bet-btn-price">${(yesOdds / 100).toFixed(2)} ${collateralSymbol}/share</div>
                             </button>
-                            <button class="bet-btn no" onclick="openTrade('${market.id}', false)">
+                            <button class="bet-btn no" onclick="openTrade('${market.marketId}', false)">
                                 <div class="bet-btn-label">Buy No</div>
                                 <div class="bet-btn-odds">${noOdds}%</div>
-                                <div class="bet-btn-price">${(noOdds / 100).toFixed(2)} ETH/share</div>
+                                <div class="bet-btn-price">${(noOdds / 100).toFixed(2)} ${collateralSymbol}/share</div>
                             </button>
                         </div>
                     ` : `
@@ -1883,7 +2646,7 @@
                             <div style="font-size:var(--font-2xl);font-weight:700;color:${market.outcome ? 'var(--green)' : 'var(--red)'};">
                                 ${market.outcome ? 'YES' : 'NO'} Won
                             </div>
-                            <button class="resolve-btn" style="margin-top:0.75rem;background:var(--green);color:var(--bg);" onclick="claimWinnings('${market.id}')">
+                            <button class="resolve-btn" style="margin-top:0.75rem;background:var(--green);color:var(--bg);" onclick="claimWinnings('${market.marketId}')">
                                 Claim Winnings
                             </button>
                         </div>
@@ -1895,29 +2658,29 @@
                     </div>
 
                     <div class="liquidity-stats">
-                        <span>TVL: <span style="color:var(--blue);">${formatEth(market.tvl)} ETH</span></span>
-                        <span>ID: ${truncateId(market.id.toString())}</span>
-                        ${market.poolId ? `<a href="https://zamm.finance/p/${BigInt(market.poolId).toString()}" target="_blank" title="View on ZAMM" style="display:flex;align-items:center;gap:3px;color:var(--text-muted);text-decoration:none;font-size:10px;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'"><img src="https://content.wrappr.wtf/ipfs/bafybeibuct6mftnmgzkbn4tq47elpokbkahkjxq7z6qceptlcsvpxletou" style="width:12px;height:12px;border-radius:2px;">ZAMM</a>` : ''}
+                        <span>TVL: <span style="color:var(--blue);">${formatEth(market.collateralLocked)} ${collateralSymbol}</span></span>
+                        <span>ID: ${truncateId(market.marketId.toString())}</span>
+                        ${poolId ? `<a href="https://zamm.finance/p/${BigInt(poolId).toString()}" target="_blank" title="View on ZAMM" style="display:flex;align-items:center;gap:3px;color:var(--text-muted);text-decoration:none;font-size:10px;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'"><img src="https://content.wrappr.wtf/ipfs/bafybeibuct6mftnmgzkbn4tq47elpokbkahkjxq7z6qceptlcsvpxletou" style="width:12px;height:12px;border-radius:2px;">ZAMM</a>` : ''}
                     </div>
 
-                    ${market.ready && !market.resolved ? `
-                        <button class="resolve-btn" onclick="resolveMarket('${market.id}')">Resolve Market</button>
+                    ${market.preview?.ready && !market.resolved ? `
+                        <button class="resolve-btn" onclick="resolveMarket('${market.marketId}')">Resolve Market</button>
                     ` : ''}
                 </div>
                 ${!market.resolved ? `
-                <div class="inline-orderbook" id="inlineOrderbook-${market.id}">
+                <div class="inline-orderbook" id="inlineOrderbook-${market.marketId}">
                     <div class="inline-orderbook-header">
                         <div style="text-align:center;">
                             <div style="font-weight:700;color:var(--green);font-size:13px;">YES</div>
-                            <div style="font-size:10px;color:var(--text-dim);" id="inlineYesAmm-${market.id}">--</div>
+                            <div style="font-size:10px;color:var(--text-dim);" id="inlineYesAmm-${market.marketId}">--</div>
                         </div>
                         <div style="text-align:center;font-size:9px;color:var(--text-dim);display:flex;align-items:center;justify-content:center;">Odds</div>
                         <div style="text-align:center;">
                             <div style="font-weight:700;color:var(--red);font-size:13px;">NO</div>
-                            <div style="font-size:10px;color:var(--text-dim);" id="inlineNoAmm-${market.id}">--</div>
+                            <div style="font-size:10px;color:var(--text-dim);" id="inlineNoAmm-${market.marketId}">--</div>
                         </div>
                     </div>
-                    <div class="inline-orderbook-ladder" id="inlineLadder-${market.id}">
+                    <div class="inline-orderbook-ladder" id="inlineLadder-${market.marketId}">
                         <div style="text-align:center;color:var(--text-dim);padding:2rem;font-size:11px;">Loading orderbook...</div>
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:9px;color:var(--text-dim);">
@@ -2019,6 +2782,85 @@
             document.getElementById('walletModal').classList.remove('active');
         }
 
+        function updateCreateSectionVisibility() {
+            const createSection = document.getElementById('createSection');
+            const isAdmin = connectedAddress && connectedAddress.toLowerCase() === ADMIN_ADDRESS.toLowerCase();
+            if (createSection) {
+                createSection.style.display = isAdmin ? 'block' : 'none';
+            }
+        }
+
+        function updateMarketTabsVisibility() {
+            // Check if current user is admin
+            const isAdmin = connectedAddress && connectedAddress.toLowerCase() === ADMIN_ADDRESS.toLowerCase();
+
+            // If admin, show all create tabs
+            if (isAdmin) {
+                document.getElementById('tabFeeSwitch').style.display = 'block';
+                document.getElementById('tabUniBalance').style.display = 'block';
+                document.getElementById('tabUniVotes').style.display = 'block';
+                document.getElementById('tabTotalSupply').style.display = 'block';
+                document.getElementById('tabUniPrice').style.display = 'block';
+                return;
+            }
+
+            // For non-admin users, show tabs only if markets exist (though create section is hidden for them)
+            const marketTypeCounts = {
+                V4_FEE_SWITCH: 0,
+                UNI_BALANCE: 0,
+                UNI_VOTES: 0,
+                TOTAL_SUPPLY: 0,
+                UNI_PRICE_USD: 0
+            };
+
+            if (univ4Markets && univ4Markets.length > 0) {
+                univ4Markets.forEach(market => {
+                    const type = market.marketType;
+                    if (marketTypeCounts.hasOwnProperty(type)) {
+                        marketTypeCounts[type]++;
+                    }
+                });
+            }
+
+            // Update tab visibility
+            document.getElementById('tabFeeSwitch').style.display = marketTypeCounts.V4_FEE_SWITCH > 0 ? 'block' : 'none';
+            document.getElementById('tabUniBalance').style.display = marketTypeCounts.UNI_BALANCE > 0 ? 'block' : 'none';
+            document.getElementById('tabUniVotes').style.display = marketTypeCounts.UNI_VOTES > 0 ? 'block' : 'none';
+            document.getElementById('tabTotalSupply').style.display = marketTypeCounts.TOTAL_SUPPLY > 0 ? 'block' : 'none';
+            document.getElementById('tabUniPrice').style.display = marketTypeCounts.UNI_PRICE_USD > 0 ? 'block' : 'none';
+        }
+
+        async function updateWalletBalances() {
+            if (!signer || !connectedAddress) {
+                document.getElementById('walletBalances').style.display = 'none';
+                updateCreateSectionVisibility();
+                return;
+            }
+
+            try {
+                // Fetch ETH balance
+                const ethBal = await provider.getBalance(connectedAddress);
+                const ethFormatted = parseFloat(ethers.formatEther(ethBal)).toFixed(4);
+                document.getElementById('ethBalance').textContent = ethFormatted;
+
+                // Fetch UNI balance and approval
+                const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, signer);
+                uniBalance = await uniToken.balanceOf(connectedAddress);
+                const uniFormatted = parseFloat(ethers.formatUnits(uniBalance, 18)).toFixed(2);
+                document.getElementById('uniBalance').textContent = uniFormatted;
+
+                // Check UNI approval to Resolver
+                uniApprovalAmount = await uniToken.allowance(connectedAddress, RESOLVER_ADDRESS);
+
+                document.getElementById('walletBalances').style.display = 'block';
+
+                // Update create section visibility based on admin status
+                updateCreateSectionVisibility();
+            } catch (error) {
+                console.error('Failed to fetch balances:', error);
+            }
+        }
+
         async function connectWallet() {
             showWalletModal();
         }
@@ -2053,7 +2895,7 @@
                         rpcMap: { 1: 'https://1rpc.io/eth' },
                         metadata: {
                             name: 'pnkPM',
-                            description: 'PNKSTR CryptoPunks Prediction Markets',
+                            description: 'Uniswap V4 Fee Switch Prediction Markets',
                             url: window.location.origin,
                             icons: []
                         }
@@ -2102,6 +2944,9 @@
                 document.getElementById('connectBtn').textContent = connectedAddress.slice(0, 6) + '...' + connectedAddress.slice(-4);
                 document.getElementById('connectBtn').classList.add('connected');
 
+                // Show wallet balances
+                await updateWalletBalances();
+
                 // Remove old listeners if any
                 if (walletEventHandlers) {
                     try {
@@ -2119,7 +2964,7 @@
                 walletProvider.on('accountsChanged', walletEventHandlers.onAccountsChanged);
                 walletProvider.on('chainChanged', walletEventHandlers.onChainChanged);
 
-                localStorage.setItem('pnkpm_wallet', walletKey);
+                localStorage.setItem('unipm_wallet', walletKey);
 
                 // Reload data with new provider
                 await loadData();
@@ -2154,10 +2999,14 @@
             signer = null;
             connectedAddress = null;
             connectedWalletProvider = null;
+            uniBalance = 0n;
+            uniApprovalAmount = 0n;
             document.getElementById('connectBtn').textContent = 'Connect';
             document.getElementById('connectBtn').classList.remove('connected');
+            document.getElementById('walletBalances').style.display = 'none';
+            updateCreateSectionVisibility();
             closeWalletModal();
-            localStorage.removeItem('pnkpm_wallet');
+            localStorage.removeItem('unipm_wallet');
         }
 
         function isUserRejection(error) {
@@ -2179,7 +3028,7 @@
                 return;
             }
 
-            const market = pnkstrMarkets.find(m => m.id.toString() === marketId.toString());
+            const market = univ4Markets.find(m => m.id.toString() === marketId.toString());
             if (!market) return;
 
             const isResolved = market.resolved;
@@ -2199,6 +3048,7 @@
 
             currentTrade = {
                 marketId: BigInt(marketId),
+                collateral: market.collateral,
                 isYes,
                 yesId: BigInt(marketId),
                 noId: BigInt(noId),
@@ -2269,7 +3119,7 @@
 
         // View market depth without opening trade modal
         async function viewMarketDepth(marketId) {
-            const market = pnkstrMarkets.find(m => m.id.toString() === marketId.toString());
+            const market = univ4Markets.find(m => m.id.toString() === marketId.toString());
             if (!market) return;
 
             // Load pool state for AMM prices
@@ -2288,6 +3138,7 @@
             // Set currentTrade so orderbook loads correctly
             currentTrade = {
                 marketId: BigInt(marketId),
+                collateral: market.collateral,
                 isYes: true,
                 yesId: BigInt(marketId),
                 noId: BigInt(noId),
@@ -2500,16 +3351,29 @@
         async function setLimitMax() {
             try {
                 if (limitIsBuy) {
-                    // For buys, max is ETH balance
+                    // For buys, max is collateral balance (ETH or UNI)
                     if (!connectedAddress) return;
                     const rpc = await getReadProvider();
-                    const bal = await rpc.getBalance(connectedAddress);
-                    if (bal > 0n) {
-                        // Leave a little for gas (0.001 ETH)
-                        const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
-                        limitMaxRaw = maxBal;
-                        document.getElementById('limitAmount').value = ethers.formatEther(maxBal);
-                        updateLimitPreview();
+                    const isEthCollateral = !currentTrade.collateral || currentTrade.collateral === ethers.ZeroAddress;
+
+                    let bal;
+                    if (isEthCollateral) {
+                        bal = await rpc.getBalance(connectedAddress);
+                        if (bal > 0n) {
+                            // Leave a little for gas (0.001 ETH)
+                            const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
+                            limitMaxRaw = maxBal;
+                            document.getElementById('limitAmount').value = ethers.formatEther(maxBal);
+                            updateLimitPreview();
+                        }
+                    } else {
+                        const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                        bal = await uniToken.balanceOf(connectedAddress);
+                        if (bal > 0n) {
+                            limitMaxRaw = bal;
+                            document.getElementById('limitAmount').value = ethers.formatUnits(bal, 18);
+                            updateLimitPreview();
+                        }
                     }
                 } else {
                     // For sells, max is share balance (YES or NO based on currentTrade.isYes)
@@ -2538,7 +3402,8 @@
                 addBtn.style.color = 'white';
                 removeBtn.style.background = 'transparent';
                 removeBtn.style.color = 'var(--text-muted)';
-                document.getElementById('lpAmountLabel').textContent = 'ETH to Add';
+                const symbol = getCollateralSymbol(currentTrade.collateral);
+                document.getElementById('lpAmountLabel').textContent = `${symbol} to Add`;
                 document.getElementById('lpPreviewLabel').textContent = 'Est. LP Tokens';
                 document.getElementById('lpSubmit').textContent = 'Deposit Liquidity';
             } else {
@@ -2546,8 +3411,9 @@
                 removeBtn.style.color = 'white';
                 addBtn.style.background = 'transparent';
                 addBtn.style.color = 'var(--text-muted)';
+                const symbol = getCollateralSymbol(currentTrade.collateral);
                 document.getElementById('lpAmountLabel').textContent = 'LP to Remove';
-                document.getElementById('lpPreviewLabel').textContent = 'Est. ETH Out';
+                document.getElementById('lpPreviewLabel').textContent = `Est. ${symbol} Out`;
                 document.getElementById('lpSubmit').textContent = 'Withdraw Liquidity';
             }
 
@@ -2558,15 +3424,28 @@
         async function setLpMax() {
             try {
                 if (currentLpMode === 'add') {
-                    // For add, max is ETH balance (leave some for gas)
+                    // For add, max is collateral balance (ETH or UNI)
                     if (!connectedAddress) return;
                     const rpc = await getReadProvider();
-                    const bal = await rpc.getBalance(connectedAddress);
-                    if (bal > 0n) {
-                        const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
-                        lpMaxRaw = maxBal;
-                        document.getElementById('lpAmount').value = ethers.formatEther(maxBal);
-                        updateLpPreview();
+                    const isEthCollateral = !currentTrade.collateral || currentTrade.collateral === ethers.ZeroAddress;
+
+                    let bal;
+                    if (isEthCollateral) {
+                        bal = await rpc.getBalance(connectedAddress);
+                        if (bal > 0n) {
+                            const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
+                            lpMaxRaw = maxBal;
+                            document.getElementById('lpAmount').value = ethers.formatEther(maxBal);
+                            updateLpPreview();
+                        }
+                    } else {
+                        const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                        bal = await uniToken.balanceOf(connectedAddress);
+                        if (bal > 0n) {
+                            lpMaxRaw = bal;
+                            document.getElementById('lpAmount').value = ethers.formatUnits(bal, 18);
+                            updateLpPreview();
+                        }
                     }
                 } else {
                     // For remove, max is LP balance
@@ -2749,11 +3628,19 @@
 
             try {
                 const rpc = await getReadProvider();
+                const isEthCollateral = !currentTrade.collateral || currentTrade.collateral === ethers.ZeroAddress;
+                const symbol = getCollateralSymbol(currentTrade.collateral);
 
                 if (currentTradeMode === 'lp') {
                     if (currentLpMode === 'add') {
-                        const bal = await rpc.getBalance(connectedAddress);
-                        document.getElementById('lpBalance').textContent = formatEth(bal) + ' ETH';
+                        let bal;
+                        if (isEthCollateral) {
+                            bal = await rpc.getBalance(connectedAddress);
+                        } else {
+                            const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                            bal = await uniToken.balanceOf(connectedAddress);
+                        }
+                        document.getElementById('lpBalance').textContent = formatEth(bal) + ' ' + symbol;
                     } else {
                         document.getElementById('lpBalance').textContent = formatEth(currentUserPosition.lpBalance) + ' LP';
                     }
@@ -2762,16 +3649,28 @@
                     document.getElementById('swapBalance').textContent = formatEth(bal);
                 } else if (currentTradeMode === 'trade') {
                     if (currentTradeDirection === 'buy') {
-                        const bal = await rpc.getBalance(connectedAddress);
-                        document.getElementById('tradeBalance').textContent = formatEth(bal) + ' ETH';
+                        let bal;
+                        if (isEthCollateral) {
+                            bal = await rpc.getBalance(connectedAddress);
+                        } else {
+                            const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                            bal = await uniToken.balanceOf(connectedAddress);
+                        }
+                        document.getElementById('tradeBalance').textContent = formatEth(bal) + ' ' + symbol;
                     } else {
                         const bal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
                         document.getElementById('tradeBalance').textContent = formatEth(bal);
                     }
                 } else if (currentTradeMode === 'limit') {
                     if (limitIsBuy) {
-                        const bal = await rpc.getBalance(connectedAddress);
-                        document.getElementById('limitBalance').textContent = formatEth(bal) + ' ETH';
+                        let bal;
+                        if (isEthCollateral) {
+                            bal = await rpc.getBalance(connectedAddress);
+                        } else {
+                            const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                            bal = await uniToken.balanceOf(connectedAddress);
+                        }
+                        document.getElementById('limitBalance').textContent = formatEth(bal) + ' ' + symbol;
                     } else {
                         const bal = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
                         document.getElementById('limitBalance').textContent = formatEth(bal);
@@ -3380,11 +4279,20 @@
 
             // Validate user can fill (fetch fresh balances)
             const rpc = await getReadProvider();
+            const isEthCollateral = !currentTrade.collateral || currentTrade.collateral === ethers.ZeroAddress;
+            const symbol = getCollateralSymbol(currentTrade.collateral);
+
             if (isBuying) {
-                // Buying: need ETH
-                const ethBal = await rpc.getBalance(connectedAddress);
-                if (Number(ethBal) / 1e18 < ethAmount) {
-                    showToast('Insufficient ETH', `Need ${ethAmount.toFixed(4)} ETH to fill this order`, 'error');
+                // Buying: need ETH or UNI based on collateral
+                let collateralBal;
+                if (isEthCollateral) {
+                    collateralBal = await rpc.getBalance(connectedAddress);
+                } else {
+                    const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                    collateralBal = await uniToken.balanceOf(connectedAddress);
+                }
+                if (Number(collateralBal) / 1e18 < ethAmount) {
+                    showToast(`Insufficient ${symbol}`, `Need ${ethAmount.toFixed(4)} ${symbol} to fill this order`, 'error');
                     return;
                 }
             } else {
@@ -4061,6 +4969,14 @@
 
                 let txPromise;
                 const useFillOrders = betterOrders.length > 0;
+                const isEthCollateral = !currentTrade.collateral || currentTrade.collateral === ethers.ZeroAddress;
+
+                // Handle UNI collateral approval for buys
+                if (isBuy && !isEthCollateral) {
+                    await approveUNI(amtWei, PMROUTER_ADDRESS);
+                }
+
+                const txOptions = isBuy && isEthCollateral ? { value: amtWei } : {};
 
                 if (useFillOrders) {
                     // Route through fillOrdersThenSwap to fill better limit orders first
@@ -4074,7 +4990,7 @@
                         FEE_TIER,
                         connectedAddress,
                         deadline,
-                        isBuy ? { value: amtWei } : {}
+                        txOptions
                     );
                 } else if (isBuy) {
                     txPromise = pmRouter.buy(
@@ -4085,7 +5001,7 @@
                         FEE_TIER,
                         connectedAddress,
                         deadline,
-                        { value: amtWei }
+                        txOptions
                     );
                 } else {
                     txPromise = pmRouter.sell(
@@ -4250,6 +5166,15 @@
                         ? ethers.parseEther((estLp * (100 - slippageTolerance) / 100).toFixed(18))
                         : 0n;
 
+                    const isEthCollateral = !currentTrade.collateral || currentTrade.collateral === ethers.ZeroAddress;
+
+                    // Handle UNI collateral approval
+                    if (!isEthCollateral) {
+                        await approveUNI(amtWei, PAMM_ADDRESS);
+                    }
+
+                    const txOptions = isEthCollateral ? { value: amtWei } : {};
+
                     await monitorTransaction(
                         pamm.splitAndAddLiquidity(
                             currentTrade.marketId,
@@ -4258,7 +5183,7 @@
                             0n, 0n, minLiquidity,
                             connectedAddress,
                             deadline,
-                            { value: amtWei }
+                            txOptions
                         ),
                         {
                             pending: { title: 'Adding Liquidity', body: 'Confirm in your wallet...' },
@@ -4454,6 +5379,14 @@
 
                 const orderType = limitIsBuy ? 'Buy' : 'Sell';
                 const displayPrice = (price * 100).toFixed(0) + '%';
+                const isEthCollateral = !currentTrade.collateral || currentTrade.collateral === ethers.ZeroAddress;
+
+                // Handle UNI collateral approval for buy orders
+                if (limitIsBuy && !isEthCollateral) {
+                    await approveUNI(collateralWei, PMROUTER_ADDRESS);
+                }
+
+                const txOptions = limitIsBuy && isEthCollateral ? { value: collateralWei } : {};
                 let txPromise;
 
                 if (limitIsBuy) {
@@ -4465,7 +5398,7 @@
                         collateralWei,
                         closeTime,
                         true, // partialFill
-                        { value: collateralWei }
+                        txOptions
                     );
                 } else {
                     txPromise = pmRouter.placeOrder(
@@ -4614,7 +5547,7 @@
 
             document.getElementById('customDeadlineGroup').style.display = deadlineSelect === 'custom' ? 'block' : 'none';
 
-            let deadlineStr = 'Dec 31, 2025';
+            let deadlineStr = 'Dec 31, 2026';
             if (deadlineSelect === 'custom') {
                 const customTs = document.getElementById('createCustomDeadline').value;
                 if (customTs) {
@@ -4623,53 +5556,422 @@
             }
 
             document.getElementById('createPreview').textContent =
-                `PNKSTR CryptoPunks balance > ${threshold} by ${deadlineStr}` +
+                `Uniswap V4 protocolFeeController() != 0 by ${deadlineStr}` +
                 (canClose ? ' (may close early)' : '');
         }
 
-        async function createMarket() {
+        // ======================== MARKET TAB SWITCHING ========================
+        function switchMarketTab(tab) {
+            const tabs = document.querySelectorAll('.market-tab');
+            const creators = {
+                feeSwitch: document.getElementById('creatorFeeSwitch'),
+                uniBalance: document.getElementById('creatorUniBalance'),
+                uniVotes: document.getElementById('creatorUniVotes'),
+                totalSupply: document.getElementById('creatorTotalSupply'),
+                uniPrice: document.getElementById('creatorUniPrice')
+            };
+
+            tabs.forEach(t => t.classList.remove('active'));
+            Object.values(creators).forEach(c => c && (c.style.display = 'none'));
+
+            if (tab === 'feeSwitch') {
+                document.getElementById('tabFeeSwitch').classList.add('active');
+                creators.feeSwitch.style.display = 'block';
+            } else if (tab === 'uniBalance') {
+                document.getElementById('tabUniBalance').classList.add('active');
+                creators.uniBalance.style.display = 'block';
+                updateUniBalancePreview();
+            } else if (tab === 'uniVotes') {
+                document.getElementById('tabUniVotes').classList.add('active');
+                creators.uniVotes.style.display = 'block';
+                updateUniVotesPreview();
+            } else if (tab === 'totalSupply') {
+                document.getElementById('tabTotalSupply').classList.add('active');
+                creators.totalSupply.style.display = 'block';
+                fetchAndDisplayTotalSupply();
+                updateTotalSupplyPreview();
+            } else if (tab === 'uniPrice') {
+                document.getElementById('tabUniPrice').classList.add('active');
+                creators.uniPrice.style.display = 'block';
+                fetchAndDisplayCurrentUniPrice();
+                updateUniPricePreview();
+            }
+        }
+
+        // ======================== ENS RESOLUTION ========================
+        let resolvedTargetAddress = null;
+
+        async function resolveENS(input) {
+            if (!input) return;
+
+            const resolvedDiv = document.getElementById('resolvedAddress');
+            const resolvedText = document.getElementById('resolvedAddressText');
+
+            // If already a valid address
+            if (input.startsWith('0x') && input.length === 42) {
+                resolvedTargetAddress = input;
+                resolvedDiv.style.display = 'none';
+                updateUniBalancePreview();
+                return;
+            }
+
+            // Try ENS resolution
+            if (input.includes('.eth')) {
+                try {
+                    resolvedDiv.style.display = 'block';
+                    resolvedText.textContent = 'Resolving ENS...';
+                    resolvedText.style.color = 'var(--text-muted)';
+
+                    const rpc = await getReadProvider();
+                    const address = await rpc.resolveName(input);
+
+                    if (address) {
+                        resolvedTargetAddress = address;
+                        resolvedText.textContent = `✓ Resolved to ${address.slice(0, 6)}...${address.slice(-4)}`;
+                        resolvedText.style.color = 'var(--green)';
+                    } else {
+                        resolvedTargetAddress = null;
+                        resolvedText.textContent = '✗ ENS name not found';
+                        resolvedText.style.color = 'var(--red)';
+                    }
+                    updateUniBalancePreview();
+                } catch (error) {
+                    console.error('ENS resolution error:', error);
+                    resolvedText.textContent = '✗ Failed to resolve ENS';
+                    resolvedText.style.color = 'var(--red)';
+                    resolvedTargetAddress = null;
+                }
+            } else {
+                resolvedDiv.style.display = 'none';
+                resolvedTargetAddress = null;
+            }
+        }
+
+        // ======================== PREVIEW UPDATES ========================
+        function updateUniBalancePreview() {
+            const address = document.getElementById('createTargetAddress').value;
+            const operator = document.getElementById('createOperator').value;
+            const threshold = document.getElementById('createUniThreshold').value;
+            const deadlineSelect = document.getElementById('createDeadlineUniBalance').value;
+
+            const opSymbols = { '1': '>', '2': '<', '3': '>=', '4': '<=' };
+            const opSym = opSymbols[operator] || '>';
+
+            let deadlineStr = 'Dec 31, 2026';
+            if (deadlineSelect === 'custom') {
+                const customTs = document.getElementById('createCustomDeadlineUniBalance').value;
+                if (customTs) {
+                    const date = new Date(parseInt(customTs) * 1000);
+                    deadlineStr = date.toUTCString();
+                }
+            }
+
+            const addrDisplay = resolvedTargetAddress
+                ? `${resolvedTargetAddress.slice(0, 6)}...${resolvedTargetAddress.slice(-4)}`
+                : (address || '[address]');
+
+            const thresholdDisplay = threshold
+                ? parseFloat(threshold).toLocaleString('en-US', { maximumFractionDigits: 2 })
+                : '[amount]';
+
+            document.getElementById('createPreviewUniBalance').textContent =
+                `UNI balance of ${addrDisplay} ${opSym} ${thresholdDisplay} by ${deadlineStr}`;
+        }
+
+        // Attach preview updates
+        setTimeout(() => {
+            if (document.getElementById('createTargetAddress')) {
+                document.getElementById('createTargetAddress').addEventListener('input', updateUniBalancePreview);
+                document.getElementById('createOperator').addEventListener('change', updateUniBalancePreview);
+                document.getElementById('createUniThreshold').addEventListener('input', updateUniBalancePreview);
+                document.getElementById('createDeadlineUniBalance').addEventListener('change', updateUniBalancePreview);
+                document.getElementById('createCustomDeadlineUniBalance').addEventListener('input', updateUniBalancePreview);
+            }
+        }, 100);
+
+        // ======================== COLLATERAL HELPERS ========================
+        function getCollateralSymbol(collateralAddress) {
+            if (!collateralAddress || collateralAddress === ethers.ZeroAddress) {
+                return 'ETH';
+            }
+            return 'UNI';
+        }
+
+        function getCollateralIcon(collateralAddress, size = '16') {
+            const isETH = !collateralAddress || collateralAddress === ethers.ZeroAddress;
+
+            if (isETH) {
+                // ETH icon
+                return `<svg width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;"><polygon fill="#80D8FF" points="7.62,18.83 16.01,30.5 16.01,24.1"/><polygon fill="#42A5F5" points="16.01,30.5 24.38,18.78 16.01,24.1"/><polygon fill="#FFF176" points="16.01,1.5 7.62,16.23 16.01,12.3"/><polygon fill="#FF8A80" points="24.38,16.18 16.01,1.5 16.01,12.3"/><polygon fill="#C1AEE1" points="16.01,21.5 24.38,16.18 16.01,12.3"/><polygon fill="#55FB9B" points="16.01,12.3 7.62,16.23 16.01,21.5"/></svg>`;
+            } else {
+                // UNI icon
+                return `<svg width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;"><g fill="none" fill-rule="evenodd"><circle fill="#FF007A" fill-rule="nonzero" cx="16" cy="16" r="16"/><g fill="#FFF"><path d="M12.261 5.767c-.285-.044-.297-.05-.163-.07.046-.007.827.135 1.302.237.652.14 1.122.293 1.674.544.796.362 1.366.797 1.945 1.484.173.206.506.685.569.82.018.037-.01.054-.126.077-.438.087-.68.222-.938.523-.323.376-.471.76-.582 1.514-.071.48-.158.861-.307 1.342-.205.661-.432 1.093-.88 1.674-.561.729-.777.916-1.45 1.258-.696.354-1.35.507-2.261.529-.414.01-.52.023-.66.08-.23.094-.349.245-.398.504-.028.148-.028.445 0 .592.088.465.34.804.85 1.144.737.492.998.82 1.052 1.324.045.415-.036.746-.31 1.271-.421.808-.526 1.154-.597 1.968-.045.517-.108.756-.274.9-.172.149-.328.207-.755.276-.696.113-1.139.31-1.503.668-.316.31-.411.544-.414.98l-.002.294.177.19c.254.272 2.355 2.404 6.304 6.395l.106.107.212-.154c.116-.085.24-.177.274-.204.034-.027.096-.076.137-.11 3.708-4.327 5.624-6.555 5.746-6.682.2-.207.125-.484-.219-.805-.191-.178-.585-.301-.781-.244-.223.066-.474.21-.657.375-.129.117-.65.855-1.853 2.625-.903 1.33-1.672 2.444-1.712 2.476-.049.04-.048.038 1.618-2.634 1.046-1.68 1.4-2.27 1.4-2.332 0-.132-.05-.217-.272-.462-.37-.407-.535-.835-.655-1.697-.134-.963-.51-1.683-1.554-2.978-.61-.757-.71-.896-.865-1.204-.194-.386-.247-.603-.269-1.092-.023-.515.022-.849.18-1.342.138-.432.282-.717.65-1.288.318-.492.501-.858.501-1.002 0-.113.022-.113.515-.003 1.179-.265 2.136-.734 2.675-1.308.333-.356.411-.552.414-1.039.001-.318-.01-.384-.096-.568-.14-.297-.395-.546-.957-.93-.737-.504-1.051-.909-1.138-1.466-.072-.458.011-.78.419-1.634.421-.884.526-1.261.597-2.152.045-.576.108-.803.274-.985.172-.19.328-.255.755-.313.696-.095 1.139-.275 1.503-.61.316-.292.448-.573.468-.995l.016-.32-.177-.206c-.254-.296-2.355-2.614-6.304-6.956l-.106-.115-.212.165z"/><path d="M7.91 19.732c-.114-.145-.174-.331-.174-.546 0-.06.033-.104.108-.143.127-.065.136-.139.037-.288-.101-.152-.093-.286.023-.377.186-.146.45-.065.59.18.16.281-.015.65-.363.766-.157.052-.17.047-.22-.092zm5.524-7.176c-.327.1-.644.447-.743.81-.06.221-.026.61.064.73.145.194.286.245.666.242.744-.005 1.39-.324 1.466-.723.062-.327-.223-.78-.614-.98-.202-.102-.631-.143-.839-.079zm.87.68c.115-.163.064-.34-.13-.458-.372-.227-.934-.04-.934.312 0 .174.293.365.561.365.18 0 .424-.107.503-.219z"/></g></g></svg>`;
+            }
+        }
+
+        // Custom collateral dropdown functions
+        function createCollateralDropdown(id, marketType) {
+            const ethIcon = getCollateralIcon(ethers.ZeroAddress, '18');
+            const uniIcon = getCollateralIcon(UNI_TOKEN_ADDRESS, '18');
+
+            return `
+                <div class="collateral-dropdown" id="${id}Dropdown" data-value="eth" data-market-type="${marketType}">
+                    <div class="collateral-dropdown-selected" onclick="toggleCollateralDropdown('${id}')">
+                        <span class="collateral-dropdown-icon">${ethIcon}</span>
+                        <span class="collateral-dropdown-text">ETH</span>
+                        <span class="collateral-dropdown-arrow">▼</span>
+                    </div>
+                    <div class="collateral-dropdown-options" id="${id}Options">
+                        <div class="collateral-dropdown-option" onclick="selectCollateral('${id}', 'eth', '${marketType}')">
+                            <span class="collateral-dropdown-icon">${ethIcon}</span>
+                            <span>ETH</span>
+                        </div>
+                        <div class="collateral-dropdown-option" onclick="selectCollateral('${id}', 'uni', '${marketType}')">
+                            <span class="collateral-dropdown-icon">${uniIcon}</span>
+                            <span>UNI</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleCollateralDropdown(id) {
+            const optionsEl = document.getElementById(`${id}Options`);
+            const selectedEl = document.querySelector(`#${id}Dropdown .collateral-dropdown-selected`);
+
+            // Close all other dropdowns first
+            document.querySelectorAll('.collateral-dropdown-options').forEach(el => {
+                if (el.id !== `${id}Options`) {
+                    el.classList.remove('active');
+                }
+            });
+            document.querySelectorAll('.collateral-dropdown-selected').forEach(el => {
+                if (el !== selectedEl) {
+                    el.classList.remove('active');
+                }
+            });
+
+            // Toggle this dropdown
+            optionsEl.classList.toggle('active');
+            selectedEl.classList.toggle('active');
+        }
+
+        function selectCollateral(id, value, marketType) {
+            const dropdown = document.getElementById(`${id}Dropdown`);
+            const selectedEl = dropdown.querySelector('.collateral-dropdown-selected');
+            const optionsEl = document.getElementById(`${id}Options`);
+
+            const icon = value === 'eth'
+                ? getCollateralIcon(ethers.ZeroAddress, '18')
+                : getCollateralIcon(UNI_TOKEN_ADDRESS, '18');
+            const text = value === 'eth' ? 'ETH' : 'UNI';
+
+            // Update displayed value
+            selectedEl.innerHTML = `
+                <span class="collateral-dropdown-icon">${icon}</span>
+                <span class="collateral-dropdown-text">${text}</span>
+                <span class="collateral-dropdown-arrow">▼</span>
+            `;
+
+            // Update stored value
+            dropdown.dataset.value = value;
+
+            // Close dropdown
+            optionsEl.classList.remove('active');
+            selectedEl.classList.remove('active');
+
+            // Update seed label
+            const seedLabel = document.getElementById(`seedLabel${marketType}`);
+            if (seedLabel) {
+                seedLabel.textContent = `Seed Liquidity (${text})`;
+            }
+        }
+
+        // Get collateral value from custom dropdown
+        function getCollateralValue(id) {
+            const dropdown = document.getElementById(`${id}Dropdown`);
+            return dropdown ? dropdown.dataset.value : 'eth';
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.collateral-dropdown')) {
+                document.querySelectorAll('.collateral-dropdown-options').forEach(el => {
+                    el.classList.remove('active');
+                });
+                document.querySelectorAll('.collateral-dropdown-selected').forEach(el => {
+                    el.classList.remove('active');
+                });
+            }
+        });
+
+        function updateSeedLabel(marketType) {
+            // This function is now handled by selectCollateral
+            // Kept for backward compatibility
+            const dropdown = document.getElementById(`createCollateral${marketType}Dropdown`);
+            const seedLabel = document.getElementById(`seedLabel${marketType}`);
+
+            if (dropdown && seedLabel) {
+                const collateralType = dropdown.dataset.value === 'uni' ? 'UNI' : 'ETH';
+                seedLabel.textContent = `Seed Liquidity (${collateralType})`;
+            }
+        }
+
+        async function approveUNI(amount, spender = RESOLVER_ADDRESS) {
+            if (!signer || !connectedAddress) {
+                throw new Error('Wallet not connected');
+            }
+
+            try {
+                const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, signer);
+
+                // Check current allowance
+                const currentAllowance = await uniToken.allowance(connectedAddress, spender);
+
+                if (currentAllowance >= amount) {
+                    return; // Already approved
+                }
+
+                showToast('Approval Required', 'Please approve UNI token spending...', 'pending');
+
+                // Request approval for a large amount to avoid future approvals
+                const approvalAmount = ethers.MaxUint256;
+                const approveTx = await uniToken.approve(spender, approvalAmount);
+
+                showToast('Approval Submitted', `<a href="https://etherscan.io/tx/${approveTx.hash}" target="_blank" style="color:var(--pink);">View on Etherscan ↗</a>`, 'pending');
+
+                await approveTx.wait();
+
+                showToast('Approval Confirmed', 'UNI token approved. Proceeding...', 'success');
+
+                // Update the approval amount in state if approving RESOLVER
+                if (spender === RESOLVER_ADDRESS) {
+                    uniApprovalAmount = approvalAmount;
+                }
+
+            } catch (error) {
+                console.error('Approval failed:', error);
+                throw new Error('UNI approval failed: ' + (error.message || 'Unknown error'));
+            }
+        }
+
+        // ======================== PRICE FORMATTING UTILITIES ========================
+        // Convert Chainlink oracle price (8 decimals) to USD display
+        function formatOraclePrice(threshold) {
+            return (Number(threshold) / 1e8).toFixed(2);
+        }
+
+        // Convert USD price to Chainlink oracle threshold (8 decimals)
+        function usdToOracleThreshold(usdPrice) {
+            return BigInt(Math.floor(parseFloat(usdPrice) * 1e8));
+        }
+
+        // Fetch current UNI price from Chainlink oracle
+        async function fetchCurrentUniPrice() {
+            try {
+                const rpc = await getReadProvider();
+                const oracleABI = ['function latestAnswer() external view returns (int256)'];
+                const oracle = new ethers.Contract(CHAINLINK_UNI_USD_ORACLE, oracleABI, rpc);
+                const price = await oracle.latestAnswer();
+                return formatOraclePrice(price);
+            } catch (error) {
+                console.error('Failed to fetch UNI price:', error);
+                return null;
+            }
+        }
+
+        // Fetch and display current UNI price in UI
+        async function fetchAndDisplayCurrentUniPrice() {
+            const priceEl = document.getElementById('currentUniPrice');
+            if (!priceEl) return;
+
+            priceEl.value = 'Loading...';
+            const price = await fetchCurrentUniPrice();
+
+            if (price) {
+                priceEl.value = `$${price}`;
+            } else {
+                priceEl.value = 'Failed to load';
+            }
+        }
+
+        // Update UNI Price market preview
+        function updateUniPricePreview() {
+            const targetPrice = document.getElementById('createTargetPrice')?.value || '10.00';
+            const operator = parseInt(document.getElementById('createPriceOperator')?.value || '3');
+            const deadlineSelect = document.getElementById('createDeadlineUniPrice')?.value;
+            const canClose = document.getElementById('createCanCloseUniPrice')?.value === 'true';
+
+            const opSymbols = { 0: '<', 1: '>', 2: '<=', 3: '>=' };
+            const opSym = opSymbols[operator] || '>=';
+
+            let deadlineStr = 'Dec 31, 2026';
+            if (deadlineSelect === 'custom') {
+                const customTs = document.getElementById('createCustomDeadlineUniPrice')?.value;
+                if (customTs) {
+                    deadlineStr = new Date(parseInt(customTs) * 1000).toUTCString();
+                }
+            }
+
+            const previewEl = document.getElementById('createPreviewUniPrice');
+            if (previewEl) {
+                previewEl.textContent = `UNI price ${opSym} $${targetPrice} by ${deadlineStr}` +
+                    (canClose ? ' (may close early)' : '');
+            }
+        }
+
+        // ======================== FEE SWITCH MARKET CREATION ========================
+        async function createFeeSwitchMarket() {
             if (!signer) {
                 showWalletModal();
                 return;
             }
 
-            const threshold = parseInt(document.getElementById('createThreshold').value);
-            const deadlineSelect = document.getElementById('createDeadline').value;
-            const canClose = document.getElementById('createCanClose').value === 'true';
-            const seedEth = parseFloat(document.getElementById('createSeed').value);
+            const collateralType = getCollateralValue('createCollateralFeeSwitch');
+            const deadlineSelect = document.getElementById('createDeadlineFeeSwitch').value;
+            const canClose = document.getElementById('createCanCloseFeeSwitch').value === 'true';
+            const seedAmount = parseFloat(document.getElementById('createSeedFeeSwitch').value);
 
-            if (!threshold || threshold < 1) {
-                showToast('Invalid Threshold', 'Please enter a valid threshold', 'error');
-                return;
-            }
-
-            if (!seedEth || seedEth < 0.001) {
-                showToast('Invalid Seed', 'Please enter at least 0.001 ETH', 'error');
+            if (!seedAmount || seedAmount < 0.001) {
+                showToast('Invalid Seed', 'Please enter at least 0.001', 'error');
                 return;
             }
 
             let close;
-            if (deadlineSelect === 'eoy2025') {
-                close = EOY_2025;
+            if (deadlineSelect === 'eoy2026') {
+                close = EOY_2026;
             } else {
-                close = parseInt(document.getElementById('createCustomDeadline').value);
+                close = parseInt(document.getElementById('createCustomDeadlineFeeSwitch').value);
                 if (!close || close <= Math.floor(Date.now() / 1000)) {
                     showToast('Invalid Deadline', 'Deadline must be in the future', 'error');
                     return;
                 }
             }
 
-            const btn = document.querySelector('.create-btn');
+            const btn = event.target;
             btn.disabled = true;
             btn.textContent = 'Creating...';
 
             try {
                 const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, signer);
-                const seedWei = ethers.parseEther(seedEth.toString());
+                const seedWei = collateralType === 'uni'
+                    ? ethers.parseUnits(seedAmount.toString(), 18)
+                    : ethers.parseEther(seedAmount.toString());
                 const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
 
-                // callData for balanceOf(PNKSTR)
-                const callData = PNKSTR_BALANCE_CALLDATA;
+                // Handle UNI collateral approval
+                if (collateralType === 'uni') {
+                    if (uniBalance < seedWei) {
+                        showToast('Insufficient Balance', `You only have ${ethers.formatUnits(uniBalance, 18)} UNI`, 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Create Fee Switch Market';
+                        return;
+                    }
+                    await approveUNI(seedWei);
+                }
+
+                const callData = PROTOCOL_FEE_CONTROLLER_SELECTOR;
+                const collateralAddress = collateralType === 'uni' ? UNI_TOKEN_ADDRESS : ethers.ZeroAddress;
 
                 const seedParams = {
                     collateralIn: seedWei,
@@ -4683,37 +5985,657 @@
 
                 showToast('Transaction Pending', 'Please confirm in your wallet...', 'pending');
 
-                // Observable string for on-chain description
-                const observable = `PNKSTR Punks (0x1244..4838)`;
+                const observable = `Uniswap V4 protocolFeeController()`;
+
+                const txOptions = collateralType === 'eth' ? { value: seedWei } : {};
 
                 const tx = await resolver.createNumericMarketAndSeed(
                     observable,
-                    ethers.ZeroAddress, // ETH collateral
-                    CRYPTOPUNKS_ADDRESS,
+                    collateralAddress,
+                    UNIV4_ADDRESS,
                     callData,
-                    1, // Op.GT (greater than)
-                    BigInt(threshold),
+                    4, // Op.NEQ (not equal to)
+                    0n, // threshold: 0 (checking != 0)
                     BigInt(close),
                     canClose,
                     seedParams,
-                    { value: seedWei }
+                    txOptions
                 );
 
-                showToast('Transaction Submitted', `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank">View on Etherscan</a>`, 'pending');
+                showToast('Transaction Submitted', `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank" style="color:var(--pink);">View on Etherscan ↗</a>`, 'pending');
 
                 const receipt = await tx.wait();
 
-                showToast('Market Created', 'Your market is now live!', 'success');
+                showToast('Market Created', 'Your V4 fee switch market is now live!', 'success');
                 await loadData();
 
             } catch (error) {
                 console.error('Create failed:', error);
-                if (!isUserRejection(error)) {
-                    showToast('Creation Failed', error.reason || error.message || 'Transaction failed', 'error');
-                }
+                showToast('Error', error.message || 'Failed to create market', 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Create Market';
+                btn.textContent = 'Create Fee Switch Market';
+            }
+        }
+
+        // ======================== UNI BALANCE MARKET CREATION ========================
+        async function createUniBalanceMarket() {
+            if (!signer) {
+                showWalletModal();
+                return;
+            }
+
+            const collateralType = getCollateralValue('createCollateralUniBalance');
+            const targetAddress = resolvedTargetAddress || document.getElementById('createTargetAddress').value;
+            const operator = parseInt(document.getElementById('createOperator').value);
+            const threshold = parseFloat(document.getElementById('createUniThreshold').value);
+            const deadlineSelect = document.getElementById('createDeadlineUniBalance').value;
+            const canClose = document.getElementById('createCanCloseUniBalance').value === 'true';
+            const seedAmount = parseFloat(document.getElementById('createSeedUniBalance').value);
+
+            if (!targetAddress || !ethers.isAddress(targetAddress)) {
+                showToast('Invalid Address', 'Please enter a valid Ethereum address or ENS name', 'error');
+                return;
+            }
+
+            if (!threshold || threshold <= 0) {
+                showToast('Invalid Threshold', 'Please enter a valid UNI amount', 'error');
+                return;
+            }
+
+            if (!seedAmount || seedAmount < 0.001) {
+                showToast('Invalid Seed', 'Please enter at least 0.001', 'error');
+                return;
+            }
+
+            let close;
+            if (deadlineSelect === 'eoy2026') {
+                close = EOY_2026;
+            } else {
+                close = parseInt(document.getElementById('createCustomDeadlineUniBalance').value);
+                if (!close || close <= Math.floor(Date.now() / 1000)) {
+                    showToast('Invalid Deadline', 'Deadline must be in the future', 'error');
+                    return;
+                }
+            }
+
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+
+            try {
+                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, signer);
+                const seedWei = collateralType === 'uni'
+                    ? ethers.parseUnits(seedAmount.toString(), 18)
+                    : ethers.parseEther(seedAmount.toString());
+                const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+
+                // Handle UNI collateral approval
+                if (collateralType === 'uni') {
+                    if (uniBalance < seedWei) {
+                        showToast('Insufficient Balance', `You only have ${ethers.formatUnits(uniBalance, 18)} UNI`, 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Create UNI Balance Market';
+                        return;
+                    }
+                    await approveUNI(seedWei);
+                }
+
+                // Convert threshold to wei (18 decimals)
+                const thresholdWei = ethers.parseUnits(threshold.toString(), 18);
+
+                // Encode callData: balanceOf(targetAddress)
+                const callData = BALANCE_OF_SELECTOR + '000000000000000000000000' + targetAddress.slice(2).toLowerCase();
+
+                const collateralAddress = collateralType === 'uni' ? UNI_TOKEN_ADDRESS : ethers.ZeroAddress;
+
+                const seedParams = {
+                    collateralIn: seedWei,
+                    feeOrHook: FEE_TIER,
+                    amount0Min: 0n,
+                    amount1Min: 0n,
+                    minLiquidity: 0n,
+                    lpRecipient: connectedAddress,
+                    deadline: BigInt(deadline)
+                };
+
+                showToast('Transaction Pending', 'Please confirm in your wallet...', 'pending');
+
+                const opSymbols = { 1: '>', 2: '<', 3: '>=', 4: '<=' };
+                const addrDisplay = `${targetAddress.slice(0, 6)}...${targetAddress.slice(-4)}`;
+                const observable = `UNI balance of ${addrDisplay}`;
+
+                const txOptions = collateralType === 'eth' ? { value: seedWei } : {};
+
+                const tx = await resolver.createNumericMarketAndSeed(
+                    observable,
+                    collateralAddress,
+                    UNI_TOKEN_ADDRESS,
+                    callData,
+                    operator, // Op enum value
+                    thresholdWei,
+                    BigInt(close),
+                    canClose,
+                    seedParams,
+                    txOptions
+                );
+
+                showToast('Transaction Submitted', `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank" style="color:var(--pink);">View on Etherscan ↗</a>`, 'pending');
+
+                const receipt = await tx.wait();
+
+                showToast('Market Created', 'Your UNI balance market is now live!', 'success');
+                await loadData();
+
+            } catch (error) {
+                console.error('Create failed:', error);
+                showToast('Error', error.message || 'Failed to create market', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create UNI Balance Market';
+            }
+        }
+
+        // ======================== UNI VOTES ENS RESOLUTION ========================
+        let resolvedTargetAddressVotes = null;
+
+        async function resolveENSVotes(input) {
+            if (!input) return;
+
+            const resolvedDiv = document.getElementById('resolvedAddressVotes');
+            const resolvedText = document.getElementById('resolvedAddressTextVotes');
+
+            // If already a valid address
+            if (input.startsWith('0x') && input.length === 42) {
+                resolvedTargetAddressVotes = input;
+                resolvedDiv.style.display = 'none';
+                updateUniVotesPreview();
+                return;
+            }
+
+            // Try ENS resolution
+            if (input.includes('.eth')) {
+                try {
+                    resolvedDiv.style.display = 'block';
+                    resolvedText.textContent = 'Resolving ENS...';
+                    resolvedText.style.color = 'var(--text-muted)';
+
+                    const rpc = await getReadProvider();
+                    const address = await rpc.resolveName(input);
+
+                    if (address) {
+                        resolvedTargetAddressVotes = address;
+                        resolvedText.textContent = `✓ Resolved to ${address.slice(0, 6)}...${address.slice(-4)}`;
+                        resolvedText.style.color = 'var(--green)';
+                    } else {
+                        resolvedTargetAddressVotes = null;
+                        resolvedText.textContent = '✗ ENS name not found';
+                        resolvedText.style.color = 'var(--red)';
+                    }
+                    updateUniVotesPreview();
+                } catch (error) {
+                    console.error('ENS resolution error:', error);
+                    resolvedText.textContent = '✗ Failed to resolve ENS';
+                    resolvedText.style.color = 'var(--red)';
+                    resolvedTargetAddressVotes = null;
+                }
+            } else {
+                resolvedDiv.style.display = 'none';
+                resolvedTargetAddressVotes = null;
+            }
+        }
+
+        // ======================== UNI VOTES PREVIEW ========================
+        function updateUniVotesPreview() {
+            const address = document.getElementById('createTargetAddressVotes')?.value;
+            const operator = document.getElementById('createOperatorVotes')?.value;
+            const threshold = document.getElementById('createUniVotesThreshold')?.value;
+            const deadlineSelect = document.getElementById('createDeadlineUniVotes')?.value;
+
+            const opSymbols = { '1': '>', '2': '<', '3': '>=', '4': '<=' };
+            const opSym = opSymbols[operator] || '>';
+
+            let deadlineStr = 'Dec 31, 2026';
+            if (deadlineSelect === 'custom') {
+                const customTs = document.getElementById('createCustomDeadlineUniVotes')?.value;
+                if (customTs) {
+                    const date = new Date(parseInt(customTs) * 1000);
+                    deadlineStr = date.toUTCString();
+                }
+            }
+
+            const addrDisplay = resolvedTargetAddressVotes
+                ? `${resolvedTargetAddressVotes.slice(0, 6)}...${resolvedTargetAddressVotes.slice(-4)}`
+                : (address || '[address]');
+
+            const thresholdDisplay = threshold
+                ? parseFloat(threshold).toLocaleString('en-US', { maximumFractionDigits: 2 })
+                : '[amount]';
+
+            const previewEl = document.getElementById('createPreviewUniVotes');
+            if (previewEl) {
+                previewEl.textContent =
+                    `UNI voting power of ${addrDisplay} ${opSym} ${thresholdDisplay} by ${deadlineStr}`;
+            }
+        }
+
+        // Attach preview updates for votes
+        setTimeout(() => {
+            const addressInput = document.getElementById('createTargetAddressVotes');
+            const operatorSelect = document.getElementById('createOperatorVotes');
+            const thresholdInput = document.getElementById('createUniVotesThreshold');
+            const deadlineSelect = document.getElementById('createDeadlineUniVotes');
+            const customDeadlineInput = document.getElementById('createCustomDeadlineUniVotes');
+
+            if (addressInput) {
+                addressInput.addEventListener('input', updateUniVotesPreview);
+                operatorSelect.addEventListener('change', updateUniVotesPreview);
+                thresholdInput.addEventListener('input', updateUniVotesPreview);
+                deadlineSelect.addEventListener('change', updateUniVotesPreview);
+                customDeadlineInput.addEventListener('input', updateUniVotesPreview);
+            }
+        }, 100);
+
+        // ======================== UNI VOTES MARKET CREATION ========================
+        async function createUniVotesMarket() {
+            if (!signer) {
+                showWalletModal();
+                return;
+            }
+
+            const collateralType = getCollateralValue('createCollateralUniVotes');
+            const targetAddress = resolvedTargetAddressVotes || document.getElementById('createTargetAddressVotes').value;
+            const operator = parseInt(document.getElementById('createOperatorVotes').value);
+            const threshold = parseFloat(document.getElementById('createUniVotesThreshold').value);
+            const deadlineSelect = document.getElementById('createDeadlineUniVotes').value;
+            const canClose = document.getElementById('createCanCloseUniVotes').value === 'true';
+            const seedAmount = parseFloat(document.getElementById('createSeedUniVotes').value);
+
+            if (!targetAddress || !ethers.isAddress(targetAddress)) {
+                showToast('Invalid Address', 'Please enter a valid Ethereum address or ENS name', 'error');
+                return;
+            }
+
+            if (!threshold || threshold <= 0) {
+                showToast('Invalid Threshold', 'Please enter a valid UNI voting power amount', 'error');
+                return;
+            }
+
+            if (!seedAmount || seedAmount < 0.001) {
+                showToast('Invalid Seed', 'Please enter at least 0.001', 'error');
+                return;
+            }
+
+            let close;
+            if (deadlineSelect === 'eoy2026') {
+                close = EOY_2026;
+            } else {
+                close = parseInt(document.getElementById('createCustomDeadlineUniVotes').value);
+                if (!close || close <= Math.floor(Date.now() / 1000)) {
+                    showToast('Invalid Deadline', 'Deadline must be in the future', 'error');
+                    return;
+                }
+            }
+
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+
+            try {
+                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, signer);
+                const seedWei = collateralType === 'uni'
+                    ? ethers.parseUnits(seedAmount.toString(), 18)
+                    : ethers.parseEther(seedAmount.toString());
+                const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+
+                // Handle UNI collateral approval
+                if (collateralType === 'uni') {
+                    if (uniBalance < seedWei) {
+                        showToast('Insufficient Balance', `You only have ${ethers.formatUnits(uniBalance, 18)} UNI`, 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Create Voting Power Market';
+                        return;
+                    }
+                    await approveUNI(seedWei);
+                }
+
+                // Convert threshold to wei (18 decimals)
+                const thresholdWei = ethers.parseUnits(threshold.toString(), 18);
+
+                // Encode callData: getCurrentVotes(targetAddress)
+                const callData = GET_CURRENT_VOTES_SELECTOR + '000000000000000000000000' + targetAddress.slice(2).toLowerCase();
+
+                const collateralAddress = collateralType === 'uni' ? UNI_TOKEN_ADDRESS : ethers.ZeroAddress;
+
+                const seedParams = {
+                    collateralIn: seedWei,
+                    feeOrHook: FEE_TIER,
+                    amount0Min: 0n,
+                    amount1Min: 0n,
+                    minLiquidity: 0n,
+                    lpRecipient: connectedAddress,
+                    deadline: BigInt(deadline)
+                };
+
+                showToast('Transaction Pending', 'Please confirm in your wallet...', 'pending');
+
+                const addrDisplay = `${targetAddress.slice(0, 6)}...${targetAddress.slice(-4)}`;
+                const observable = `UNI votes of ${addrDisplay}`;
+
+                const txOptions = collateralType === 'eth' ? { value: seedWei } : {};
+
+                const tx = await resolver.createNumericMarketAndSeed(
+                    observable,
+                    collateralAddress,
+                    UNI_TOKEN_ADDRESS,
+                    callData,
+                    operator, // Op enum value
+                    thresholdWei,
+                    BigInt(close),
+                    canClose,
+                    seedParams,
+                    txOptions
+                );
+
+                showToast('Transaction Submitted', `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank" style="color:var(--pink);">View on Etherscan ↗</a>`, 'pending');
+
+                const receipt = await tx.wait();
+
+                showToast('Market Created', 'Your UNI voting power market is now live!', 'success');
+                await loadData();
+
+            } catch (error) {
+                console.error('Create failed:', error);
+                showToast('Error', error.message || 'Failed to create market', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create Voting Power Market';
+            }
+        }
+
+        // ======================== TOTAL SUPPLY FETCHING ========================
+        let cachedTotalSupply = null;
+
+        async function fetchAndDisplayTotalSupply() {
+            const supplyInput = document.getElementById('currentTotalSupply');
+            if (!supplyInput) return;
+
+            try {
+                supplyInput.value = 'Loading...';
+                const rpc = await getReadProvider();
+                const uniToken = new ethers.Contract(UNI_TOKEN_ADDRESS, UNI_TOKEN_ABI, rpc);
+                const supply = await uniToken.totalSupply();
+                cachedTotalSupply = supply;
+                const formatted = ethers.formatUnits(supply, 18);
+                supplyInput.value = parseFloat(formatted).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' UNI';
+                updateTotalSupplyPreview();
+            } catch (error) {
+                console.error('Failed to fetch totalSupply:', error);
+                supplyInput.value = 'Error fetching supply';
+                cachedTotalSupply = null;
+            }
+        }
+
+        // ======================== TOTAL SUPPLY PREVIEW ========================
+        function updateTotalSupplyPreview() {
+            const marketType = document.getElementById('createSupplyMarketType')?.value;
+            const deadlineSelect = document.getElementById('createDeadlineTotalSupply')?.value;
+
+            const opSym = marketType === 'eq' ? '==' : '!=';
+
+            let deadlineStr = 'Dec 31, 2026';
+            if (deadlineSelect === 'custom') {
+                const customTs = document.getElementById('createCustomDeadlineTotalSupply')?.value;
+                if (customTs) {
+                    const date = new Date(parseInt(customTs) * 1000);
+                    deadlineStr = date.toUTCString();
+                }
+            }
+
+            let supplyDisplay = '[current]';
+            if (cachedTotalSupply) {
+                const formatted = ethers.formatUnits(cachedTotalSupply, 18);
+                supplyDisplay = parseFloat(formatted).toLocaleString('en-US', { maximumFractionDigits: 2 });
+            }
+
+            const previewEl = document.getElementById('createPreviewTotalSupply');
+            if (previewEl) {
+                previewEl.textContent = `UNI totalSupply() ${opSym} ${supplyDisplay} by ${deadlineStr}`;
+            }
+        }
+
+        // Attach preview updates for totalSupply
+        setTimeout(() => {
+            const marketTypeSelect = document.getElementById('createSupplyMarketType');
+            const deadlineSelect = document.getElementById('createDeadlineTotalSupply');
+            const customDeadlineInput = document.getElementById('createCustomDeadlineTotalSupply');
+
+            if (marketTypeSelect) {
+                marketTypeSelect.addEventListener('change', updateTotalSupplyPreview);
+                deadlineSelect.addEventListener('change', updateTotalSupplyPreview);
+                customDeadlineInput.addEventListener('input', updateTotalSupplyPreview);
+            }
+        }, 100);
+
+        // ======================== TOTAL SUPPLY MARKET CREATION ========================
+        async function createTotalSupplyMarket() {
+            if (!signer) {
+                showWalletModal();
+                return;
+            }
+
+            if (!cachedTotalSupply) {
+                showToast('Supply Not Loaded', 'Please wait for current supply to load', 'error');
+                return;
+            }
+
+            const collateralType = getCollateralValue('createCollateralTotalSupply');
+            const marketType = document.getElementById('createSupplyMarketType').value;
+            const operator = marketType === 'eq' ? 4 : 5; // EQ = 4, NEQ = 5
+            const threshold = cachedTotalSupply;
+            const deadlineSelect = document.getElementById('createDeadlineTotalSupply').value;
+            const canClose = document.getElementById('createCanCloseTotalSupply').value === 'true';
+            const seedAmount = parseFloat(document.getElementById('createSeedTotalSupply').value);
+
+            if (!seedAmount || seedAmount < 0.001) {
+                showToast('Invalid Seed', 'Please enter at least 0.001', 'error');
+                return;
+            }
+
+            let close;
+            if (deadlineSelect === 'eoy2026') {
+                close = EOY_2026;
+            } else {
+                close = parseInt(document.getElementById('createCustomDeadlineTotalSupply').value);
+                if (!close || close <= Math.floor(Date.now() / 1000)) {
+                    showToast('Invalid Deadline', 'Deadline must be in the future', 'error');
+                    return;
+                }
+            }
+
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+
+            try {
+                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, signer);
+                const seedWei = collateralType === 'uni'
+                    ? ethers.parseUnits(seedAmount.toString(), 18)
+                    : ethers.parseEther(seedAmount.toString());
+                const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+
+                // Handle UNI collateral approval
+                if (collateralType === 'uni') {
+                    if (uniBalance < seedWei) {
+                        showToast('Insufficient Balance', `You only have ${ethers.formatUnits(uniBalance, 18)} UNI`, 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Create Supply Market';
+                        return;
+                    }
+                    await approveUNI(seedWei);
+                }
+
+                // callData for totalSupply() - no parameters needed
+                const callData = TOTAL_SUPPLY_SELECTOR;
+
+                const collateralAddress = collateralType === 'uni' ? UNI_TOKEN_ADDRESS : ethers.ZeroAddress;
+
+                const seedParams = {
+                    collateralIn: seedWei,
+                    feeOrHook: FEE_TIER,
+                    amount0Min: 0n,
+                    amount1Min: 0n,
+                    minLiquidity: 0n,
+                    lpRecipient: connectedAddress,
+                    deadline: BigInt(deadline)
+                };
+
+                showToast('Transaction Pending', 'Please confirm in your wallet...', 'pending');
+
+                const formatted = ethers.formatUnits(threshold, 18);
+                const opLabel = marketType === 'eq' ? 'stays at' : 'changes from';
+                const observable = `UNI supply ${opLabel} ${parseFloat(formatted).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+
+                const txOptions = collateralType === 'eth' ? { value: seedWei } : {};
+
+                const tx = await resolver.createNumericMarketAndSeed(
+                    observable,
+                    collateralAddress,
+                    UNI_TOKEN_ADDRESS,
+                    callData,
+                    operator, // Op enum value (EQ=4 or NEQ=5)
+                    threshold,
+                    BigInt(close),
+                    canClose,
+                    seedParams,
+                    txOptions
+                );
+
+                showToast('Transaction Submitted', `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank" style="color:var(--pink);">View on Etherscan ↗</a>`, 'pending');
+
+                const receipt = await tx.wait();
+
+                showToast('Market Created', 'Your total supply market is now live!', 'success');
+                await loadData();
+
+            } catch (error) {
+                console.error('Create failed:', error);
+                showToast('Error', error.message || 'Failed to create market', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create Supply Market';
+            }
+        }
+
+        // ======================== UNI PRICE MARKET CREATION ========================
+        async function createUniPriceMarket() {
+            if (!signer) {
+                showWalletModal();
+                return;
+            }
+
+            const collateralType = getCollateralValue('createCollateralUniPrice');
+            const targetPrice = parseFloat(document.getElementById('createTargetPrice').value);
+            const operator = parseInt(document.getElementById('createPriceOperator').value);
+            const deadlineSelect = document.getElementById('createDeadlineUniPrice').value;
+            const canClose = document.getElementById('createCanCloseUniPrice').value === 'true';
+            const seedAmount = parseFloat(document.getElementById('createSeedUniPrice').value);
+
+            if (!targetPrice || targetPrice <= 0) {
+                showToast('Invalid Target Price', 'Please enter a valid USD price', 'error');
+                return;
+            }
+
+            if (!seedAmount || seedAmount < 0.001) {
+                showToast('Invalid Seed', 'Please enter at least 0.001', 'error');
+                return;
+            }
+
+            let close;
+            if (deadlineSelect === 'eoy2026') {
+                close = EOY_2026;
+            } else {
+                close = parseInt(document.getElementById('createCustomDeadlineUniPrice').value);
+                if (!close || close <= Math.floor(Date.now() / 1000)) {
+                    showToast('Invalid Deadline', 'Deadline must be in the future', 'error');
+                    return;
+                }
+            }
+
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+
+            try {
+                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, signer);
+                const seedWei = collateralType === 'uni'
+                    ? ethers.parseUnits(seedAmount.toString(), 18)
+                    : ethers.parseEther(seedAmount.toString());
+                const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+
+                // Handle UNI collateral approval
+                if (collateralType === 'uni') {
+                    if (uniBalance < seedWei) {
+                        showToast('Insufficient Balance', `You only have ${ethers.formatUnits(uniBalance, 18)} UNI`, 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Create Price Market';
+                        return;
+                    }
+                    await approveUNI(seedWei);
+                }
+
+                // Convert USD price to 8-decimal threshold (Chainlink format)
+                const threshold = usdToOracleThreshold(targetPrice);
+
+                // callData for latestAnswer() - no parameters needed
+                const callData = LATEST_ANSWER_SELECTOR;
+
+                const collateralAddress = collateralType === 'uni' ? UNI_TOKEN_ADDRESS : ethers.ZeroAddress;
+
+                const seedParams = {
+                    collateralIn: seedWei,
+                    feeOrHook: FEE_TIER,
+                    amount0Min: 0n,
+                    amount1Min: 0n,
+                    minLiquidity: 0n,
+                    lpRecipient: connectedAddress,
+                    deadline: BigInt(deadline)
+                };
+
+                showToast('Transaction Pending', 'Please confirm in your wallet...', 'pending');
+
+                const opSymbols = { 0: '<', 1: '>', 2: '<=', 3: '>=' };
+                const opSym = opSymbols[operator] || '>=';
+                const observable = `UNI price ${opSym} $${targetPrice.toFixed(2)}`;
+
+                const txOptions = collateralType === 'eth' ? { value: seedWei } : {};
+
+                const tx = await resolver.createNumericMarketAndSeed(
+                    observable,
+                    collateralAddress,
+                    CHAINLINK_UNI_USD_ORACLE, // target = Chainlink oracle
+                    callData,
+                    operator, // Op enum value (LT=0, GT=1, LTE=2, GTE=3)
+                    threshold,
+                    BigInt(close),
+                    canClose,
+                    seedParams,
+                    txOptions
+                );
+
+                showToast('Transaction Submitted', `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank" style="color:var(--pink);">View on Etherscan ↗</a>`, 'pending');
+
+                const receipt = await tx.wait();
+
+                showToast('Market Created', 'Your UNI price market is now live!', 'success');
+                await loadData();
+
+            } catch (error) {
+                console.error('Create failed:', error);
+                showToast('Error', error.message || 'Failed to create market', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create Price Market';
             }
         }
 
@@ -4749,6 +6671,24 @@
                 return (Number(wei) / 1e18).toFixed(4);
             }
             return '0.0000';
+        }
+
+        function formatSupplyShorthand(supply) {
+            // Convert BigInt to number (in base units, e.g., 1B UNI = 1e27 wei)
+            const num = Number(ethers.formatUnits(supply, 18));
+
+            if (num >= 1e9) {
+                // Billions
+                return (num / 1e9).toFixed(2) + 'B';
+            } else if (num >= 1e6) {
+                // Millions
+                return (num / 1e6).toFixed(2) + 'M';
+            } else if (num >= 1e3) {
+                // Thousands
+                return (num / 1e3).toFixed(2) + 'K';
+            } else {
+                return num.toFixed(2);
+            }
         }
 
         function formatCountdown(seconds) {
