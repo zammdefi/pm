@@ -245,20 +245,20 @@ contract PMFeeHookV1 is IZAMMHook {
         // Default config: Optimized for router-first architecture with $100-10k pools
         // Fee context: Router vault charges 1-5% spread, so AMM at 0.1-0.75% is competitive
         // Price impact @ 12% is the real constraint: $100 pool→~$10 trades, $1k pool→~$100 trades
-        defaultConfig.minFeeBps = 10;          // 0.10% steady-state (cheaper than vault's 1% min)
-        defaultConfig.maxFeeBps = 75;          // 0.75% bootstrap (competitive with vault)
-        defaultConfig.maxSkewFeeBps = 80;      // 0.80% at 90/10+ (anti-manipulation)
-        defaultConfig.feeCapBps = 300;         // 3% cap (rarely binds)
-        defaultConfig.skewRefBps = 4000;       // 90/10 split (tight for small pools)
-        defaultConfig.asymmetricFeeBps = 20;   // 0.20% directional component
+        defaultConfig.minFeeBps = 10; // 0.10% steady-state (cheaper than vault's 1% min)
+        defaultConfig.maxFeeBps = 75; // 0.75% bootstrap (competitive with vault)
+        defaultConfig.maxSkewFeeBps = 80; // 0.80% at 90/10+ (anti-manipulation)
+        defaultConfig.feeCapBps = 300; // 3% cap (rarely binds)
+        defaultConfig.skewRefBps = 4000; // 90/10 split (tight for small pools)
+        defaultConfig.asymmetricFeeBps = 20; // 0.20% directional component
         defaultConfig.closeWindow = 1 hours;
-        defaultConfig.closeWindowFeeBps = 40;  // 0.40% (router disables vault here)
+        defaultConfig.closeWindowFeeBps = 40; // 0.40% (router disables vault here)
         defaultConfig.maxPriceImpactBps = 1200; // 12% CRITICAL - protects TWAP for router vault pricing
         defaultConfig.bootstrapWindow = 2 days; // Elevated fees for 29% of 1-week, 7% of 1-month
         defaultConfig.volatilityFeeBps = 0;
         defaultConfig.volatilityWindow = 0;
-        defaultConfig.flags = 0x37;            // Price impact ON (essential for TWAP integrity)
-        defaultConfig.extraFlags = 0x01;       // Quadratic skew, linear decay
+        defaultConfig.flags = 0x37; // Price impact ON (essential for TWAP integrity)
+        defaultConfig.extraFlags = 0x01; // Quadratic skew, linear decay
     }
 
     // ═══════════════════════════════════════════════════════════

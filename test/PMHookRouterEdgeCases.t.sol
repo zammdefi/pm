@@ -308,8 +308,13 @@ contract PMHookRouterEdgeCasesTest is Test {
     /// @notice Test that lifetime TWAP initializes once and never updates
     function test_LifetimeTWAP_Initialization() public {
         // Get initial state
-        (uint32 timestamp0, uint32 timestamp1, uint192 _unused, uint256 cumulative0, uint256 cumulative1) =
-            router.twapObservations(marketId);
+        (
+            uint32 timestamp0,
+            uint32 timestamp1,
+            uint192 _unused,
+            uint256 cumulative0,
+            uint256 cumulative1
+        ) = router.twapObservations(marketId);
 
         // Make trade (TWAP should already be initialized during bootstrapMarket)
         vm.prank(BOB);
@@ -317,7 +322,7 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, true, 5 ether, 0, BOB, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_1b, uint32 ts1_1b, , uint256 cum0_1b, uint256 cum1_1b) =
+        (uint32 ts0_1b, uint32 ts1_1b,, uint256 cum0_1b, uint256 cum1_1b) =
             router.twapObservations(marketId);
 
         assertGt(ts1_1b, 0, "Timestamp1 should be set");
@@ -331,7 +336,7 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, false, 3 ether, 0, BOB, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_2, uint32 ts1_2, , uint256 cum0_2, uint256 cum1_2) =
+        (uint32 ts0_2, uint32 ts1_2,, uint256 cum0_2, uint256 cum1_2) =
             router.twapObservations(marketId);
 
         // Observations should not change without explicit updateTWAPObservation call
@@ -347,7 +352,7 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, true, 2 ether, 0, ALICE, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_3, uint32 ts1_3, , uint256 cum0_3, uint256 cum1_3) =
+        (uint32 ts0_3, uint32 ts1_3,, uint256 cum0_3, uint256 cum1_3) =
             router.twapObservations(marketId);
 
         // Observations should remain unchanged
@@ -365,7 +370,7 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, true, 10 ether, 0, ALICE, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_1, uint32 timestamp1, , uint256 cum0_1, uint256 cumulative1) =
+        (uint32 ts0_1, uint32 timestamp1,, uint256 cum0_1, uint256 cumulative1) =
             router.twapObservations(marketId);
 
         // Wait some time to build TWAP history
@@ -377,7 +382,7 @@ contract PMHookRouterEdgeCasesTest is Test {
         );
 
         // Note: getTWAPPrice is internal, but we can verify TWAP is initialized via twapStarts
-        (uint32 ts0, uint32 startTimestamp, , uint256 cum0,) = router.twapObservations(marketId);
+        (uint32 ts0, uint32 startTimestamp,, uint256 cum0,) = router.twapObservations(marketId);
         assertGt(startTimestamp, 0, "TWAP should be initialized");
 
         // Try to manipulate: make huge trade to skew spot price
@@ -388,7 +393,7 @@ contract PMHookRouterEdgeCasesTest is Test {
         );
 
         // TWAP start should NOT change (lifetime start never updates)
-        (uint32 ts0_2, uint32 timestamp2, , uint256 cum0_2, uint256 cumulative2) =
+        (uint32 ts0_2, uint32 timestamp2,, uint256 cum0_2, uint256 cumulative2) =
             router.twapObservations(marketId);
         assertEq(timestamp2, timestamp1, "Start should never change");
         assertEq(cumulative2, cumulative1, "Start cumulative should never change");
@@ -405,8 +410,8 @@ contract PMHookRouterEdgeCasesTest is Test {
         );
 
         // Quote should reflect TWAP (resistant to brief manipulation)
-//         (uint256 quotedShares, bool usesVault,,) =
-//             router.quoteBootstrapBuy(marketId, true, 10 ether);
+        //         (uint256 quotedShares, bool usesVault,,) =
+        //             router.quoteBootstrapBuy(marketId, true, 10 ether);
 
         // TWAP should have dampened the manipulation (brief spike in 61-minute window)
         // This is much better than ring buffer which might miss the spike entirely

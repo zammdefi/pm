@@ -166,8 +166,17 @@ contract PMHookRouter {
         assembly ("memory-safe") {
             // Only refund if collateral == ETH (address(0)) and msg.value > amountUsed
             if and(iszero(collateral), gt(callvalue(), amountUsed)) {
-                let excess := sub(callvalue(), amountUsed)
-                if iszero(call(gas(), caller(), excess, codesize(), 0x00, codesize(), 0x00)) {
+                if iszero(
+                    call(
+                        gas(),
+                        caller(),
+                        sub(callvalue(), amountUsed),
+                        codesize(),
+                        0x00,
+                        codesize(),
+                        0x00
+                    )
+                ) {
                     mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
                     revert(0x1c, 0x04)
                 }
@@ -234,8 +243,7 @@ contract PMHookRouter {
         // 2) Principal always goes to the side that sold inventory
         // When buying YES, YES vault sold inventory -> credit YES LPs
         // When buying NO, NO vault sold inventory -> credit NO LPs
-        uint256 sellerLP =
-            buyYes ? totalYesVaultShares[marketId] : totalNoVaultShares[marketId];
+        uint256 sellerLP = buyYes ? totalYesVaultShares[marketId] : totalNoVaultShares[marketId];
 
         _addVaultFeesWithSnapshot(marketId, buyYes, principal, sellerLP);
 
@@ -311,7 +319,10 @@ contract PMHookRouter {
         if (isYes) {
             // Check vault.yesShares won't overflow
             assembly ("memory-safe") {
-                if gt(add(shr(0, and(sload(vault.slot), 0xffffffffffffffffffffffffffff)), shares), 0xffffffffffffffffffffffffffff) {
+                if gt(
+                    add(shr(0, and(sload(vault.slot), 0xffffffffffffffffffffffffffff)), shares),
+                    0xffffffffffffffffffffffffffff
+                ) {
                     mstore(0x00, 0xf4c64125) // SharesOverflow()
                     revert(0x1c, 0x04)
                 }
@@ -332,7 +343,10 @@ contract PMHookRouter {
         } else {
             // Check vault.noShares won't overflow
             assembly ("memory-safe") {
-                if gt(add(and(shr(112, sload(vault.slot)), 0xffffffffffffffffffffffffffff), shares), 0xffffffffffffffffffffffffffff) {
+                if gt(
+                    add(and(shr(112, sload(vault.slot)), 0xffffffffffffffffffffffffffff), shares),
+                    0xffffffffffffffffffffffffffff
+                ) {
                     mstore(0x00, 0xf4c64125) // SharesOverflow()
                     revert(0x1c, 0x04)
                 }
@@ -412,7 +426,7 @@ contract PMHookRouter {
     struct TWAPObservations {
         uint32 timestamp0; // Older checkpoint (4 bytes) \
         uint32 timestamp1; // Newer checkpoint (4 bytes)  |-- packed in slot 0
-        uint192 _unused;   // Padding (24 bytes)         /
+        uint192 _unused; // Padding (24 bytes)         /
         uint256 cumulative0; // ZAMM's cumulative at timestamp0 (slot 1: 32 bytes)
         uint256 cumulative1; // ZAMM's cumulative at timestamp1 (slot 2: 32 bytes)
     }
@@ -853,8 +867,7 @@ contract PMHookRouter {
             PAMM.transfer(to, desiredTokenId, sharesOut);
 
             // Credit opposite side to vault for buyer (earn LP fees instead of donating to protocol)
-            uint256 vaultSharesMinted =
-                _depositToVaultSide(marketId, !buyYes, collateralForBuy, to);
+            uint256 vaultSharesMinted = _depositToVaultSide(marketId, !buyYes, collateralForBuy, to);
 
             bootstrapVaults[marketId].lastActivity = uint32(block.timestamp);
 
@@ -931,7 +944,12 @@ contract PMHookRouter {
 
         // Ensure market was registered via bootstrapMarket()
         uint256 canonical = canonicalPoolId[marketId];
-        if (canonical == 0) revert MarketNotRegistered();
+        assembly ("memory-safe") {
+            if iszero(canonical) {
+                mstore(0x00, 0x99e120bc) // MarketNotRegistered()
+                revert(0x1c, 0x04)
+            }
+        }
 
         // Opportunistically update TWAP to keep it fresh (non-reverting)
         // This enables vault OTC fills and improves overall system responsiveness
@@ -950,8 +968,8 @@ contract PMHookRouter {
 
         // Track remaining collateral and total output across venues
         uint256 remainingCollateral = collateralIn;
-        uint256 totalSharesOut = 0;
-        uint8 venueCount = 0; // Track how many venues were used
+        uint256 totalSharesOut;
+        uint8 venueCount; // Track how many venues were used
 
         BootstrapVault storage vault = bootstrapVaults[marketId];
 
@@ -1041,9 +1059,8 @@ contract PMHookRouter {
             }
 
             // Track balance before router call for both ETH and ERC20 (to detect partial spends)
-            uint256 balanceBefore = collateral == ETH
-                ? address(this).balance
-                : getBalance(collateral, address(this));
+            uint256 balanceBefore =
+                collateral == ETH ? address(this).balance : getBalance(collateral, address(this));
 
             // Get active orders for this market
             bytes32[] memory orderHashes;
@@ -1157,7 +1174,12 @@ contract PMHookRouter {
                 revert(0x1c, 0x04)
             }
         }
-        if (canonicalPoolId[marketId] == 0) revert MarketNotRegistered();
+        assembly ("memory-safe") {
+            if iszero(sload(add(canonicalPoolId.slot, marketId))) {
+                mstore(0x00, 0x99e120bc) // MarketNotRegistered()
+                revert(0x1c, 0x04)
+            }
+        }
         assembly ("memory-safe") {
             if iszero(shares) {
                 mstore(0x00, 0xf7c09189) // ZeroShares()
@@ -1199,7 +1221,12 @@ contract PMHookRouter {
                 revert(0x1c, 0x04)
             }
         }
-        if (canonicalPoolId[marketId] == 0) revert MarketNotRegistered();
+        assembly ("memory-safe") {
+            if iszero(sload(add(canonicalPoolId.slot, marketId))) {
+                mstore(0x00, 0x99e120bc) // MarketNotRegistered()
+                revert(0x1c, 0x04)
+            }
+        }
         if (receiver == address(0)) receiver = msg.sender;
 
         UserVaultPosition storage position = vaultPositions[marketId][msg.sender];
@@ -1332,7 +1359,12 @@ contract PMHookRouter {
         uint256 feeOrHook = canonicalFeeOrHook[marketId];
 
         // Ensure market was registered via bootstrapMarket()
-        if (canonicalPoolId[marketId] == 0) revert MarketNotRegistered();
+        assembly ("memory-safe") {
+            if iszero(sload(add(canonicalPoolId.slot, marketId))) {
+                mstore(0x00, 0x99e120bc) // MarketNotRegistered()
+                revert(0x1c, 0x04)
+            }
+        }
 
         uint256 yesRemaining;
         uint256 noRemaining;
@@ -1426,7 +1458,12 @@ contract PMHookRouter {
         nonReentrant
         returns (uint256 budgetDistributed, uint256 sharesMerged)
     {
-        if (canonicalPoolId[marketId] == 0) revert MarketNotRegistered();
+        assembly ("memory-safe") {
+            if iszero(sload(add(canonicalPoolId.slot, marketId))) {
+                mstore(0x00, 0x99e120bc) // MarketNotRegistered()
+                revert(0x1c, 0x04)
+            }
+        }
         // Check market close time or early resolution
         (, bool resolved,,, uint64 close,,) = PAMM.markets(marketId);
         if (!resolved && block.timestamp < close) revert MarketNotClosed();
@@ -1452,7 +1489,6 @@ contract PMHookRouter {
 
         uint256 budgetToProcess = rebalanceCollateralBudget[marketId];
         rebalanceCollateralBudget[marketId] = 0;
-        budgetDistributed = 0;
 
         if (budgetToProcess != 0) {
             if (_addVaultFeesSymmetricWithSnapshot(
@@ -1480,7 +1516,12 @@ contract PMHookRouter {
         nonReentrant
         returns (uint256 payout)
     {
-        if (canonicalPoolId[marketId] == 0) revert MarketNotRegistered();
+        assembly ("memory-safe") {
+            if iszero(sload(add(canonicalPoolId.slot, marketId))) {
+                mstore(0x00, 0x99e120bc) // MarketNotRegistered()
+                revert(0x1c, 0x04)
+            }
+        }
         (, bool resolved, bool outcome,,,,) = PAMM.markets(marketId);
         assembly ("memory-safe") {
             if iszero(resolved) {
@@ -1526,7 +1567,12 @@ contract PMHookRouter {
     /// @param marketId The market to finalize
     /// @return totalToDAO Total collateral value sent to DAO
     function finalizeMarket(uint256 marketId) public nonReentrant returns (uint256 totalToDAO) {
-        if (canonicalPoolId[marketId] == 0) revert MarketNotRegistered();
+        assembly ("memory-safe") {
+            if iszero(sload(add(canonicalPoolId.slot, marketId))) {
+                mstore(0x00, 0x99e120bc) // MarketNotRegistered()
+                revert(0x1c, 0x04)
+            }
+        }
         // Cache market data
         (, bool resolved, bool outcome,, uint64 close, address collateral,) = PAMM.markets(marketId);
         if (block.timestamp < close && !resolved) revert MarketNotClosed();
@@ -1613,7 +1659,12 @@ contract PMHookRouter {
         returns (RebalanceValidation memory validation)
     {
         validation.twapBps = _getTWAPPrice(marketId);
-        if (validation.twapBps == 0) revert TWAPRequired();
+        assembly ("memory-safe") {
+            if iszero(validation) {
+                mstore(0x00, 0xd0c95456) // TWAPRequired()
+                revert(0x1c, 0x04)
+            }
+        }
 
         // Read spot reserves for deviation check (safety valve against manipulation)
         uint112 r0;
@@ -1648,12 +1699,18 @@ contract PMHookRouter {
 
         // Calculate deviation (twapBps guaranteed non-zero by check above)
         uint256 deviation;
-        unchecked {
-            deviation = spotYesBps > validation.twapBps
-                ? spotYesBps - validation.twapBps
-                : validation.twapBps - spotYesBps;
+        uint256 maxDev = MAX_REBALANCE_DEVIATION_BPS;
+        assembly ("memory-safe") {
+            let diff := sub(spotYesBps, validation)
+            deviation := xor(
+                diff,
+                mul(xor(diff, sub(validation, spotYesBps)), sgt(validation, spotYesBps))
+            )
+            if gt(deviation, maxDev) {
+                mstore(0x00, 0xf2d7c1c6) // SpotDeviantFromTWAP()
+                revert(0x1c, 0x04)
+            }
         }
-        if (deviation > MAX_REBALANCE_DEVIATION_BPS) revert SpotDeviantFromTWAP();
     }
 
     /// @notice Calculate minimum output for rebalance swap
@@ -2302,7 +2359,8 @@ contract PMHookRouter {
             if (consumingScarce) {
                 assembly ("memory-safe") {
                     // Calculate how imbalanced the inventory is (in bps)
-                    let larger := xor(yesShares, mul(xor(yesShares, noShares), gt(noShares, yesShares)))
+                    let larger :=
+                        xor(yesShares, mul(xor(yesShares, noShares), gt(noShares, yesShares)))
                     imbalanceBps := div(mul(larger, 10000), totalShares)
                 }
 
@@ -2384,7 +2442,7 @@ contract PMHookRouter {
             try ZAMM.pools(canonical) returns (
                 uint112 r0, uint112 r1, uint32, uint256, uint256, uint256, uint256
             ) {
-                if (r0 != 0 && r1 != 0) {
+                if ((r0 & r1) != 0) {
                     uint256 noId = PAMM.getNoId(marketId);
                     bool yesIsId0 = marketId < noId;
                     uint256 yesReserve = yesIsId0 ? uint256(r0) : uint256(r1);
@@ -2405,7 +2463,10 @@ contract PMHookRouter {
                     assembly ("memory-safe") {
                         // Absolute difference
                         let diff := sub(spotYesBps, yesTwapBps)
-                        deviation := xor(diff, mul(xor(diff, sub(yesTwapBps, spotYesBps)), sgt(yesTwapBps, spotYesBps)))
+                        deviation := xor(
+                            diff,
+                            mul(xor(diff, sub(yesTwapBps, spotYesBps)), sgt(yesTwapBps, spotYesBps))
+                        )
 
                         if gt(deviation, maxDev) {
                             // Return (0, 0, false)
@@ -2424,7 +2485,10 @@ contract PMHookRouter {
 
         uint256 sharePriceBps;
         assembly ("memory-safe") {
-            sharePriceBps := xor(yesTwapBps, mul(xor(yesTwapBps, sub(10000, yesTwapBps)), iszero(buyYes)))
+            sharePriceBps := xor(
+                yesTwapBps,
+                mul(xor(yesTwapBps, sub(10000, yesTwapBps)), iszero(buyYes))
+            )
         }
 
         uint256 spreadBps = _calculateDynamicSpread(vault.yesShares, vault.noShares, buyYes, close);
@@ -2449,7 +2513,6 @@ contract PMHookRouter {
 
         return (sharesOut, collateralUsed, true);
     }
-
 }
 
 function mulDiv(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {

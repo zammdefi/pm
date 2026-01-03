@@ -168,7 +168,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
         assertGt(yesShares, 0, "Vault should have YES shares");
 
         // Check TWAP before trade - getTWAPPrice is internal, so we check twapStarts
-        (uint32 ts0, uint32 twapTimestamp, , uint256 cum0,) = router.twapObservations(marketId);
+        (uint32 ts0, uint32 twapTimestamp,, uint256 cum0,) = router.twapObservations(marketId);
         assertGt(twapTimestamp, 0, "TWAP should be initialized");
 
         // Quote function removed to reduce bytecode size
@@ -546,7 +546,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
         vm.warp(block.timestamp + 1 hours);
 
         // TWAP should be tracking - check it's initialized
-        (uint32 ts0, uint32 twapTimestamp, , uint256 cum0,) = router.twapObservations(marketId);
+        (uint32 ts0, uint32 twapTimestamp,, uint256 cum0,) = router.twapObservations(marketId);
         assertGt(twapTimestamp, 0, "TWAP should be initialized");
 
         // Capture YES and NO vault shares before merge
