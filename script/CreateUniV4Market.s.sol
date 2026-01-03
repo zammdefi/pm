@@ -53,18 +53,19 @@ contract CreateUniV4Market is Script {
             deadline: block.timestamp + 1 hours
         });
 
-        (uint256 marketId2, uint256 noId2, uint256 shares, uint256 liquidity) =
-            resolver.createNumericMarketAndSeedSimple{value: 0.1 ether}(
-                "Uniswap V4 protocolFeeController()",
-                address(0),
-                UNIV4,
-                SELECTOR,
-                Resolver.Op.NEQ,
-                0,
-                DEADLINE_2025,
-                true,
-                seed
-            );
+        (uint256 marketId2, uint256 noId2, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeedSimple{
+            value: 0.1 ether
+        }(
+            "Uniswap V4 protocolFeeController()",
+            address(0),
+            UNIV4,
+            SELECTOR,
+            Resolver.Op.NEQ,
+            0,
+            DEADLINE_2025,
+            true,
+            seed
+        );
 
         console.log("\nMarket 2 (with 0.1 ETH seed) created:");
         console.log("Market ID:", marketId2);
@@ -75,15 +76,13 @@ contract CreateUniV4Market is Script {
         vm.stopBroadcast();
 
         console.log("\nMarkets created successfully!");
-        console.log("Users can now trade on whether Uniswap V4 will activate protocol fees by end of 2025");
+        console.log(
+            "Users can now trade on whether Uniswap V4 will activate protocol fees by end of 2025"
+        );
     }
 
     // Alternative: Create with custom parameters
-    function createCustomMarket(
-        uint64 customDeadline,
-        uint256 seedAmount,
-        bool withSeed
-    ) public {
+    function createCustomMarket(uint64 customDeadline, uint256 seedAmount, bool withSeed) public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 

@@ -25,12 +25,15 @@ contract UniV4FeeSwitchPM {
     error Pending();
 
     mapping(uint256 marketId => uint256) public deadline;
-    
+
     function protocolFeeController() public view returns (address) {
         return UniV4FeeSwitchPM(UNIV4).protocolFeeController();
     }
 
-    function makeBet(uint256 _deadline, uint256 seedYes, uint256 seedNo) public returns (uint256 marketId, uint256 noId) {
+    function makeBet(uint256 _deadline, uint256 seedYes, uint256 seedNo)
+        public
+        returns (uint256 marketId, uint256 noId)
+    {
         string memory description = string(
             abi.encodePacked(
                 "Uniswap V4 protocolFeeController() != address(0) by ",
@@ -39,7 +42,8 @@ contract UniV4FeeSwitchPM {
                 "Note: market may close early once threshold is reached."
             )
         );
-        (marketId, noId) = IPAMM(PAMM).createMarket(description, address(this), uint72(_deadline), true, seedYes, seedNo);
+        (marketId, noId) = IPAMM(PAMM)
+            .createMarket(description, address(this), uint72(_deadline), true, seedYes, seedNo);
         deadline[marketId] = _deadline;
     }
 

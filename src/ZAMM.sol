@@ -138,10 +138,10 @@ contract ZAMM is ZERC6909 {
             uint32 timeElapsed = blockTimestamp - pool.blockTimestampLast; // overflow is desired
             if (timeElapsed > 0 && reserve0 != 0 && reserve1 != 0) {
                 // * never overflows, and + overflow is desired
-                pool.price0CumulativeLast +=
-                    uint256(uqdiv(encode(reserve1), reserve0)) * timeElapsed;
-                pool.price1CumulativeLast +=
-                    uint256(uqdiv(encode(reserve0), reserve1)) * timeElapsed;
+                pool.price0CumulativeLast += uint256(uqdiv(encode(reserve1), reserve0))
+                * timeElapsed;
+                pool.price1CumulativeLast += uint256(uqdiv(encode(reserve0), reserve1))
+                * timeElapsed;
             }
             pool.blockTimestampLast = blockTimestamp;
             emit Sync(poolId, pool.reserve0 = uint112(balance0), pool.reserve1 = uint112(balance1));
@@ -568,11 +568,11 @@ contract ZAMM is ZERC6909 {
             require(
                 // 1) two different token contracts/ETH: order by address
                 poolKey.token0 < poolKey.token1
-                // 2) same ERC6909 contract: two distinct, non‑zero IDs in ascending order
-                || (
-                    poolKey.token0 == poolKey.token1 && poolKey.id0 != 0 && poolKey.id1 != 0
-                        && poolKey.id0 < poolKey.id1
-                ),
+                    // 2) same ERC6909 contract: two distinct, non‑zero IDs in ascending order
+                    || (poolKey.token0 == poolKey.token1
+                        && poolKey.id0 != 0
+                        && poolKey.id1 != 0
+                        && poolKey.id0 < poolKey.id1),
                 InvalidPoolTokens()
             );
 

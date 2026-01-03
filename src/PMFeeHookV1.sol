@@ -1,0 +1,1290 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.30;
+
+interface IZAMM {
+    struct PoolKey {
+        uint256 id0;
+        uint256 id1;
+        address token0;
+        address token1;
+        uint256 feeOrHook;
+    }
+
+    struct Pool {
+        uint112 reserve0;
+        uint112 reserve1;
+        uint32 blockTimestampLast;
+        uint256 price0CumulativeLast;
+        uint256 price1CumulativeLast;
+        uint256 kLast;
+        uint256 supply;
+    }
+
+    function pools(uint256 poolId)
+        external
+        view
+        returns (
+            uint112 reserve0,
+            uint112 reserve1,
+            uint32 blockTimestampLast,
+            uint256 price0CumulativeLast,
+            uint256 price1CumulativeLast,
+            uint256 kLast,
+            uint256 supply
+        );
+
+    function swapExactIn(
+        PoolKey calldata poolKey,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        bool zeroForOne,
+        address to,
+        uint256 deadline
+    ) external payable returns (uint256 amountOut);
+
+    function swapExactOut(
+        PoolKey calldata poolKey,
+        uint256 amountOut,
+        uint256 amountInMax,
+        bool zeroForOne,
+        address to,
+        uint256 deadline
+    ) external payable returns (uint256 amountIn);
+
+    function swap(
+        PoolKey calldata poolKey,
+        uint256 amount0Out,
+        uint256 amount1Out,
+        address to,
+        bytes calldata data
+    ) external;
+}
+
+interface IPAMM {
+    function markets(uint256 marketId)
+        external
+        view
+        returns (
+            address resolver,
+            bool resolved,
+            bool outcome,
+            bool canClose,
+            uint64 close,
+            address collateral,
+            uint256 collateralLocked
+        );
+
+    function getNoId(uint256 marketId) external pure returns (uint256);
+
+    struct PoolKey {
+        uint256 id0;
+        uint256 id1;
+        address token0;
+        address token1;
+        uint256 feeOrHook;
+    }
+
+    function poolKey(uint256 marketId, uint256 feeOrHook) external view returns (PoolKey memory);
+}
+
+interface IZAMMHook {
+    function beforeAction(bytes4 sig, uint256 poolId, address sender, bytes calldata data)
+        external
+        payable
+        returns (uint256 feeBps);
+
+    function afterAction(
+        bytes4 sig,
+        uint256 poolId,
+        address sender,
+        int256 d0,
+        int256 d1,
+        int256 dLiq,
+        bytes calldata data
+    ) external payable;
+}
+
+/// @notice Dynamic-fee hook for prediction markets
+/// @dev Features: bootstrap decay, skew protection, asymmetric fees, volatility fees, price impact limits
+/// @dev Hook design: Always uses FLAG_BEFORE | FLAG_AFTER for stable poolId. Config toggles features.
+/// @dev Close modes: 0=halt, 1=fixed fee, 2=min fee, 3=dynamic. Swaps respect close/resolution, LPs always allowed.
+/// @dev SECURITY: Requires registered pools only. Unregistered pools revert on swaps to prevent post-resolution trading.
+contract PMFeeHookV1 is IZAMMHook {
+    // ═══════════════════════════════════════════════════════════
+    //                         CONSTANTS
+    // ═══════════════════════════════════════════════════════════
+
+    uint256 constant FLAG_BEFORE = 1 << 255;
+    uint256 constant FLAG_AFTER = 1 << 254;
+    uint256 constant BPS_DENOMINATOR = 10_000;
+    uint256 constant BPS_SQUARED = 100_000_000; // 10_000^2
+    uint256 constant BPS_CUBED = 1_000_000_000_000; // 10_000^3
+    uint256 constant BPS_QUARTIC = 10_000_000_000_000_000; // 10_000^4
+
+    // Transient storage slot for reentrancy guard (EIP-1153)
+    uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21268;
+
+    // Transient storage for reserve caching (avoids duplicate ZAMM.pools() calls)
+    // Domain separator for keccak-based slot derivation (prevents adversarial collision)
+    uint256 constant TS_RESERVES_DOMAIN =
+        0x7f9c2e2f7d8a4c6b3a1d9e0f11223344556677889900aabbccddeeff00112233;
+    uint256 constant TS_RESERVES_PRESENT_BIT = 1 << 224; // marker bit
+
+    // ZAMM swap function selectors (from actual interface)
+    bytes4 constant SWAP_EXACT_IN = IZAMM.swapExactIn.selector;
+    bytes4 constant SWAP_EXACT_OUT = IZAMM.swapExactOut.selector;
+    bytes4 constant SWAP_LOWLEVEL = IZAMM.swap.selector;
+
+    // Config flag bit masks
+    uint16 constant FLAG_SKEW = 0x01; // bit 0: skew fee enabled
+    uint16 constant FLAG_BOOTSTRAP = 0x02; // bit 1: bootstrap fee enabled
+    uint16 constant FLAG_ASYMMETRIC = 0x10; // bit 4: asymmetric fee enabled
+    uint16 constant FLAG_PRICE_IMPACT = 0x20; // bit 5: price impact check enabled
+    uint16 constant FLAG_VOLATILITY = 0x40; // bit 6: volatility fee enabled
+
+    // Combined mask for flags that require reserve data
+    uint16 constant FLAG_NEEDS_RESERVES = FLAG_SKEW | FLAG_ASYMMETRIC; // 0x11
+
+    // ═══════════════════════════════════════════════════════════
+    //                         IMMUTABLES
+    // ═══════════════════════════════════════════════════════════
+
+    IZAMM public constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
+    IPAMM public constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
+    address public constant REGISTRAR = 0x0000000000BADa259Cb860c12ccD9500d9496B3e; // Router
+
+    // ═══════════════════════════════════════════════════════════
+    //                         ERRORS
+    // ═══════════════════════════════════════════════════════════
+
+    error Reentrancy();
+    error MarketClosed();
+    error Unauthorized();
+    error InvalidConfig();
+    error InvalidMarket();
+    error InvalidPoolId();
+    error AlreadyRegistered();
+    error ETHTransferFailed();
+    error PriceImpactTooHigh();
+    error InvalidBootstrapStart();
+
+    // ═══════════════════════════════════════════════════════════
+    //                         EVENTS
+    // ═══════════════════════════════════════════════════════════
+
+    event BootstrapStartAdjusted(uint256 indexed poolId, uint64 oldStart, uint64 newStart);
+    event MarketRegistered(uint256 indexed marketId, uint256 indexed poolId, uint64 close);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event ConfigUpdated(uint256 indexed marketId, Config config);
+    event DefaultConfigUpdated(Config config);
+
+    // ═══════════════════════════════════════════════════════════
+    //                         STRUCTS
+    // ═══════════════════════════════════════════════════════════
+
+    struct Meta {
+        uint64 start; // When hook registered (bootstrap starts here)
+        bool active; // Market is registered
+        bool yesIsToken0; // True if YES token is token0 (eliminates PAMM.getNoId() call)
+    }
+
+    /// @notice Fee config (perfectly packed into 32 bytes). All fees in bps.
+    struct Config {
+        uint16 minFeeBps; // Steady-state fee
+        uint16 maxFeeBps; // Bootstrap starting fee
+        uint16 maxSkewFeeBps; // Max skew fee
+        uint16 feeCapBps; // Total fee ceiling
+        uint16 skewRefBps; // Skew threshold (0, 5000]
+        uint16 asymmetricFeeBps; // Linear imbalance fee
+        uint16 closeWindow; // Close window duration (seconds)
+        uint16 closeWindowFeeBps; // Mode 1 close fee
+        uint16 maxPriceImpactBps; // Max impact (require flag bit 5)
+        uint32 bootstrapWindow; // Decay duration (seconds)
+        uint16 volatilityFeeBps; // High volatility penalty
+        uint32 volatilityWindow; // Volatility staleness window (seconds, 0=no staleness check)
+        uint16 flags; // Bits: 0=skew, 1=bootstrap, 2-3=closeMode, 4=asymmetric, 5=priceImpact, 6=volatility, 7-15=reserved
+        uint16 extraFlags; // Bits: 0-1=skewCurve, 2-3=decayMode, 4-15=reserved
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                         STORAGE
+    // ═══════════════════════════════════════════════════════════
+
+    mapping(uint256 poolId => uint256 marketId) public poolToMarket;
+    mapping(uint256 poolId => Meta) public meta;
+
+    Config internal defaultConfig;
+    mapping(uint256 marketId => Config) internal marketConfig;
+    mapping(uint256 marketId => bool) public hasMarketConfig;
+
+    // Volatility tracking: circular buffer of recent prices (stores last 10 prices)
+    struct PriceSnapshot {
+        uint64 timestamp;
+        uint32 priceBps; // Price in basis points (0-10000)
+    }
+    mapping(uint256 poolId => PriceSnapshot[10]) public priceHistory;
+    mapping(uint256 poolId => uint8) public priceHistoryIndex; // Current write position
+    mapping(uint256 poolId => uint256) public lastSnapshotBlock; // MEV protection: one snapshot per block
+
+    // Cached pool data to avoid repeated external calls
+    struct PoolData {
+        uint112 reserve0;
+        uint112 reserve1;
+        bool valid;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                         CONSTRUCTOR
+    // ═══════════════════════════════════════════════════════════
+
+    constructor() payable {
+        // Note: tx.origin is used for CREATE2 determinism, setting owner to deploying EOA
+        owner = tx.origin;
+        emit OwnershipTransferred(address(0), tx.origin);
+
+        // Default config: Optimized for router-first architecture with $100-10k pools
+        // Fee context: Router vault charges 1-5% spread, so AMM at 0.1-0.75% is competitive
+        // Price impact @ 12% is the real constraint: $100 pool→~$10 trades, $1k pool→~$100 trades
+        defaultConfig.minFeeBps = 10;          // 0.10% steady-state (cheaper than vault's 1% min)
+        defaultConfig.maxFeeBps = 75;          // 0.75% bootstrap (competitive with vault)
+        defaultConfig.maxSkewFeeBps = 80;      // 0.80% at 90/10+ (anti-manipulation)
+        defaultConfig.feeCapBps = 300;         // 3% cap (rarely binds)
+        defaultConfig.skewRefBps = 4000;       // 90/10 split (tight for small pools)
+        defaultConfig.asymmetricFeeBps = 20;   // 0.20% directional component
+        defaultConfig.closeWindow = 1 hours;
+        defaultConfig.closeWindowFeeBps = 40;  // 0.40% (router disables vault here)
+        defaultConfig.maxPriceImpactBps = 1200; // 12% CRITICAL - protects TWAP for router vault pricing
+        defaultConfig.bootstrapWindow = 2 days; // Elevated fees for 29% of 1-week, 7% of 1-month
+        defaultConfig.volatilityFeeBps = 0;
+        defaultConfig.volatilityWindow = 0;
+        defaultConfig.flags = 0x37;            // Price impact ON (essential for TWAP integrity)
+        defaultConfig.extraFlags = 0x01;       // Quadratic skew, linear decay
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     ADMIN CONFIGURATION
+    // ═══════════════════════════════════════════════════════════
+
+    address public owner;
+
+    function setDefaultConfig(Config calldata cfg) public payable onlyOwner {
+        _validateConfig(cfg);
+        defaultConfig = cfg;
+        emit DefaultConfigUpdated(cfg);
+    }
+
+    function setMarketConfig(uint256 marketId, Config calldata cfg) public payable onlyOwner {
+        _validateConfig(cfg);
+        marketConfig[marketId] = cfg;
+        hasMarketConfig[marketId] = true;
+        emit ConfigUpdated(marketId, cfg);
+    }
+
+    function clearMarketConfig(uint256 marketId) public payable onlyOwner {
+        delete marketConfig[marketId];
+        hasMarketConfig[marketId] = false;
+        emit ConfigUpdated(marketId, defaultConfig);
+    }
+
+    /// @notice Adjust bootstrap start time for a pool (owner only)
+    /// @dev Can only delay start (newStart >= oldStart <= now), requires zero liquidity
+    /// @param poolId The pool to adjust
+    /// @param newStart New bootstrap start timestamp
+    function adjustBootstrapStart(uint256 poolId, uint64 newStart) public payable onlyOwner {
+        Meta storage m = meta[poolId];
+        if (!m.active) revert InvalidPoolId();
+
+        uint64 oldStart = m.start;
+        uint256 marketId = poolToMarket[poolId];
+
+        if (newStart < oldStart) revert InvalidBootstrapStart();
+        if (newStart > block.timestamp) revert InvalidBootstrapStart();
+
+        (, bool resolved,,, uint64 liveClose,,) = PAMM.markets(marketId);
+        if (resolved) revert MarketClosed();
+        if (liveClose != 0 && block.timestamp >= liveClose) revert MarketClosed();
+        if (liveClose != 0 && newStart >= liveClose) revert InvalidBootstrapStart();
+
+        // Require zero liquidity to prevent fee reset on active markets
+        (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
+        if (r0 != 0 || r1 != 0) revert InvalidBootstrapStart();
+
+        m.start = newStart;
+
+        emit BootstrapStartAdjusted(poolId, oldStart, newStart);
+    }
+
+    function getMarketConfig(uint256 marketId) public view returns (Config memory) {
+        return _cfg(marketId);
+    }
+
+    function getDefaultConfig() public view returns (Config memory) {
+        return defaultConfig;
+    }
+
+    function getCloseWindow(uint256 marketId) public view returns (uint256) {
+        Config storage c = _cfg(marketId);
+        return uint256(c.closeWindow);
+    }
+
+    /// @notice Rescue accidentally sent ETH (owner only)
+    function rescueETH(address to, uint256 amount) public payable onlyOwner {
+        safeTransferETH(to, amount);
+    }
+
+    /// @notice Transfer ownership (ERC173)
+    function transferOwnership(address newOwner) public payable onlyOwner {
+        if (newOwner == address(0)) revert Unauthorized();
+        address oldOwner = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     HELPER FUNCTIONS
+    // ═══════════════════════════════════════════════════════════
+
+    /// @notice Get canonical feeOrHook value (always FLAG_BEFORE | FLAG_AFTER for stable poolId)
+    function feeOrHook() public view returns (uint256) {
+        return uint256(uint160(address(this))) | FLAG_BEFORE | FLAG_AFTER;
+    }
+
+    /// @notice Register market (router or owner only)
+    function registerMarket(uint256 marketId) public returns (uint256 poolId) {
+        if (msg.sender != REGISTRAR && msg.sender != owner) revert Unauthorized();
+
+        (address resolver, bool resolved,,, uint64 close,,) = PAMM.markets(marketId);
+        if (resolver == address(0)) revert InvalidMarket();
+        if (resolved) revert MarketClosed();
+        if (close != 0 && close <= block.timestamp) revert MarketClosed();
+
+        uint256 feeHook = feeOrHook();
+
+        IPAMM.PoolKey memory k = PAMM.poolKey(marketId, feeHook);
+        poolId = uint256(keccak256(abi.encode(k.id0, k.id1, k.token0, k.token1, k.feeOrHook)));
+
+        if (meta[poolId].active) revert AlreadyRegistered();
+
+        uint256 yesId = marketId;
+        uint256 noId = PAMM.getNoId(marketId);
+        bool yesIsToken0 = yesId < noId;
+        poolToMarket[poolId] = marketId;
+        meta[poolId] =
+            Meta({start: uint64(block.timestamp), active: true, yesIsToken0: yesIsToken0});
+
+        emit MarketRegistered(marketId, poolId, close);
+    }
+
+    /// @notice View current fee for a pool (returns 10001 sentinel if halted)
+    function getCurrentFeeBps(uint256 poolId) public view returns (uint256) {
+        return _computeFee(poolId);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                         MODIFIERS
+    // ═══════════════════════════════════════════════════════════
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert Unauthorized();
+        _;
+    }
+
+    modifier nonReentrant() {
+        assembly ("memory-safe") {
+            if tload(REENTRANCY_SLOT) {
+                mstore(0x00, 0xab143c06) // `Reentrancy()`
+                revert(0x1c, 0x04)
+            }
+            tstore(REENTRANCY_SLOT, address()) // Uses contract address as nonzero sentinel
+        }
+        _;
+        assembly ("memory-safe") {
+            tstore(REENTRANCY_SLOT, 0)
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                  TRANSIENT RESERVE CACHE
+    // ═══════════════════════════════════════════════════════════
+
+    /// @dev Collision-resistant transient slot via keccak(poolId, domain)
+    function _reservesSlot(uint256 poolId) internal pure returns (uint256 slot) {
+        assembly ("memory-safe") {
+            mstore(0x00, poolId)
+            mstore(0x20, TS_RESERVES_DOMAIN)
+            slot := keccak256(0x00, 0x40)
+        }
+    }
+
+    /// @dev Store reserves to transient storage
+    function _tstoreReservesAt(uint256 slot, uint112 r0, uint112 r1) internal {
+        uint256 v = uint256(r0) | (uint256(r1) << 112) | TS_RESERVES_PRESENT_BIT;
+        assembly ("memory-safe") {
+            tstore(slot, v)
+        }
+    }
+
+    /// @dev Load cached reserves from transient storage
+    /// @return ok True if cached reserves found
+    /// @return r0 Reserve0
+    /// @return r1 Reserve1
+    function _tloadReservesAt(uint256 slot)
+        internal
+        view
+        returns (bool ok, uint112 r0, uint112 r1)
+    {
+        uint256 v;
+        assembly ("memory-safe") {
+            v := tload(slot)
+        }
+        ok = (v & TS_RESERVES_PRESENT_BIT) != 0;
+        if (ok) {
+            r0 = uint112(v);
+            r1 = uint112(v >> 112);
+        }
+    }
+
+    /// @dev Wrapper that computes slot and loads
+    function _tloadReserves(uint256 poolId)
+        internal
+        view
+        returns (bool ok, uint112 r0, uint112 r1)
+    {
+        return _tloadReservesAt(_reservesSlot(poolId));
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     HOOK INTERFACE
+    // ═══════════════════════════════════════════════════════════
+
+    function beforeAction(
+        bytes4 sig,
+        uint256 poolId,
+        address,
+        /* sender */
+        bytes calldata /* data */
+    )
+        public
+        payable
+        override
+        nonReentrant
+        returns (uint256 feeBps)
+    {
+        if (msg.sender != address(ZAMM)) revert Unauthorized();
+
+        // LP operations (addLiquidity/removeLiquidity) are allowed without fees or active check
+        // INTENTIONAL: Allows emergency LP removal from unregistered/resolved pools
+        if (!_isSwap(sig)) return 0;
+
+        // Load pool metadata only for swaps (avoids SLOADs on LP operations)
+        Meta memory m = meta[poolId];
+
+        // Swaps require registered pools (prevents post-resolution trading)
+        if (!m.active) revert InvalidPoolId();
+
+        uint256 marketId = poolToMarket[poolId];
+
+        // Load config once to avoid duplicate lookups
+        Config storage c = _cfg(marketId);
+
+        // Single PAMM.markets() call - reused for enforceOpen and computeFee
+        (, bool resolved,,, uint64 close,,) = PAMM.markets(marketId);
+
+        // Read flags once to avoid repeated SLOADs
+        uint16 flags = c.flags;
+
+        // Enforce market is open (reverts or returns fee based on closeWindowMode)
+        _enforceOpenCached(c, flags, resolved, close);
+
+        // Optimization: Manage transient reserve cache to avoid duplicate ZAMM.pools() calls
+        // CRITICAL: Always write fresh reserves OR explicitly clear to prevent stale cache
+        // from previous swaps in the same transaction
+        bool feeNeedsReserves = (flags & FLAG_NEEDS_RESERVES) != 0;
+        bool afterNeedsReserves = (flags & (FLAG_PRICE_IMPACT | FLAG_VOLATILITY)) != 0;
+
+        // Compute transient slot once if needed (saves keccak in afterAction)
+        uint256 slot;
+        if (feeNeedsReserves || afterNeedsReserves) {
+            slot = _reservesSlot(poolId);
+        }
+
+        PoolData memory poolData;
+        bool hasPoolData;
+
+        if (feeNeedsReserves) {
+            // Fee path needs reserves: fetch, cache, and pass to fee calc
+            // Passing poolData directly avoids redundant transient read in fee computation
+            (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
+            _tstoreReservesAt(slot, r0, r1);
+            poolData = PoolData({reserve0: r0, reserve1: r1, valid: (r0 > 0 && r1 > 0)});
+            hasPoolData = true;
+        } else if (afterNeedsReserves) {
+            // afterAction needs reserves but fee doesn't: clear cache to prevent stale reads
+            assembly ("memory-safe") {
+                tstore(slot, 0)
+            }
+        }
+        // else: neither needs reserves, cache state doesn't matter
+
+        // Compute and return dynamic fee (using pre-loaded poolData and flags)
+        return
+            _computeFeeCachedWithPoolData(
+                poolId, m, c, flags, resolved, close, poolData, hasPoolData
+            );
+    }
+
+    /// @notice Post-trade hook: enforces price impact limits and records volatility
+    /// @dev Deltas: positive = added to pool, negative = removed
+    function afterAction(
+        bytes4 sig,
+        uint256 poolId,
+        address, /* sender */
+        int256 d0,
+        int256 d1,
+        int256, /* dLiq */
+        bytes calldata /* data */
+    ) public payable override nonReentrant {
+        if (msg.sender != address(ZAMM)) revert Unauthorized();
+
+        // Skip all checks for non-swap operations (LP operations)
+        if (!_isSwap(sig)) return;
+
+        // Load pool metadata only for swaps (avoids SLOADs on LP operations)
+        Meta memory m = meta[poolId];
+        if (!m.active) return;
+
+        uint256 marketId = poolToMarket[poolId];
+        Config storage c = _cfg(marketId);
+
+        // Read flags directly to avoid duplicate storage access
+        uint16 flags = c.flags;
+        bool doImpact = (flags & FLAG_PRICE_IMPACT) != 0;
+        bool doVol = (flags & FLAG_VOLATILITY) != 0;
+        bool feeNeedsReserves = (flags & FLAG_NEEDS_RESERVES) != 0;
+
+        // Compute transient slot once and reuse for both tload and clear (saves keccak)
+        uint256 slot;
+        if (doImpact || doVol || feeNeedsReserves) {
+            slot = _reservesSlot(poolId);
+        }
+
+        // Optimization: Use cached pre-swap reserves + deltas to compute post-swap reserves
+        // This avoids a second ZAMM.pools() call when beforeAction cached the reserves
+        uint112 r0After;
+        uint112 r1After;
+
+        if (doImpact || doVol) {
+            (bool ok, uint112 r0Before, uint112 r1Before) = _tloadReservesAt(slot);
+
+            if (ok) {
+                // Cached reserves available: compute post-swap reserves from deltas
+                // Formula: after = before + delta (positive delta = added to pool)
+                // ASSUMPTION: ZAMM delta convention matches: trader sells → positive delta (pool gains)
+                // If ZAMM changes convention, defensive fallback below will catch invalid results
+                int256 a0 = int256(uint256(r0Before)) + d0;
+                int256 a1 = int256(uint256(r1Before)) + d1;
+
+                // Defensive: if weird deltas, fallback to ZAMM.pools()
+                if (
+                    a0 > 0 && a1 > 0 && uint256(a0) <= type(uint112).max
+                        && uint256(a1) <= type(uint112).max
+                ) {
+                    r0After = uint112(uint256(a0));
+                    r1After = uint112(uint256(a1));
+                } else {
+                    // Fallback: deltas produced invalid reserves
+                    (r0After, r1After,,,,,) = ZAMM.pools(poolId);
+                }
+            } else {
+                // No cache available (caching condition wasn't met in beforeAction)
+                (r0After, r1After,,,,,) = ZAMM.pools(poolId);
+            }
+        }
+
+        // Check price impact if enabled
+        if (doImpact) {
+            uint256 impact =
+                _calculatePriceImpactFromReserves(m.yesIsToken0, r0After, r1After, d0, d1);
+            if (impact > uint256(c.maxPriceImpactBps)) revert PriceImpactTooHigh();
+        }
+
+        // Record post-trade price snapshot for volatility tracking if enabled
+        if (doVol) {
+            PoolData memory poolData = PoolData({
+                reserve0: r0After, reserve1: r1After, valid: (r0After > 0 && r1After > 0)
+            });
+            _recordPriceSnapshot(poolId, m.yesIsToken0, poolData);
+        }
+
+        // Clear transient cache unconditionally to prevent stale reads in subsequent calls
+        // (Note: transient storage auto-clears at tx end, so this only matters within same tx)
+        // Unconditional clear is simpler and cheaper than tload+branch (transient writes are cheap)
+        // Clear if cache was potentially written (feeNeedsReserves, doImpact, or doVol)
+        if (doImpact || doVol || feeNeedsReserves) {
+            assembly ("memory-safe") {
+                tstore(slot, 0)
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     CONFIG FLAG HELPERS
+    // ═══════════════════════════════════════════════════════════
+
+    /// @dev Extract closeWindowMode from bits 2-3 of flags (0-3)
+    function _getCloseWindowMode(uint16 flags) internal pure returns (uint8) {
+        return uint8((flags >> 2) & 0x03);
+    }
+
+    /// @dev Extract skew curve exponent from bits 0-1 of extraFlags (0-3)
+    function _getSkewCurveExponent(Config storage c) internal view returns (uint8) {
+        return uint8(c.extraFlags & 0x03);
+    }
+
+    /// @dev Extract bootstrap decay mode from bits 2-3 of extraFlags (0-3)
+    function _getBootstrapDecayMode(Config storage c) internal view returns (uint8) {
+        return uint8((c.extraFlags >> 2) & 0x03);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     MARKET HELPERS
+    // ═══════════════════════════════════════════════════════════
+
+    /// @dev Get YES/NO reserves based on ZAMM's canonical ordering (id0 < id1)
+    /// @dev Takes yesIsToken0 from caller to avoid redundant storage reads
+    function _getReserves(bool yesIsToken0, uint256 r0, uint256 r1)
+        internal
+        pure
+        returns (uint256 yesReserve, uint256 noReserve)
+    {
+        yesReserve = yesIsToken0 ? r0 : r1;
+        noReserve = yesIsToken0 ? r1 : r0;
+    }
+
+    /// @dev Calculate market probability in basis points (P(YES) = NO_reserve / total)
+    function _getProbability(uint256 yesReserve, uint256 noReserve)
+        internal
+        pure
+        returns (uint256)
+    {
+        uint256 total = yesReserve + noReserve;
+        return total == 0 ? 5000 : (noReserve * BPS_DENOMINATOR) / total;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     FEE COMPUTATION
+    // ═══════════════════════════════════════════════════════════
+
+    /// @dev Check if selector is a swap operation
+    /// @dev Assumes ZAMM is immutable with only these 3 swap entrypoints (swapExactIn, swapExactOut, swap)
+    /// @dev Non-swap operations (addLiquidity/removeLiquidity) return 0 fee and skip enforcement
+    function _isSwap(bytes4 sig) internal pure returns (bool) {
+        return sig == SWAP_EXACT_IN || sig == SWAP_EXACT_OUT || sig == SWAP_LOWLEVEL;
+    }
+
+    function _cfg(uint256 marketId) internal view returns (Config storage c) {
+        if (hasMarketConfig[marketId]) return marketConfig[marketId];
+        return defaultConfig;
+    }
+
+    /// @dev Reverts if market closed/resolved, or in close window with mode 0
+    function _enforceOpenCached(Config storage c, uint16 flags, bool resolved, uint64 close)
+        internal
+        view
+    {
+        uint256 nowTs = block.timestamp;
+
+        // Always halt if market is closed or resolved
+        if (resolved || (close != 0 && nowTs >= uint256(close))) {
+            revert MarketClosed();
+        }
+
+        // Check close window based on mode:
+        // Mode 0: halt (revert)
+        // Mode 1: charge closeWindowFeeBps (don't revert, handled in fee computation)
+        // Mode 2: charge minFeeBps (don't revert, handled in fee computation)
+        uint8 closeWindowMode = _getCloseWindowMode(flags);
+        if (
+            closeWindowMode == 0 && c.closeWindow != 0 && close > 0
+                && nowTs + uint256(c.closeWindow) >= uint256(close)
+        ) {
+            revert MarketClosed();
+        }
+    }
+
+    function _computeFee(uint256 poolId) internal view returns (uint256) {
+        Meta memory m = meta[poolId];
+        if (!m.active) return BPS_DENOMINATOR + 1; // Sentinel: unregistered = halted
+
+        uint256 marketId = poolToMarket[poolId];
+        Config storage c = _cfg(marketId);
+
+        (, bool resolved,,, uint64 close,,) = PAMM.markets(marketId);
+        uint256 nowTs = block.timestamp;
+
+        // Return sentinel if market closed or resolved (trading halted)
+        if (resolved || (close != 0 && nowTs >= uint256(close))) return BPS_DENOMINATOR + 1;
+
+        // Read flags once to avoid repeated storage access
+        uint16 flags = c.flags;
+
+        // Check if in close window
+        bool inCloseWindow =
+            c.closeWindow != 0 && close > 0 && nowTs + uint256(c.closeWindow) >= uint256(close);
+
+        if (inCloseWindow) {
+            uint8 closeWindowMode = _getCloseWindowMode(flags);
+            if (closeWindowMode == 0) return BPS_DENOMINATOR + 1; // Sentinel for halted
+            if (closeWindowMode == 1) {
+                return _min(uint256(c.closeWindowFeeBps), uint256(c.feeCapBps));
+            }
+            if (closeWindowMode == 2) return c.minFeeBps;
+            // Mode 3: continue to dynamic calculation
+        }
+
+        // Fetch pool data only if needed for skew or asymmetric fees
+        PoolData memory poolData;
+        if ((flags & FLAG_NEEDS_RESERVES) != 0) poolData = _getPoolData(poolId);
+
+        uint256 total;
+        unchecked {
+            total = (flags & FLAG_BOOTSTRAP) != 0
+                ? _bootstrapFee(uint256(m.start), nowTs, c)
+                : c.minFeeBps;
+            if ((flags & FLAG_SKEW) != 0) total += _skewFee(m.yesIsToken0, c, poolData);
+            if ((flags & FLAG_ASYMMETRIC) != 0) {
+                total += _asymmetricFee(m.yesIsToken0, c, poolData);
+            }
+            if ((flags & FLAG_VOLATILITY) != 0) total += _volatilityFee(poolId, c);
+        }
+
+        return total > c.feeCapBps ? c.feeCapBps : total;
+    }
+
+    /// @dev Optimized fee computation that accepts pre-loaded pool data and flags
+    /// @dev Avoids redundant c.flags SLOAD and transient cache reads
+    /// @dev Used by beforeAction after reserves are cached
+    function _computeFeeCachedWithPoolData(
+        uint256 poolId,
+        Meta memory m,
+        Config storage c,
+        uint16 flags,
+        bool resolved,
+        uint64 close,
+        PoolData memory poolData,
+        bool hasPoolData
+    ) internal view returns (uint256) {
+        uint256 nowTs = block.timestamp;
+
+        // Return sentinel if market closed or resolved (trading halted)
+        if (resolved || (close != 0 && nowTs >= uint256(close))) return BPS_DENOMINATOR + 1;
+
+        // Check if in close window
+        bool inCloseWindow =
+            c.closeWindow != 0 && close > 0 && nowTs + uint256(c.closeWindow) >= uint256(close);
+
+        if (inCloseWindow) {
+            uint8 closeWindowMode = _getCloseWindowMode(flags);
+            // Note: mode 0 not handled here because _enforceOpenCached() already reverted for it
+            if (closeWindowMode == 1) {
+                return _min(uint256(c.closeWindowFeeBps), uint256(c.feeCapBps));
+            }
+            if (closeWindowMode == 2) return c.minFeeBps;
+            // Mode 3: fall through to dynamic calculation
+        }
+
+        // Compute dynamic fee, using pre-loaded poolData if available
+        // Only fetch reserves if needed and not already provided
+        if ((flags & FLAG_NEEDS_RESERVES) != 0 && !hasPoolData) {
+            poolData = _getPoolData(poolId);
+            hasPoolData = true;
+        }
+
+        uint256 total;
+        unchecked {
+            total = (flags & FLAG_BOOTSTRAP) != 0
+                ? _bootstrapFee(uint256(m.start), nowTs, c)
+                : c.minFeeBps;
+            if ((flags & FLAG_SKEW) != 0) total += _skewFee(m.yesIsToken0, c, poolData);
+            if ((flags & FLAG_ASYMMETRIC) != 0) {
+                total += _asymmetricFee(m.yesIsToken0, c, poolData);
+            }
+            if ((flags & FLAG_VOLATILITY) != 0) total += _volatilityFee(poolId, c);
+        }
+
+        return total > c.feeCapBps ? c.feeCapBps : total;
+    }
+
+    /// @dev Fetch pool data once to avoid multiple external calls
+    /// @dev Prefers transient cache if available (set in beforeAction when afterAction will also need reserves)
+    function _getPoolData(uint256 poolId) internal view returns (PoolData memory data) {
+        (bool ok, uint112 r0, uint112 r1) = _tloadReserves(poolId);
+        if (!ok) {
+            (r0, r1,,,,,) = ZAMM.pools(poolId);
+        }
+        data.reserve0 = r0;
+        data.reserve1 = r1;
+        // ZAMM guarantees both reserves > 0 for swappable pools (checked via InsufficientLiquidity)
+        data.valid = (r0 > 0 && r1 > 0);
+    }
+
+    /// @dev Bootstrap fee with configurable decay curve (linear/exp/sqrt/log)
+    function _bootstrapFee(uint256 start, uint256 nowTs, Config storage c)
+        internal
+        view
+        returns (uint256)
+    {
+        if (c.bootstrapWindow == 0) return c.minFeeBps;
+        if (nowTs <= start) return c.maxFeeBps;
+
+        unchecked {
+            uint256 elapsed = nowTs - start; // Safe: nowTs > start
+            if (elapsed >= uint256(c.bootstrapWindow)) return c.minFeeBps;
+
+            uint256 range = uint256(c.maxFeeBps) - uint256(c.minFeeBps); // Safe: validated
+            uint256 progressBps = (elapsed * 10000) / uint256(c.bootstrapWindow);
+
+            // Apply decay curve: 0=linear, 1=exponential, 2=sqrt, 3=log
+            uint8 mode = _getBootstrapDecayMode(c);
+            uint256 ratio;
+
+            if (mode == 0) {
+                ratio = progressBps; // Linear
+            } else if (mode == 1) {
+                // Exponential decay: ratio = 1 - (1-x)^3, where x = progressBps/10000
+                // r = (1-x) * 10000, so ratio = 10000 - r^3 / 10000^2
+                uint256 r = 10000 - progressBps;
+                ratio = 10000 - (r * r * r) / BPS_SQUARED;
+            } else if (mode == 2) {
+                ratio = _sqrt(progressBps * 10000); // Sqrt: fast start, slow end
+            } else {
+                ratio = 10000 - _sqrt((10000 - progressBps) * 10000); // Log: slow start, fast end
+            }
+
+            return uint256(c.maxFeeBps) - ((range * ratio) / 10000);
+        }
+    }
+
+    function _sqrt(uint256 x) internal pure returns (uint256 z) {
+        assembly ("memory-safe") {
+            z := 181
+            let r := shl(7, lt(0xffffffffffffffffffffffffffffffffff, x))
+            r := or(r, shl(6, lt(0xffffffffffffffffff, shr(r, x))))
+            r := or(r, shl(5, lt(0xffffffffff, shr(r, x))))
+            r := or(r, shl(4, lt(0xffffff, shr(r, x))))
+            z := shl(shr(1, r), z)
+            z := shr(18, mul(z, add(shr(r, x), 65536)))
+            z := shr(1, add(z, div(x, z)))
+            z := shr(1, add(z, div(x, z)))
+            z := shr(1, add(z, div(x, z)))
+            z := shr(1, add(z, div(x, z)))
+            z := shr(1, add(z, div(x, z)))
+            z := shr(1, add(z, div(x, z)))
+            z := shr(1, add(z, div(x, z)))
+            z := sub(z, lt(div(x, z), z))
+        }
+    }
+
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
+    /// @dev Skew fee with configurable curve (linear/quadratic/cubic/quartic)
+    function _skewFee(bool yesIsToken0, Config storage c, PoolData memory poolData)
+        internal
+        view
+        returns (uint256)
+    {
+        if (!poolData.valid) return 0;
+
+        (uint256 yesReserve, uint256 noReserve) =
+            _getReserves(yesIsToken0, uint256(poolData.reserve0), uint256(poolData.reserve1));
+        uint256 pBps = _getProbability(yesReserve, noReserve);
+
+        // All arithmetic is safe: pBps ∈ [0,10000], maxSkewFeeBps ≤ 10000, ratio ≤ 10000
+        unchecked {
+            uint256 skew = pBps > 5000 ? (pBps - 5000) : (5000 - pBps);
+            uint256 ref = uint256(c.skewRefBps);
+            if (skew >= ref) return c.maxSkewFeeBps;
+
+            uint256 ratio = (skew * 10000) / ref;
+            uint8 exp = _getSkewCurveExponent(c);
+
+            // Apply curve: 0=linear, 1=quadratic, 2=cubic, 3=quartic
+            if (exp == 0) return (uint256(c.maxSkewFeeBps) * ratio) / 10000;
+            if (exp == 1) return (uint256(c.maxSkewFeeBps) * ratio * ratio) / BPS_SQUARED;
+            if (exp == 2) {
+                return (uint256(c.maxSkewFeeBps) * ratio * ratio * ratio) / BPS_CUBED;
+            }
+            return (uint256(c.maxSkewFeeBps) * ratio * ratio * ratio * ratio) / BPS_QUARTIC;
+        }
+    }
+
+    /// @dev Linear fee scaling with pool imbalance (complements non-linear skewFee)
+    function _asymmetricFee(bool yesIsToken0, Config storage c, PoolData memory poolData)
+        internal
+        view
+        returns (uint256)
+    {
+        if (!poolData.valid) return 0;
+
+        (uint256 yesReserve, uint256 noReserve) =
+            _getReserves(yesIsToken0, uint256(poolData.reserve0), uint256(poolData.reserve1));
+        uint256 pBps = _getProbability(yesReserve, noReserve);
+
+        // Safe: pBps ∈ [0,10000], asymmetricFeeBps ≤ 10000, deviation ≤ 5000
+        // Max product: 10000 * 5000 = 50,000,000
+        unchecked {
+            uint256 deviation = pBps > 5000 ? (pBps - 5000) : (5000 - pBps);
+            return (uint256(c.asymmetricFeeBps) * deviation) / 5000;
+        }
+    }
+
+    /// @dev Extra fee during high volatility (uses recent snapshots within volatilityWindow)
+    /// @dev Optimized: single-pass assembly scan (10 SLOADs) with algebraic variance formula
+    /// @dev Assumes PriceSnapshot packing: uint64 timestamp (bits 0-63) + uint32 priceBps (bits 64-95)
+    function _volatilityFee(uint256 poolId, Config storage c) internal view returns (uint256) {
+        // Calculate cutoff timestamp (0 = no staleness check, use all snapshots)
+        uint256 vw = uint256(c.volatilityWindow);
+        uint256 cutoff = (vw == 0 || vw > block.timestamp) ? 0 : block.timestamp - vw;
+
+        uint256 count;
+        uint256 sum;
+        uint256 sumSq;
+
+        // Single pass over 10 snapshots, reading each slot once:
+        // - count = number of included snapshots
+        // - sum   = Σ priceBps
+        // - sumSq = Σ priceBps²
+        assembly ("memory-safe") {
+            // Compute base slot: keccak256(abi.encode(poolId, priceHistory.slot))
+            mstore(0x00, poolId)
+            mstore(0x20, priceHistory.slot)
+            let base := keccak256(0x00, 0x40)
+
+            for { let i := 0 } lt(i, 10) { i := add(i, 1) } {
+                let w := sload(add(base, i))
+
+                // PriceSnapshot layout in single slot:
+                // timestamp: uint64 in bits [0..63]
+                // priceBps:  uint32 in bits [64..95]
+                let ts := and(w, 0xFFFFFFFFFFFFFFFF)
+                if ts {
+                    // Include if cutoff == 0 OR ts >= cutoff
+                    if or(iszero(cutoff), iszero(lt(ts, cutoff))) {
+                        let p := and(shr(64, w), 0xFFFFFFFF)
+                        sum := add(sum, p)
+                        sumSq := add(sumSq, mul(p, p))
+                        count := add(count, 1)
+                    }
+                }
+            }
+        }
+
+        if (count < 3) return 0;
+
+        uint256 mean = sum / count;
+        if (mean == 0) return 0;
+
+        // Algebraic variance formula:
+        // Σ(p-mean)² = sumSq - 2*mean*sum + count*mean²
+        uint256 varianceSum;
+        unchecked {
+            varianceSum = sumSq - (2 * mean * sum) + (count * mean * mean);
+        }
+        uint256 variance = varianceSum / count;
+
+        // Safe: sqrt(variance) ≤ 10000 (max priceBps), so * 100 ≤ 1,000,000
+        uint256 volatilityPct;
+        unchecked {
+            volatilityPct = (_sqrt(variance) * 100) / mean;
+        }
+
+        if (volatilityPct >= 10) return c.volatilityFeeBps;
+        if (volatilityPct <= 2) return 0;
+
+        unchecked {
+            return (uint256(c.volatilityFeeBps) * (volatilityPct - 2)) / 8;
+        }
+    }
+
+    /// @dev Record current price snapshot for volatility tracking (with MEV protection)
+    /// @dev Only records one snapshot per block to prevent intra-block manipulation
+    function _recordPriceSnapshot(uint256 poolId, bool yesIsToken0, PoolData memory poolData)
+        internal
+    {
+        if (!poolData.valid) return;
+
+        // MEV protection: Only record once per block
+        if (lastSnapshotBlock[poolId] == block.number) {
+            return; // Already recorded a snapshot this block
+        }
+
+        (uint256 yesReserve, uint256 noReserve) =
+            _getReserves(yesIsToken0, uint256(poolData.reserve0), uint256(poolData.reserve1));
+        uint256 priceBps = _getProbability(yesReserve, noReserve);
+
+        uint8 idx = priceHistoryIndex[poolId];
+        priceHistory[poolId][idx] =
+            PriceSnapshot({timestamp: uint64(block.timestamp), priceBps: uint32(priceBps)});
+
+        // Advance circular buffer index (avoid modulo: cheaper conditional)
+        uint8 nextIdx = idx == 9 ? 0 : idx + 1;
+        priceHistoryIndex[poolId] = nextIdx;
+        lastSnapshotBlock[poolId] = block.number;
+    }
+
+    /// @dev Calculate price impact as probability delta from provided reserves
+    /// @param yesIsToken0 Whether YES token is token0 (from Meta)
+    /// @param r0 Current reserve0 (after trade)
+    /// @param r1 Current reserve1 (after trade)
+    /// @param d0 Reserve0 change (positive=added, negative=removed)
+    /// @param d1 Reserve1 change (positive=added, negative=removed)
+    /// @return impact Impact in bps
+    function _calculatePriceImpactFromReserves(
+        bool yesIsToken0,
+        uint112 r0,
+        uint112 r1,
+        int256 d0,
+        int256 d1
+    ) internal pure returns (uint256) {
+        if ((d0 == 0 && d1 == 0) || r0 == 0 || r1 == 0) return 0;
+
+        // Reconstruct reserves before trade: Before = After - delta
+        // Positive delta means tokens added to pool, negative means removed
+        // Note: No unchecked block for robustness against unexpected ZAMM deltas
+        int256 b0_signed = int256(uint256(r0)) - d0;
+        int256 b1_signed = int256(uint256(r1)) - d1;
+
+        if (b0_signed <= 0 || b1_signed <= 0) return 0;
+
+        uint256 b0 = uint256(b0_signed);
+        uint256 b1 = uint256(b1_signed);
+
+        // Convert to YES/NO reserves and calculate probability delta
+        (uint256 yesAfter, uint256 noAfter) = _getReserves(yesIsToken0, uint256(r0), uint256(r1));
+        (uint256 yesBefore, uint256 noBefore) = _getReserves(yesIsToken0, b0, b1);
+
+        uint256 pBefore = _getProbability(yesBefore, noBefore);
+        uint256 pAfter = _getProbability(yesAfter, noAfter);
+
+        // Return absolute probability change in basis points
+        unchecked {
+            return pAfter > pBefore ? (pAfter - pBefore) : (pBefore - pAfter);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     VIEW HELPERS
+    // ═══════════════════════════════════════════════════════════
+
+    /// @notice Get market probability in basis points
+    function getMarketProbability(uint256 poolId) public view returns (uint256 probabilityBps) {
+        if (!meta[poolId].active) return BPS_DENOMINATOR + 1; // Sentinel for unregistered pool
+        (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
+        bool yesIsToken0 = meta[poolId].yesIsToken0;
+        (uint256 yesReserve, uint256 noReserve) =
+            _getReserves(yesIsToken0, uint256(r0), uint256(r1));
+        return _getProbability(yesReserve, noReserve);
+    }
+
+    /// @notice Calculate expected price impact for a hypothetical trade as probability delta
+    /// @param poolId The pool to check
+    /// @param amountIn Amount of input tokens
+    /// @param zeroForOne Direction of swap (true = sell token0 for token1)
+    /// @param feeBps Fee in basis points to use for calculation
+    /// @return impactBps Probability change in basis points (10000 = 100%), or sentinel (10001) if fee is invalid
+    function simulatePriceImpact(uint256 poolId, uint256 amountIn, bool zeroForOne, uint256 feeBps)
+        public
+        view
+        returns (uint256 impactBps)
+    {
+        if (!meta[poolId].active) return BPS_DENOMINATOR + 1; // Sentinel for unregistered pool
+        // Guard against invalid fees to prevent underflow in amountInWithFee calculation
+        if (feeBps > BPS_DENOMINATOR) return BPS_DENOMINATOR + 1; // Return sentinel for invalid/halted
+        if (feeBps == BPS_DENOMINATOR) return 0; // 100% fee = no output = no trade possible
+
+        (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
+
+        if (amountIn == 0 || r0 == 0 || r1 == 0) return 0;
+
+        // Load yesIsToken0 once for all _getReserves calls
+        bool yesIsToken0 = meta[poolId].yesIsToken0;
+
+        // Compute probability BEFORE trade (from current reserves)
+        (uint256 yesBefore, uint256 noBefore) = _getReserves(yesIsToken0, uint256(r0), uint256(r1));
+        uint256 pBefore = _getProbability(yesBefore, noBefore);
+
+        // Simulate AFTER reserves and compute probability
+        uint256 amountOut;
+        uint256 r0After;
+        uint256 r1After;
+
+        if (zeroForOne) {
+            amountOut = _getAmountOutView(amountIn, r0, r1, feeBps);
+            if (amountOut == 0 || amountOut >= r1) return 0;
+            // Safe: amountOut < r1 validated above
+            unchecked {
+                r0After = uint256(r0) + amountIn;
+                r1After = uint256(r1) - amountOut;
+            }
+        } else {
+            amountOut = _getAmountOutView(amountIn, r1, r0, feeBps);
+            if (amountOut == 0 || amountOut >= r0) return 0;
+            // Safe: amountOut < r0 validated above
+            unchecked {
+                r0After = uint256(r0) - amountOut;
+                r1After = uint256(r1) + amountIn;
+            }
+        }
+
+        (uint256 yesAfter, uint256 noAfter) = _getReserves(yesIsToken0, r0After, r1After);
+        uint256 pAfter = _getProbability(yesAfter, noAfter);
+
+        // Return absolute probability change
+        unchecked {
+            return pAfter > pBefore ? (pAfter - pBefore) : (pBefore - pAfter);
+        }
+    }
+
+    /// @dev View-only version of ZAMM's _getAmountOut for price impact simulation
+    function _getAmountOutView(
+        uint256 amountIn,
+        uint256 reserveIn,
+        uint256 reserveOut,
+        uint256 feeBps
+    ) internal pure returns (uint256) {
+        if (amountIn == 0 || reserveIn == 0 || reserveOut == 0) return 0;
+        uint256 amountInWithFee = amountIn * (BPS_DENOMINATOR - feeBps);
+        uint256 numerator = amountInWithFee * reserveOut;
+        uint256 denominator = (reserveIn * BPS_DENOMINATOR) + amountInWithFee;
+        return numerator / denominator;
+    }
+
+    /// @notice Check if market is open for trading
+    function isMarketOpen(uint256 poolId) public view returns (bool) {
+        Meta memory m = meta[poolId];
+        if (!m.active) return false; // Unregistered pools not allowed
+
+        uint256 marketId = poolToMarket[poolId];
+        Config storage c = _cfg(marketId);
+
+        (, bool resolved,,, uint64 close,,) = PAMM.markets(marketId);
+        uint256 nowTs = block.timestamp;
+
+        // Market closed/resolved halt
+        if (resolved || (close != 0 && nowTs >= uint256(close))) {
+            return false;
+        }
+
+        // Close window: only halt if mode is 0 (revert mode)
+        // Modes 1 and 2 still allow trading (just with different fees)
+        uint16 flags = c.flags;
+        uint8 closeWindowMode = _getCloseWindowMode(flags);
+        bool inCloseWindow =
+            c.closeWindow != 0 && close > 0 && nowTs + uint256(c.closeWindow) >= uint256(close);
+
+        if (inCloseWindow && closeWindowMode == 0) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// @notice Get market status bundle (for router to avoid multiple PAMM.markets() calls)
+    /// @param marketId The market ID to query
+    /// @return active True if hook has registered pool for this market
+    /// @return resolved True if market is resolved
+    /// @return close Market close timestamp
+    /// @return closeWindow Close window duration in seconds
+    /// @return closeMode Close window mode (0=halt, 1=fixed, 2=min, 3=dynamic)
+    function getMarketStatus(uint256 marketId)
+        external
+        view
+        returns (bool active, bool resolved, uint64 close, uint16 closeWindow, uint8 closeMode)
+    {
+        // Check if market is registered
+        uint256 feeHook = feeOrHook();
+        IPAMM.PoolKey memory k = PAMM.poolKey(marketId, feeHook);
+        uint256 poolId =
+            uint256(keccak256(abi.encode(k.id0, k.id1, k.token0, k.token1, k.feeOrHook)));
+        active = meta[poolId].active;
+
+        // Get PAMM market data
+        (, resolved,,, close,,) = PAMM.markets(marketId);
+
+        // Get hook config
+        Config storage c = _cfg(marketId);
+        closeWindow = c.closeWindow;
+        closeMode = _getCloseWindowMode(c.flags);
+    }
+
+    /// @notice Get pool state for UIs
+    function getPoolState(uint256 poolId)
+        public
+        view
+        returns (
+            uint256 marketId,
+            uint112 reserve0,
+            uint112 reserve1,
+            uint256 currentFeeBps,
+            uint64 closeTime,
+            bool isActive
+        )
+    {
+        marketId = poolToMarket[poolId];
+        (reserve0, reserve1,,,,,) = ZAMM.pools(poolId);
+        currentFeeBps = _computeFee(poolId);
+        Meta memory m = meta[poolId];
+        isActive = m.active;
+
+        // Return live close time from PAMM to reflect early-close updates
+        if (isActive) {
+            (,,,, uint64 liveClose,,) = PAMM.markets(marketId);
+            closeTime = liveClose;
+        }
+        // else: closeTime remains 0 for unregistered pools
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //                     INTERNAL VALIDATION
+    // ═══════════════════════════════════════════════════════════
+
+    function _validateConfig(Config calldata cfg) internal pure {
+        // Core fee validations
+        if (cfg.minFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.maxFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.maxSkewFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.minFeeBps > cfg.maxFeeBps) revert InvalidConfig();
+        if (cfg.feeCapBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.skewRefBps == 0 || cfg.skewRefBps > 5000) revert InvalidConfig(); // Must be (0, 5000]
+
+        // Additional fee validations (uint16 types, max 65535 bps = 655.35%)
+        if (cfg.asymmetricFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.maxPriceImpactBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.volatilityFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.closeWindowFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
+
+        // feeCapBps must be at least minFeeBps to be meaningful
+        // Note: Cap can be lower than theoretical max fee sum - it will bind and limit total fees
+        if (cfg.feeCapBps < cfg.minFeeBps) revert InvalidConfig();
+
+        // Validate closeWindowMode from flags (bits 2-3)
+        uint16 closeWindowMode = (cfg.flags >> 2) & 0x03;
+        // Mode 1 requires closeWindowFeeBps to be set
+        if (closeWindowMode == 1 && cfg.closeWindowFeeBps == 0) revert InvalidConfig();
+        // closeWindow is uint16 with max value 65535 seconds (~18 hours), no need for upper bound check
+
+        // Validate extraFlags curve modes (bits 0-3, values 0-3 each, automatically valid)
+        // No validation needed for skewCurveExponent and bootstrapDecayMode as they're 2-bit values (0-3)
+    }
+}
+
+function safeTransferETH(address to, uint256 amount) {
+    assembly ("memory-safe") {
+        if iszero(call(gas(), to, amount, codesize(), 0x00, codesize(), 0x00)) {
+            mstore(0x00, 0xb12d13eb) // ETHTransferFailed()
+            revert(0x1c, 0x04)
+        }
+    }
+}

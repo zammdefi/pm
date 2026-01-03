@@ -18,8 +18,8 @@ contract UniV4FeeSwitchTest is Test {
     Resolver constant resolver = Resolver(payable(0x00000000002205020E387b6a378c05639047BcFB));
     IUniswapV4 constant UNIV4 = IUniswapV4(0x000000000004444c5dc75cB358380D2e3dE08A90);
 
-    // Test deadline: Year end 2025 (1767225599)
-    uint64 constant DEADLINE_2025 = 1767225599;
+    // Test deadline: Year end 2027 (1830297599)
+    uint64 constant DEADLINE_2025 = 1830297599;
 
     // Test actors
     address internal ALICE;
@@ -45,9 +45,8 @@ contract UniV4FeeSwitchTest is Test {
         address controller = UNIV4.protocolFeeController();
 
         // Staticcall and decode as uint256 (mimics Resolver._readUint)
-        (bool ok, bytes memory data) = address(UNIV4).staticcall(
-            abi.encodeWithSelector(IUniswapV4.protocolFeeController.selector)
-        );
+        (bool ok, bytes memory data) = address(UNIV4)
+            .staticcall(abi.encodeWithSelector(IUniswapV4.protocolFeeController.selector));
 
         require(ok, "staticcall failed");
         require(data.length >= 32, "insufficient return data");
@@ -99,8 +98,7 @@ contract UniV4FeeSwitchTest is Test {
             bool resolved,
             bool outcome,
             bool canClose,
-            uint64 close,
-            ,,,
+            uint64 close,,,,
             string memory description
         ) = pamm.getMarket(marketId);
 
@@ -129,18 +127,19 @@ contract UniV4FeeSwitchTest is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) =
-            resolver.createNumericMarketAndSeedSimple{value: 1 ether}(
-                "Uniswap V4 protocolFeeController()",
-                address(0), // ETH collateral
-                address(UNIV4),
-                IUniswapV4.protocolFeeController.selector,
-                Resolver.Op.NEQ,
-                0,
-                DEADLINE_2025,
-                true,
-                seed
-            );
+        (uint256 marketId, uint256 noId, uint256 shares, uint256 liquidity) = resolver.createNumericMarketAndSeedSimple{
+            value: 1 ether
+        }(
+            "Uniswap V4 protocolFeeController()",
+            address(0), // ETH collateral
+            address(UNIV4),
+            IUniswapV4.protocolFeeController.selector,
+            Resolver.Op.NEQ,
+            0,
+            DEADLINE_2025,
+            true,
+            seed
+        );
 
         vm.stopPrank();
 
@@ -188,7 +187,9 @@ contract UniV4FeeSwitchTest is Test {
             assertEq(value, 0, "value should be 0 when controller is address(0)");
             assertFalse(condTrue, "condition should be false when controller is address(0)");
         } else {
-            assertEq(value, uint160(currentController), "value should match controller address as uint");
+            assertEq(
+                value, uint160(currentController), "value should match controller address as uint"
+            );
             assertTrue(condTrue, "condition should be true when controller != address(0)");
         }
 
@@ -269,18 +270,17 @@ contract UniV4FeeSwitchTest is Test {
             deadline: block.timestamp + 1 hours
         });
 
-        (uint256 marketId,,, ) =
-            resolver.createNumericMarketAndSeedSimple{value: 1 ether}(
-                "Uniswap V4 protocolFeeController()",
-                address(0),
-                address(UNIV4),
-                IUniswapV4.protocolFeeController.selector,
-                Resolver.Op.NEQ,
-                0,
-                DEADLINE_2025,
-                true,
-                seed
-            );
+        (uint256 marketId,,,) = resolver.createNumericMarketAndSeedSimple{value: 1 ether}(
+            "Uniswap V4 protocolFeeController()",
+            address(0),
+            address(UNIV4),
+            IUniswapV4.protocolFeeController.selector,
+            Resolver.Op.NEQ,
+            0,
+            DEADLINE_2025,
+            true,
+            seed
+        );
 
         vm.stopPrank();
 
@@ -436,7 +436,9 @@ contract UniV4FeeSwitchTest is Test {
 
         // After fee switch
         (uint256 valueAfter, bool condAfter, bool readyAfter) = resolver.preview(marketId);
-        assertEq(valueAfter, uint160(mockController), "value should equal controller address as uint");
+        assertEq(
+            valueAfter, uint160(mockController), "value should equal controller address as uint"
+        );
         assertTrue(condAfter, "condition should be true after fee switch");
         assertTrue(readyAfter, "should be ready to resolve early (canClose=true)");
 
@@ -460,11 +462,7 @@ contract UniV4FeeSwitchTest is Test {
     /// @notice Test description building
     function test_BuildDescription() public pure {
         string memory desc = resolver.buildDescription(
-            "Uniswap V4 protocolFeeController()",
-            Resolver.Op.NEQ,
-            0,
-            DEADLINE_2025,
-            true
+            "Uniswap V4 protocolFeeController()", Resolver.Op.NEQ, 0, DEADLINE_2025, true
         );
 
         console.log("Generated description:");
@@ -504,7 +502,11 @@ contract UniV4FeeSwitchTest is Test {
         assertTrue(op == Resolver.Op.NEQ, "op should be NEQ");
         assertFalse(isRatio, "should not be a ratio condition");
         assertEq(threshold, 0, "threshold should be 0");
-        assertEq(callDataA, abi.encodeWithSelector(IUniswapV4.protocolFeeController.selector), "callData should match selector");
+        assertEq(
+            callDataA,
+            abi.encodeWithSelector(IUniswapV4.protocolFeeController.selector),
+            "callData should match selector"
+        );
         assertEq(callDataB.length, 0, "callDataB should be empty");
 
         console.log("Condition storage verified");

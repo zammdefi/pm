@@ -29,29 +29,38 @@ interface IZAMM {
         uint256 feeOrHook;
     }
 
-    function pools(uint256 poolId) external view returns (
-        uint112 reserve0,
-        uint112 reserve1,
-        uint32 blockTimestampLast,
-        uint256 price0CumulativeLast,
-        uint256 price1CumulativeLast,
-        uint256 kLast,
-        uint256 supply
-    );
+    function pools(uint256 poolId)
+        external
+        view
+        returns (
+            uint112 reserve0,
+            uint112 reserve1,
+            uint32 blockTimestampLast,
+            uint256 price0CumulativeLast,
+            uint256 price1CumulativeLast,
+            uint256 kLast,
+            uint256 supply
+        );
 }
 
 /// @notice Minimal PAMM interface
 interface IPAMM {
-    function markets(uint256 marketId) external view returns (
-        address resolver,
-        bool resolved,
-        bool outcome,
-        bool canClose,
-        uint64 close,
-        address collateral,
-        uint256 collateralLocked
-    );
-    function poolKey(uint256 marketId, uint256 feeOrHook) external view returns (IZAMM.PoolKey memory);
+    function markets(uint256 marketId)
+        external
+        view
+        returns (
+            address resolver,
+            bool resolved,
+            bool outcome,
+            bool canClose,
+            uint64 close,
+            address collateral,
+            uint256 collateralLocked
+        );
+    function poolKey(uint256 marketId, uint256 feeOrHook)
+        external
+        view
+        returns (IZAMM.PoolKey memory);
     function getNoId(uint256 marketId) external pure returns (uint256);
 }
 
@@ -83,7 +92,6 @@ interface IZAMMHook {
  * @dev Hook mints tokens for market registration, can be used as PAMM collateral for meta-markets
  */
 contract PredictionMarketHook is IZAMMHook {
-
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -108,15 +116,25 @@ contract PredictionMarketHook is IZAMMHook {
     uint256 private constant FLAG_AFTER = 1 << 254;
 
     /// @notice Function signatures for swap detection
-    bytes4 private constant SWAP_EXACT_IN = bytes4(keccak256("swapExactIn((uint256,uint256,address,address,uint256),uint256,uint256,bool,address,uint256)"));
-    bytes4 private constant SWAP_EXACT_OUT = bytes4(keccak256("swapExactOut((uint256,uint256,address,address,uint256),uint256,uint256,bool,address,uint256)"));
-    bytes4 private constant SWAP = bytes4(keccak256("swap((uint256,uint256,address,address,uint256),uint256,uint256,address,bytes)"));
+    bytes4 private constant SWAP_EXACT_IN = bytes4(
+        keccak256(
+            "swapExactIn((uint256,uint256,address,address,uint256),uint256,uint256,bool,address,uint256)"
+        )
+    );
+    bytes4 private constant SWAP_EXACT_OUT = bytes4(
+        keccak256(
+            "swapExactOut((uint256,uint256,address,address,uint256),uint256,uint256,bool,address,uint256)"
+        )
+    );
+    bytes4 private constant SWAP = bytes4(
+        keccak256("swap((uint256,uint256,address,address,uint256),uint256,uint256,address,bytes)")
+    );
 
     /// @notice Fee parameters
-    uint256 private constant MAX_BASE_FEE = 100;      // 1.0% max base fee
-    uint256 private constant MIN_BASE_FEE = 10;       // 0.1% min base fee
-    uint256 private constant MAX_SKEW_TAX = 80;       // 0.8% max skew tax
-    uint256 private constant MAX_TOTAL_FEE = 180;     // 1.8% absolute max
+    uint256 private constant MAX_BASE_FEE = 100; // 1.0% max base fee
+    uint256 private constant MIN_BASE_FEE = 10; // 0.1% min base fee
+    uint256 private constant MAX_SKEW_TAX = 80; // 0.8% max skew tax
+    uint256 private constant MAX_TOTAL_FEE = 180; // 1.8% absolute max
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -132,22 +150,22 @@ contract PredictionMarketHook is IZAMMHook {
      *      - Low liquidity bootstrapping
      */
     struct MarketConfig {
-        uint64 deadline;            // When market closes
-        uint64 createdAt;           // When first configured
-        uint32 maxOrderbookBps;     // Max % of trade to route via orderbook (0-10000, 0=disabled)
-        uint32 minTVL;              // Minimum TVL for normal fees (below = boosted liquidity mode)
-        uint16 rebalanceThreshold;  // Auto-trigger rebalancing if skew exceeds this (bps, 0=disabled)
-         uint16 circuitBreakerBps;   // Halt trading if skew exceeds (bps, 0=disabled)
+        uint64 deadline; // When market closes
+        uint64 createdAt; // When first configured
+        uint32 maxOrderbookBps; // Max % of trade to route via orderbook (0-10000, 0=disabled)
+        uint32 minTVL; // Minimum TVL for normal fees (below = boosted liquidity mode)
+        uint16 rebalanceThreshold; // Auto-trigger rebalancing if skew exceeds this (bps, 0=disabled)
+        uint16 circuitBreakerBps; // Halt trading if skew exceeds (bps, 0=disabled)
         uint16 parimutuelThreshold; // Time % before deadline to switch to parimutuel (bps, 0=disabled)
-        uint8 payoutMode;           // 0=AMM only, 1=Parimutuel only, 2=Hybrid (auto-switch)
-        bool active;                // Whether configured
+        uint8 payoutMode; // 0=AMM only, 1=Parimutuel only, 2=Hybrid (auto-switch)
+        bool active; // Whether configured
     }
     // 64 + 64 + 32 + 32 + 16 + 16 + 16 + 8 + 8 = 256 bits (perfect slot packing!)
 
     struct LPPosition {
-        uint112 totalShares;        // Total LP shares (max ~5.19e33, plenty)
-        uint32 firstEntryTime;      // When first added liquidity (max year 2106)
-        uint32 firstEntryProb;      // Market probability on entry in bps (10000 = 100%)
+        uint112 totalShares; // Total LP shares (max ~5.19e33, plenty)
+        uint32 firstEntryTime; // When first added liquidity (max year 2106)
+        uint32 firstEntryProb; // Market probability on entry in bps (10000 = 100%)
         // 80 bits free for future use
     }
     // 112 + 32 + 32 = 176 bits (80 bits free for future features)
@@ -253,12 +271,12 @@ contract PredictionMarketHook is IZAMMHook {
      * @dev Returns fee in basis points (10000 = 100%)
      *      Fee = baseFee (time-weighted) + skewTax (IL compensation)
      */
-    function beforeAction(
-        bytes4 sig,
-        uint256 poolId,
-        address sender,
-        bytes calldata data
-    ) external view override returns (uint256 feeBps) {
+    function beforeAction(bytes4 sig, uint256 poolId, address sender, bytes calldata data)
+        external
+        view
+        override
+        returns (uint256 feeBps)
+    {
         // Access control: only ZAMM can call
         if (msg.sender != address(ZAMM)) revert Unauthorized();
 
@@ -497,11 +515,7 @@ contract PredictionMarketHook is IZAMMHook {
      * @notice Calculate IL compensation tax based on market skew
      * @dev More one-sided = higher tax (traders pay, LPs earn more)
      */
-    function _calculateSkewTax(uint256 poolId)
-        internal
-        view
-        returns (uint256 taxBps)
-    {
+    function _calculateSkewTax(uint256 poolId) internal view returns (uint256 taxBps) {
         (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
 
         // Handle edge cases
@@ -524,7 +538,6 @@ contract PredictionMarketHook is IZAMMHook {
         taxBps = (skew * skew) / (4500 * 4500 / MAX_SKEW_TAX);
         if (taxBps > MAX_SKEW_TAX) taxBps = MAX_SKEW_TAX;
     }
-
 
     /*//////////////////////////////////////////////////////////////
                          LP POSITION TRACKING
@@ -574,7 +587,6 @@ contract PredictionMarketHook is IZAMMHook {
                          CONFIGURATION
     //////////////////////////////////////////////////////////////*/
 
-
     /**
      * @notice Register a market with the hook
      * @dev Cryptographically derives poolId from marketId and this hook's address
@@ -588,9 +600,8 @@ contract PredictionMarketHook is IZAMMHook {
         uint256 feeOrHook = uint256(uint160(address(this))) | FLAG_AFTER;
         IZAMM.PoolKey memory key = IPAMM(PAMM).poolKey(marketId, feeOrHook);
 
-        poolId = uint256(keccak256(abi.encode(
-            key.id0, key.id1, key.token0, key.token1, key.feeOrHook
-        )));
+        poolId =
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
 
         // Only allow configuration from PAMM or if unconfigured
         if (msg.sender != PAMM && configs[poolId].active) revert Unauthorized();
@@ -609,12 +620,12 @@ contract PredictionMarketHook is IZAMMHook {
         configs[poolId] = MarketConfig({
             deadline: close,
             createdAt: uint64(block.timestamp),
-            maxOrderbookBps: 0,           // Orderbook routing disabled by default
-            minTVL: 0,                    // No minimum TVL requirement by default
-            rebalanceThreshold: 0,        // Auto-rebalance disabled by default
-            circuitBreakerBps: 0,         // No circuit breaker by default
-            parimutuelThreshold: 0,       // Parimutuel mode disabled by default
-            payoutMode: 0,                // AMM-only mode by default
+            maxOrderbookBps: 0, // Orderbook routing disabled by default
+            minTVL: 0, // No minimum TVL requirement by default
+            rebalanceThreshold: 0, // Auto-rebalance disabled by default
+            circuitBreakerBps: 0, // No circuit breaker by default
+            parimutuelThreshold: 0, // Parimutuel mode disabled by default
+            payoutMode: 0, // AMM-only mode by default
             active: true
         });
 
@@ -766,9 +777,8 @@ contract PredictionMarketHook is IZAMMHook {
 
         // Try to call oracle's checkResolution(marketId) function
         // This is a generic interface - actual oracle implementation may vary
-        (bool success, bytes memory result) = oracle.staticcall(
-            abi.encodeWithSignature("checkResolution(uint256)", marketId)
-        );
+        (bool success, bytes memory result) =
+            oracle.staticcall(abi.encodeWithSignature("checkResolution(uint256)", marketId));
 
         if (success && result.length >= 32) {
             bool oracleOutcome = abi.decode(result, (bool));
@@ -808,11 +818,7 @@ contract PredictionMarketHook is IZAMMHook {
     /**
      * @notice Get current fee for a pool
      */
-    function getCurrentFee(uint256 poolId, bool isSwap)
-        external
-        view
-        returns (uint256 feeBps)
-    {
+    function getCurrentFee(uint256 poolId, bool isSwap) external view returns (uint256 feeBps) {
         MarketConfig memory config = configs[poolId];
         if (!config.active) return 30;
 
@@ -830,27 +836,18 @@ contract PredictionMarketHook is IZAMMHook {
     /**
      * @notice Get market probability in basis points
      */
-    function getMarketProbability(uint256 poolId)
-        external
-        view
-        returns (uint256 probabilityBps)
-    {
+    function getMarketProbability(uint256 poolId) external view returns (uint256 probabilityBps) {
         (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
         uint256 total = uint256(r0) + uint256(r1);
         if (total == 0) return 5000; // Default 50/50
         return (uint256(r1) * 10000) / total;
     }
 
-
     /**
      * @notice Get IL exposure for an LP
      * @dev How much probability shifted since they entered
      */
-    function getILExposure(uint256 poolId, address lp)
-        external
-        view
-        returns (uint256 ilBps)
-    {
+    function getILExposure(uint256 poolId, address lp) external view returns (uint256 ilBps) {
         LPPosition memory pos = positions[poolId][lp];
         if (pos.totalShares == 0) return 0;
 
@@ -870,18 +867,13 @@ contract PredictionMarketHook is IZAMMHook {
     function getMarketInfo(uint256 poolId)
         external
         view
-        returns (
-            uint256 marketId,
-            address resolver,
-            uint64 deadline,
-            bool resolved,
-            bool outcome
-        )
+        returns (uint256 marketId, address resolver, uint64 deadline, bool resolved, bool outcome)
     {
         marketId = poolToMarket[poolId];
         if (marketId == 0) return (0, address(0), 0, false, false);
 
-        (address mktResolver, bool mktResolved, bool mktOutcome,, uint64 mktClose,,) = IPAMM(PAMM).markets(marketId);
+        (address mktResolver, bool mktResolved, bool mktOutcome,, uint64 mktClose,,) =
+            IPAMM(PAMM).markets(marketId);
         return (marketId, mktResolver, mktClose, mktResolved, mktOutcome);
     }
 

@@ -20,7 +20,6 @@ interface IUniswapV4 {
  * @notice Comprehensive tests for UNI-denominated V4 fee switch prediction market
  */
 contract PredictionMarketHookTest is Test {
-
     PAMM constant pamm = PAMM(payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0));
     Resolver constant resolver = Resolver(payable(0x00000000002205020E387b6a378c05639047BcFB));
     IZAMM constant zamm = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
@@ -67,25 +66,23 @@ contract PredictionMarketHookTest is Test {
 
         uint256 shares;
         uint256 liquidity;
-        (marketId, noId, shares, liquidity) =
-            resolver.createNumericMarketAndSeedSimple(
-                "UNI V4 Fee Switch 2026",
-                address(UNI),
-                address(UNIV4),
-                IUniswapV4.protocolFeeController.selector,
-                Resolver.Op.NEQ,
-                0,
-                DEADLINE_2026,
-                true,
-                seed
-            );
+        (marketId, noId, shares, liquidity) = resolver.createNumericMarketAndSeedSimple(
+            "UNI V4 Fee Switch 2026",
+            address(UNI),
+            address(UNIV4),
+            IUniswapV4.protocolFeeController.selector,
+            Resolver.Op.NEQ,
+            0,
+            DEADLINE_2026,
+            true,
+            seed
+        );
 
         vm.stopPrank();
 
         IZAMM.PoolKey memory key = pamm.poolKey(marketId, feeOrHook);
-        poolId = uint256(keccak256(abi.encode(
-            key.id0, key.id1, key.token0, key.token1, key.feeOrHook
-        )));
+        poolId =
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
 
         (uint112 r0, uint112 r1,,,,,) = zamm.pools(poolId);
 
@@ -197,7 +194,7 @@ contract PredictionMarketHookTest is Test {
 
         assertEq(derivedPoolId, poolId, "Should cryptographically derive correct poolId");
 
-        (uint64 deadline, uint64 createdAt,,,,,, , bool active) = hook.configs(poolId);
+        (uint64 deadline, uint64 createdAt,,,,,,, bool active) = hook.configs(poolId);
 
         console.log("Configuration:");
         console.log("  Active:", active ? "YES" : "NO");
@@ -233,8 +230,13 @@ contract PredictionMarketHookTest is Test {
         vm.prank(address(pamm));
         hook.registerMarket(marketId);
 
-        (uint256 retMarketId, address mktResolver, uint64 mktDeadline, bool resolved, bool outcome) =
-            hook.getMarketInfo(poolId);
+        (
+            uint256 retMarketId,
+            address mktResolver,
+            uint64 mktDeadline,
+            bool resolved,
+            bool outcome
+        ) = hook.getMarketInfo(poolId);
 
         console.log("=== MARKET INFO ===");
         console.log("Market ID:", retMarketId);
@@ -346,9 +348,8 @@ contract PredictionMarketHookTest is Test {
         );
 
         IZAMM.PoolKey memory key = pamm.poolKey(marketId, feeOrHook);
-        poolId = uint256(keccak256(abi.encode(
-            key.id0, key.id1, key.token0, key.token1, key.feeOrHook
-        )));
+        poolId =
+            uint256(keccak256(abi.encode(key.id0, key.id1, key.token0, key.token1, key.feeOrHook)));
 
         vm.stopPrank();
 
