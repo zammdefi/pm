@@ -287,7 +287,7 @@ contract PMFeeHookV1 is IZAMMHook {
     }
 
     /// @notice Adjust bootstrap start time for a pool (owner only)
-    /// @dev Can only delay start (newStart >= oldStart <= now), requires zero liquidity
+    /// @dev Can only delay start (oldStart <= newStart <= block.timestamp), requires zero liquidity
     /// @param poolId The pool to adjust
     /// @param newStart New bootstrap start timestamp
     function adjustBootstrapStart(uint256 poolId, uint64 newStart) public payable onlyOwner {
@@ -527,10 +527,15 @@ contract PMFeeHookV1 is IZAMMHook {
         // else: neither needs reserves, cache state doesn't matter
 
         // Compute and return dynamic fee (using pre-loaded poolData and flags)
-        return
-            _computeFeeCachedWithPoolData(
-                poolId, m, c, flags, resolved, close, poolData, hasPoolData
-            );
+        feeBps = _computeFeeCachedWithPoolData(
+            poolId, m, c, flags, resolved, close, poolData, hasPoolData
+        );
+
+        // CRITICAL SAFETY: Ensure fee never exceeds 10,000 bps (would cause underflow in ZAMM)
+        // This should be unreachable (_enforceOpenCached reverts first), but defense in depth
+        if (feeBps > BPS_DENOMINATOR) revert InvalidConfig();
+
+        return feeBps;
     }
 
     /// @notice Post-trade hook: enforces price impact limits and records volatility
@@ -1256,7 +1261,7 @@ contract PMFeeHookV1 is IZAMMHook {
         if (cfg.maxFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
         if (cfg.maxSkewFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
         if (cfg.minFeeBps > cfg.maxFeeBps) revert InvalidConfig();
-        if (cfg.feeCapBps > BPS_DENOMINATOR) revert InvalidConfig();
+        if (cfg.feeCapBps >= BPS_DENOMINATOR) revert InvalidConfig(); // Must be < 10000 (100% fee would halt trading)
         if (cfg.skewRefBps == 0 || cfg.skewRefBps > 5000) revert InvalidConfig(); // Must be (0, 5000]
 
         // Additional fee validations (uint16 types, max 65535 bps = 655.35%)

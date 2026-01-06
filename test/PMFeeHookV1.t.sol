@@ -1532,10 +1532,12 @@ contract PMFeeHookV1Test is Test {
         PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
 
         // Set to maximum valid values
-        cfg.minFeeBps = 10000;
+        // Note: feeCapBps must be < 10000 (100% fee would halt trading)
+        // and feeCapBps must be >= minFeeBps
+        cfg.minFeeBps = 9999;
         cfg.maxFeeBps = 10000;
         cfg.maxSkewFeeBps = 10000;
-        cfg.feeCapBps = 10000;
+        cfg.feeCapBps = 9999; // Must be < 10000 and >= minFeeBps
         cfg.skewRefBps = 5000;
         cfg.asymmetricFeeBps = 10000;
         cfg.volatilityFeeBps = 10000;
@@ -1546,7 +1548,9 @@ contract PMFeeHookV1Test is Test {
         hook.setDefaultConfig(cfg);
 
         PMFeeHookV1.Config memory retrieved = hook.getDefaultConfig();
-        assertEq(retrieved.minFeeBps, 10000, "Min fee should be set to max");
+        assertEq(retrieved.minFeeBps, 9999, "Min fee should be set to 9999");
+        assertEq(retrieved.feeCapBps, 9999, "Fee cap should be 9999 (< 10000)");
+        assertEq(retrieved.maxFeeBps, 10000, "Max fee can be 10000 (will be capped)");
 
         console.log("Max bounds config test: passed");
     }

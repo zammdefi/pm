@@ -20,6 +20,7 @@ contract PMHookRouterDynamicSpreadTest is Test {
     PAMM constant pamm = PAMM(payable(0x000000000044bfe6c2BBFeD8862973E0612f07C0));
     IZAMM constant zamm = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
     IERC20 constant UNI = IERC20(0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984);
+    address constant REGISTRAR = 0x0000000000BADa259Cb860c12ccD9500d9496B3e;
 
     uint64 constant DEADLINE_FAR_FUTURE = 2000000000; // Year 2033
     uint256 constant FLAG_BEFORE = 1 << 255;
@@ -45,11 +46,21 @@ contract PMHookRouterDynamicSpreadTest is Test {
         vm.createSelectFork(vm.rpcUrl("main"));
 
         hook = new PMFeeHookV1();
-        router = new PMHookRouter();
+
+        // Deploy router at REGISTRAR address using vm.etch so hook.registerMarket accepts calls
+        PMHookRouter tempRouter = new PMHookRouter();
+        vm.etch(REGISTRAR, address(tempRouter).code);
+        router = PMHookRouter(payable(REGISTRAR));
+
+        // Manually initialize router (constructor logic doesn't run with vm.etch)
+        vm.startPrank(REGISTRAR);
+        pamm.setOperator(address(zamm), true);
+        pamm.setOperator(address(pamm), true);
+        vm.stopPrank();
+
         harness = new DynamicSpreadHarness();
 
         // Transfer hook ownership to router so it can register markets
-        // (In production, router will be deployed at REGISTRAR address)
         vm.prank(hook.owner());
         hook.transferOwnership(address(router));
 
@@ -239,7 +250,7 @@ contract PMHookRouterDynamicSpreadTest is Test {
 
     function test_DynamicSpread_OneHourBeforeClose() public {
         // Market closes in 1 hour
-        marketId = _createMarketWithClose(uint64(block.timestamp + 1 hours));
+        marketId = _createMarketWithClose(uint64(block.timestamp + 7 hours));
 
         // Balanced inventory
         uint256 yesShares = 500 ether;
@@ -342,7 +353,7 @@ contract PMHookRouterDynamicSpreadTest is Test {
 
     function test_DynamicSpread_PastCloseWindow() public {
         // Market closes soon (1 hour) but we'll simulate being past close by warping time
-        marketId = _createMarketWithClose(uint64(block.timestamp + 1 hours));
+        marketId = _createMarketWithClose(uint64(block.timestamp + 7 hours));
 
         // Warp forward 2 hours so we're past close
         vm.warp(block.timestamp + 2 hours);

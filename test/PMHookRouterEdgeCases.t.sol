@@ -36,18 +36,26 @@ interface IPAMM_Extended {
 }
 
 contract PMFeeHookV1Minimal {
+    address public owner;
     mapping(uint256 => uint256) public poolIdsByMarket;
     uint256 constant FLAG_BEFORE = 1 << 255;
     uint256 constant FLAG_AFTER = 1 << 254;
     IPAMM_Extended constant PAMM = IPAMM_Extended(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
 
-    function registerMarket(uint256 marketId, bool wantAfterHook)
-        external
-        returns (uint256 poolId)
-    {
-        // Build pool key like PMFeeHookV1 does
-        uint256 feeHook = uint256(uint160(address(this))) | FLAG_BEFORE;
-        if (wantAfterHook) feeHook |= FLAG_AFTER;
+    constructor() {
+        owner = tx.origin;
+    }
+
+    function transferOwnership(address newOwner) external {
+        require(msg.sender == owner, "not owner");
+        owner = newOwner;
+    }
+
+    function registerMarket(uint256 marketId) external returns (uint256 poolId) {
+        require(msg.sender == owner, "unauthorized");
+
+        // Build pool key like PMFeeHookV1 does (always use both flags)
+        uint256 feeHook = uint256(uint160(address(this))) | FLAG_BEFORE | FLAG_AFTER;
 
         IPAMM_Extended.PoolKey memory k = PAMM.poolKey(marketId, feeHook);
         poolId = uint256(keccak256(abi.encode(k.id0, k.id1, k.token0, k.token1, k.feeOrHook)));
@@ -60,17 +68,21 @@ contract PMFeeHookV1Minimal {
         return 30; // 0.3%
     }
 
+    function getCloseWindow(uint256) external pure returns (uint256) {
+        return 1 hours; // Default close window
+    }
+
     // Hook callbacks - minimal implementation to satisfy ZAMM
     function beforeAction(bytes4, uint256, address, bytes calldata)
         external
         pure
-        returns (bytes memory)
+        returns (uint256)
     {
-        return "";
+        return 30; // Return 0.3% fee
     }
 
     // afterAction has dynamic parameters depending on the action, so we use fallback
-    fallback() external {
+    fallback() external payable {
         // Accept all calls and do nothing
     }
 }
@@ -108,21 +120,27 @@ contract PMHookRouterEdgeCasesTest is Test {
         hook = new PMFeeHookV1Minimal();
         router = new PMHookRouter();
 
+        // Transfer hook ownership to router so it can register markets
+        // (hook owner is set to tx.origin in constructor, which is the test contract)
+        vm.prank(hook.owner());
+        hook.transferOwnership(address(router));
+
         // Fund test accounts
-        vm.deal(ALICE, 1000 ether);
-        vm.deal(BOB, 1000 ether);
+        vm.deal(ALICE, 10000 ether);
+        vm.deal(BOB, 10000 ether);
         vm.deal(address(router), 100 ether);
 
         // Create test market (ETH collateral, closes in 1 day)
+        // Use larger liquidity (1000 ether) so 10 ether trades don't hit slippage limits
         vm.startPrank(ALICE);
-        (marketId,,,) = router.bootstrapMarket{value: 100 ether}(
+        (marketId,,,) = router.bootstrapMarket{value: 1000 ether}(
             "Test Market",
             ALICE, // resolver must be non-zero (PAMM requirement)
             ETH,
             uint64(block.timestamp + 1 days),
             false,
             address(hook),
-            100 ether,
+            1000 ether,
             true,
             0,
             0,
@@ -167,7 +185,7 @@ contract PMHookRouterEdgeCasesTest is Test {
 
         // Try to buy with ETH (should revert)
         vm.startPrank(BOB);
-        vm.expectRevert(PMHookRouter.InvalidETHAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(PMHookRouter.ValidationError.selector, 6)); // InvalidETHAmount
         router.buyWithBootstrap{value: 1 ether}(
             usdcMarketId, true, 100e6, 0, BOB, block.timestamp + 1 hours
         );
@@ -184,7 +202,7 @@ contract PMHookRouterEdgeCasesTest is Test {
         IERC20Full(USDC).approve(address(router), type(uint256).max);
 
         // Try to bootstrap with ETH sent (should revert)
-        vm.expectRevert(PMHookRouter.InvalidETHAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(PMHookRouter.ValidationError.selector, 6)); // InvalidETHAmount
         router.bootstrapMarket{value: 1 ether}(
             "USDC Market 2",
             address(0),
@@ -227,8 +245,8 @@ contract PMHookRouterEdgeCasesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 50 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 50 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Establish TWAP by making trades
@@ -277,8 +295,8 @@ contract PMHookRouterEdgeCasesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 80 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 20 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 80 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 20 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Generate rebalance budget via trades
@@ -311,7 +329,9 @@ contract PMHookRouterEdgeCasesTest is Test {
         (
             uint32 timestamp0,
             uint32 timestamp1,
-            uint192 _unused,
+            uint32 cachedTwapBps,
+            uint32 cacheBlockNum,
+            uint128 reservesAtObs1,
             uint256 cumulative0,
             uint256 cumulative1
         ) = router.twapObservations(marketId);
@@ -322,7 +342,7 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, true, 5 ether, 0, BOB, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_1b, uint32 ts1_1b,, uint256 cum0_1b, uint256 cum1_1b) =
+        (uint32 ts0_1b, uint32 ts1_1b,,,, uint256 cum0_1b, uint256 cum1_1b) =
             router.twapObservations(marketId);
 
         assertGt(ts1_1b, 0, "Timestamp1 should be set");
@@ -336,7 +356,7 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, false, 3 ether, 0, BOB, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_2, uint32 ts1_2,, uint256 cum0_2, uint256 cum1_2) =
+        (uint32 ts0_2, uint32 ts1_2,,,, uint256 cum0_2, uint256 cum1_2) =
             router.twapObservations(marketId);
 
         // Observations should not change without explicit updateTWAPObservation call
@@ -352,7 +372,7 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, true, 2 ether, 0, ALICE, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_3, uint32 ts1_3,, uint256 cum0_3, uint256 cum1_3) =
+        (uint32 ts0_3, uint32 ts1_3,,,, uint256 cum0_3, uint256 cum1_3) =
             router.twapObservations(marketId);
 
         // Observations should remain unchanged
@@ -370,11 +390,11 @@ contract PMHookRouterEdgeCasesTest is Test {
             marketId, true, 10 ether, 0, ALICE, block.timestamp + 1 hours
         );
 
-        (uint32 ts0_1, uint32 timestamp1,, uint256 cum0_1, uint256 cumulative1) =
+        (uint32 ts0_1, uint32 timestamp1,,,, uint256 cum0_1, uint256 cumulative1) =
             router.twapObservations(marketId);
 
         // Wait some time to build TWAP history
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         vm.prank(BOB);
         router.buyWithBootstrap{value: 1 ether}(
@@ -382,7 +402,7 @@ contract PMHookRouterEdgeCasesTest is Test {
         );
 
         // Note: getTWAPPrice is internal, but we can verify TWAP is initialized via twapStarts
-        (uint32 ts0, uint32 startTimestamp,, uint256 cum0,) = router.twapObservations(marketId);
+        (uint32 ts0, uint32 startTimestamp,,,, uint256 cum0,) = router.twapObservations(marketId);
         assertGt(startTimestamp, 0, "TWAP should be initialized");
 
         // Try to manipulate: make huge trade to skew spot price
@@ -393,7 +413,7 @@ contract PMHookRouterEdgeCasesTest is Test {
         );
 
         // TWAP start should NOT change (lifetime start never updates)
-        (uint32 ts0_2, uint32 timestamp2,, uint256 cum0_2, uint256 cumulative2) =
+        (uint32 ts0_2, uint32 timestamp2,,,, uint256 cum0_2, uint256 cumulative2) =
             router.twapObservations(marketId);
         assertEq(timestamp2, timestamp1, "Start should never change");
         assertEq(cumulative2, cumulative1, "Start cumulative should never change");
@@ -401,7 +421,7 @@ contract PMHookRouterEdgeCasesTest is Test {
 
         // TWAP should still be close to initial because cumulative accumulates over time
         // Large trade only affects price for a short period
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 7 hours);
 
         // Make another small trade to update TWAP
         vm.prank(ALICE);
@@ -425,8 +445,8 @@ contract PMHookRouterEdgeCasesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 75 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 25 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 75 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 25 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Establish TWAP
@@ -466,8 +486,8 @@ contract PMHookRouterEdgeCasesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 50 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 50 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Establish TWAP far from close
@@ -516,19 +536,27 @@ contract PMHookRouterEdgeCasesTest is Test {
 
 /// @notice Mock hook that returns configurable fee
 contract PMFeeHookV1Configurable {
+    address public owner;
     mapping(uint256 => uint256) public poolIdsByMarket;
     uint256 constant FLAG_BEFORE = 1 << 255;
     uint256 constant FLAG_AFTER = 1 << 254;
     IPAMM_Extended constant PAMM = IPAMM_Extended(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     uint256 public currentFee = 30;
 
-    function registerMarket(uint256 marketId, bool wantAfterHook)
-        external
-        returns (uint256 poolId)
-    {
-        // Build pool key like PMFeeHookV1 does
-        uint256 feeHook = uint256(uint160(address(this))) | FLAG_BEFORE;
-        if (wantAfterHook) feeHook |= FLAG_AFTER;
+    constructor() {
+        owner = tx.origin;
+    }
+
+    function transferOwnership(address newOwner) external {
+        require(msg.sender == owner, "not owner");
+        owner = newOwner;
+    }
+
+    function registerMarket(uint256 marketId) external returns (uint256 poolId) {
+        require(msg.sender == owner, "unauthorized");
+
+        // Build pool key like PMFeeHookV1 does (always use both flags)
+        uint256 feeHook = uint256(uint160(address(this))) | FLAG_BEFORE | FLAG_AFTER;
 
         IPAMM_Extended.PoolKey memory k = PAMM.poolKey(marketId, feeHook);
         poolId = uint256(keccak256(abi.encode(k.id0, k.id1, k.token0, k.token1, k.feeOrHook)));
@@ -541,6 +569,10 @@ contract PMFeeHookV1Configurable {
         return currentFee;
     }
 
+    function getCloseWindow(uint256) external pure returns (uint256) {
+        return 1 hours; // Default close window
+    }
+
     function setFee(uint256 fee) external {
         currentFee = fee;
     }
@@ -548,14 +580,14 @@ contract PMFeeHookV1Configurable {
     // Hook callbacks - minimal implementation to satisfy ZAMM
     function beforeAction(bytes4, uint256, address, bytes calldata)
         external
-        pure
-        returns (bytes memory)
+        view
+        returns (uint256)
     {
-        return "";
+        return currentFee; // Return the configured fee
     }
 
     // afterAction has dynamic parameters depending on the action, so we use fallback
-    fallback() external {
+    fallback() external payable {
         // Accept all calls and do nothing
     }
 }
@@ -590,19 +622,24 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
         hook = new PMFeeHookV1Configurable();
         router = new PMHookRouter();
 
+        // Transfer hook ownership to router so it can register markets
+        vm.prank(hook.owner());
+        hook.transferOwnership(address(router));
+
         vm.deal(ALICE, 10000 ether);
         vm.deal(BOB, 10000 ether);
         vm.deal(address(router), 1000 ether);
 
+        // Use larger liquidity to avoid slippage issues
         vm.startPrank(ALICE);
-        (marketId,,,) = router.bootstrapMarket{value: 100 ether}(
+        (marketId,,,) = router.bootstrapMarket{value: 1000 ether}(
             "Test Market",
             ALICE, // resolver
             ETH,
             uint64(block.timestamp + 30 days),
             false,
             address(hook),
-            100 ether,
+            1000 ether,
             true,
             0,
             0,
@@ -622,8 +659,8 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 60 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 40 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 60 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 40 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Generate budget
@@ -635,7 +672,7 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
 
         // Try rebalancing with extreme fee (should not revert, uses fallback or handles gracefully)
         vm.warp(block.timestamp + 6 minutes);
-        try router.rebalanceBootstrapVault(marketId, block.timestamp + 1 hours) {
+        try router.rebalanceBootstrapVault(marketId, block.timestamp + 7 hours) {
         // Should succeed (fee gets clamped to DEFAULT_FEE_BPS if >= 10000)
         }
             catch {
@@ -650,8 +687,8 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 60 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 40 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 60 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 40 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 6 minutes);
@@ -662,7 +699,7 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
 
         // Should use DEFAULT_FEE_BPS (30) instead of 10000
         vm.warp(block.timestamp + 6 minutes);
-        uint256 collateralUsed = router.rebalanceBootstrapVault(marketId, block.timestamp + 1 hours);
+        uint256 collateralUsed = router.rebalanceBootstrapVault(marketId, block.timestamp + 7 hours);
 
         // If budget exists and conditions are right, should succeed with fallback fee
         // (may return 0 if conditions don't warrant rebalance)
@@ -675,8 +712,8 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 60 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 40 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 60 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 40 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 6 minutes);
@@ -687,7 +724,7 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
 
         // Should use DEFAULT_FEE_BPS instead of reverting
         vm.warp(block.timestamp + 6 minutes);
-        router.rebalanceBootstrapVault(marketId, block.timestamp + 1 hours);
+        router.rebalanceBootstrapVault(marketId, block.timestamp + 7 hours);
     }
 
     /// @notice Test tiny reserves where expectedSwapOut would be 0 or minimal
@@ -719,7 +756,7 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
         uint256 tinyFeeOrHook = _hookFeeOrHook(address(hook), true);
 
         // Should return 0 gracefully when there's no budget or imbalance
-        uint256 result = router.rebalanceBootstrapVault(tinyMarketId, block.timestamp + 1 hours);
+        uint256 result = router.rebalanceBootstrapVault(tinyMarketId, block.timestamp + 7 hours);
 
         // Should not revert, may return 0
         assertEq(result, 0, "Should handle tiny reserves gracefully");

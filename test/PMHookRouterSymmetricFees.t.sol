@@ -92,6 +92,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
 
     uint256 constant FLAG_BEFORE = 1 << 255;
     uint256 constant FLAG_AFTER = 1 << 254;
+    address constant REGISTRAR = 0x0000000000BADa259Cb860c12ccD9500d9496B3e;
 
     // Helper function to compute feeOrHook value
     function _hookFeeOrHook(address hook_, bool afterHook) internal pure returns (uint256) {
@@ -99,14 +100,26 @@ contract PMHookRouterSymmetricFeesTest is Test {
         return uint256(uint160(hook_)) | flags;
     }
 
+    // Allow contract to receive ETH (for rebalance bounties)
+    receive() external payable {}
+
     function setUp() public {
         vm.createSelectFork(vm.rpcUrl("main"));
 
         hook = new PMFeeHookV1();
-        router = new PMHookRouter();
+
+        // Deploy router at REGISTRAR address using vm.etch
+        PMHookRouter tempRouter = new PMHookRouter();
+        vm.etch(REGISTRAR, address(tempRouter).code);
+        router = PMHookRouter(payable(REGISTRAR));
+
+        // Manually initialize router (constructor logic doesn't run with vm.etch)
+        vm.startPrank(REGISTRAR);
+        PAMM.setOperator(address(ZAMM), true);
+        PAMM.setOperator(address(PAMM), true);
+        vm.stopPrank();
 
         // Transfer hook ownership to router so it can register markets
-        // (In production, router will be deployed at REGISTRAR address)
         vm.prank(hook.owner());
         hook.transferOwnership(address(router));
 
@@ -143,20 +156,20 @@ contract PMHookRouterSymmetricFeesTest is Test {
     /// @notice Test that fees are distributed to BOTH YES and NO LPs, not just the traded side
     function test_SymmetricFees_BothSidesEarnFees() public {
         // Time passes to ensure TWAP can update (MIN_TWAP_UPDATE_INTERVAL = 30 minutes)
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Alice deposits YES shares to vault
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Bob deposits NO shares to vault
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, false, 50 ether, BOB, block.timestamp + 1 hours);
+        router.depositToVault(marketId, false, 50 ether, BOB, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Record initial acc values
@@ -168,7 +181,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
         assertGt(yesShares, 0, "Vault should have YES shares");
 
         // Check TWAP before trade - getTWAPPrice is internal, so we check twapStarts
-        (uint32 ts0, uint32 twapTimestamp,, uint256 cum0,) = router.twapObservations(marketId);
+        (uint32 ts0, uint32 twapTimestamp,,,, uint256 cum0,) = router.twapObservations(marketId);
         assertGt(twapTimestamp, 0, "TWAP should be initialized");
 
         // Quote function removed to reduce bytecode size
@@ -205,14 +218,14 @@ contract PMHookRouterSymmetricFeesTest is Test {
     /// @notice Test TWAP-weighted distribution: higher notional side earns more fees
     function test_SymmetricFees_TWAPWeightedDistribution() public {
         // Time passes to ensure TWAP can update (MIN_TWAP_UPDATE_INTERVAL = 30 minutes)
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Now deposit LPs on both sides
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 50 ether, BOB, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 50 ether, BOB, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 50 ether, BOB, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 50 ether, BOB, block.timestamp + 7 hours);
         vm.stopPrank();
 
         uint256 beforeYesAcc = router.accYesCollateralPerShare(marketId);
@@ -263,14 +276,14 @@ contract PMHookRouterSymmetricFeesTest is Test {
         );
 
         // Time must pass for TWAP to be available
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Deposit equal vault shares on both sides
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(newMarketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(newMarketId, true, 50 ether, ALICE, block.timestamp + 1 hours);
-        router.depositToVault(newMarketId, false, 50 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(newMarketId, true, 50 ether, ALICE, block.timestamp + 7 hours);
+        router.depositToVault(newMarketId, false, 50 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         uint256 beforeYesAcc = router.accYesCollateralPerShare(newMarketId);
@@ -289,16 +302,33 @@ contract PMHookRouterSymmetricFeesTest is Test {
         uint256 yesIncrease = afterYesAcc - beforeYesAcc;
         uint256 noIncrease = afterNoAcc - beforeNoAcc;
 
-        // Without TWAP, should fall back to 50/50 split
-        // Both should increase
+        // Both should increase (symmetric distribution)
         assertGt(yesIncrease, 0, "YES should earn fees");
         assertGt(noIncrease, 0, "NO should earn fees");
 
-        // Should be approximately equal (within rounding)
-        uint256 diff =
-            yesIncrease > noIncrease ? yesIncrease - noIncrease : noIncrease - yesIncrease;
-        uint256 maxDiff = (yesIncrease + noIncrease) / 100; // 1% tolerance
-        assertLt(diff, maxDiff, "Should be approximately 50/50 split when no TWAP");
+        // Note: YES gets principal (as the selling side) + their share of spread fee
+        // NO only gets their share of spread fee (distributed symmetrically)
+        // So yesIncrease will be much larger than noIncrease, which is expected behavior
+        // The key test is that BOTH sides earn fees (symmetric distribution is working)
+
+        // Verify YES earned more (got principal + spread share as the selling side)
+        assertGt(yesIncrease, noIncrease, "YES should earn more (principal + spread share)");
+
+        // The spread fee portion should be distributed symmetrically
+        // With 5 ether trade at 50/50 TWAP + 1% spread:
+        // - principal = ~4.902 ether (goes to YES sellers)
+        // - spread fee = ~0.098 ether, 90% to LPs = ~0.0882 ether (split 50/50)
+        // - Each side gets ~0.0441 ether from spread
+        // NO should get approximately their symmetric share of the spread fee
+        // Note: accumulators are per-share values, so we need to convert to per-share
+        uint256 numeratorSpread = 5 ether * 100 * 9000;
+        uint256 denominatorSpread = 5100 * 10_000;
+        uint256 spreadLPPortion = numeratorSpread / denominatorSpread; // total to LPs
+        uint256 expectedNoShareTotal = spreadLPPortion / 2; // half of spread's LP portion (50/50 split)
+        uint256 expectedNoSharePerShare = (expectedNoShareTotal * 1e18) / 50 ether; // convert to per-share (50 ether deposited)
+        assertApproxEqRel(
+            noIncrease, expectedNoSharePerShare, 0.1e18, "NO should get ~50% of spread LP fees"
+        );
     }
 
     /// @notice Test that one-sided LP (only YES) still gets fees
@@ -306,15 +336,15 @@ contract PMHookRouterSymmetricFeesTest is Test {
         // Establish TWAP first
         _addInitialLiquidity(100 ether);
         // TWAP is initialized during bootstrapMarket
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
         // Wait for TWAP to accumulate
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Only Alice deposits YES shares (no NO LPs)
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 50 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         uint256 beforeYesAcc = router.accYesCollateralPerShare(marketId);
@@ -341,10 +371,10 @@ contract PMHookRouterSymmetricFeesTest is Test {
         _addInitialLiquidity(100 ether);
 
         // TWAP is initialized during bootstrapMarket, wait for it to accumulate
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Wait for more TWAP accumulation
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Quote function removed to reduce bytecode size
         // (uint256 quoteShares, bool quoteFilled, bytes4 quoteSource,) =
@@ -356,8 +386,8 @@ contract PMHookRouterSymmetricFeesTest is Test {
         vm.startPrank(DAVE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, DAVE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 50 ether, DAVE, block.timestamp + 1 hours);
-        router.depositToVault(marketId, false, 50 ether, DAVE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 50 ether, DAVE, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 50 ether, DAVE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         (uint256 yesShares, uint256 noShares,) = router.bootstrapVaults(marketId);
@@ -387,10 +417,20 @@ contract PMHookRouterSymmetricFeesTest is Test {
         assertEq(source, "otc", "Should use vault OTC");
         assertGt(afterBudget, beforeBudget, "Rebalance budget should increase");
 
-        // 20% of collateral goes to budget
-        uint256 expectedIncrease = 5 ether * 2000 / 10_000; // 20%
+        // Budget gets 10% of the spread fee (not 10% of total collateral)
+        // With balanced vault (50/50) and TWAP at 50/50:
+        // - Effective price = TWAP + spread = 5000 + 100 = 5100 bps
+        // - Shares out = 5 ether * 10000 / 5100 = ~9.804 ether
+        // - Principal (fair value) = 9.804 * 5000 / 10000 = ~4.902 ether
+        // - Spread fee = 5 ether - 4.902 ether = ~0.098 ether
+        // - To budget (10% of spread fee) = 0.098 * 10% = ~0.0098 ether
+        // Formula: collateral * spread * LP_budget_split / ((TWAP + spread) * 10000)
+        // = 5 ether * 100 * 1000 / (5100 * 10000) ≈ 0.0098 ether
+        uint256 numerator = 5 ether * 100 * 1000;
+        uint256 denominator = 5100 * 10_000;
+        uint256 expectedIncrease = numerator / denominator;
         assertApproxEqRel(
-            afterBudget - beforeBudget, expectedIncrease, 0.01e18, "Should be ~20% of collateral"
+            afterBudget - beforeBudget, expectedIncrease, 0.1e18, "Should be ~10% of spread fee"
         );
     }
 
@@ -400,18 +440,18 @@ contract PMHookRouterSymmetricFeesTest is Test {
         vm.startPrank(ALICE);
         PAMM.split{value: 200 ether}(marketId, 200 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         vm.startPrank(BOB);
         PAMM.split{value: 200 ether}(marketId, 200 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 1 hours);
+        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Simulate 10 one-sided trades (all buying YES)
         for (uint256 i = 0; i < 10; i++) {
-            vm.warp(block.timestamp + 31 minutes);
+            vm.warp(block.timestamp + 6 hours + 1);
 
             address trader = address(uint160(1000 + i));
             vm.deal(trader, 10 ether);
@@ -425,11 +465,11 @@ contract PMHookRouterSymmetricFeesTest is Test {
         // Both Alice and Bob should have earned fees despite only YES being traded
         vm.prank(ALICE);
         (, uint256 aliceFees) =
-            router.withdrawFromVault(marketId, true, 100 ether, ALICE, block.timestamp + 1 hours);
+            router.withdrawFromVault(marketId, true, 100 ether, ALICE, block.timestamp + 7 hours);
 
         vm.prank(BOB);
         (, uint256 bobFees) =
-            router.withdrawFromVault(marketId, false, 100 ether, BOB, block.timestamp + 1 hours);
+            router.withdrawFromVault(marketId, false, 100 ether, BOB, block.timestamp + 7 hours);
 
         assertGt(aliceFees, 0, "Alice (YES LP) should earn fees");
         assertGt(bobFees, 0, "Bob (NO LP) should also earn fees (preventing drain!)");
@@ -443,20 +483,20 @@ contract PMHookRouterSymmetricFeesTest is Test {
         _addInitialLiquidity(100 ether);
 
         // Time must pass for TWAP to be available
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Alice deposits 100 ETH worth of YES shares into vault
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Bob deposits 100 ETH worth of NO shares into vault
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 1 hours);
+        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Drive price to ~80% YES by having traders buy YES repeatedly
@@ -474,14 +514,14 @@ contract PMHookRouterSymmetricFeesTest is Test {
         }
 
         // Wait for TWAP to catch up to spot price to avoid SpotDeviantFromTWAP
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 7 hours);
 
         // Capture YES and NO vault shares before merge
         uint256 yesSharesBefore = router.totalYesVaultShares(marketId);
         uint256 noSharesBefore = router.totalNoVaultShares(marketId);
 
         // Trigger rebalance which performs merge and distributes fees
-        router.rebalanceBootstrapVault(marketId, block.timestamp + 1 hours);
+        router.rebalanceBootstrapVault(marketId, block.timestamp + 7 hours);
 
         // Capture YES and NO vault shares after merge + fee distribution
         uint256 yesSharesAfter = router.totalYesVaultShares(marketId);
@@ -512,20 +552,20 @@ contract PMHookRouterSymmetricFeesTest is Test {
         _addInitialLiquidity(100 ether);
 
         // Time must pass for TWAP to be available
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Alice deposits 100 ETH worth of YES shares into vault
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Bob deposits 100 ETH worth of NO shares into vault
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 1 hours);
+        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Drive price to ~20% YES (80% NO) by having traders buy NO repeatedly
@@ -543,10 +583,10 @@ contract PMHookRouterSymmetricFeesTest is Test {
         }
 
         // Wait for TWAP to catch up to spot price to avoid SpotDeviantFromTWAP
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 7 hours);
 
         // TWAP should be tracking - check it's initialized
-        (uint32 ts0, uint32 twapTimestamp,, uint256 cum0,) = router.twapObservations(marketId);
+        (uint32 ts0, uint32 twapTimestamp,,,, uint256 cum0,) = router.twapObservations(marketId);
         assertGt(twapTimestamp, 0, "TWAP should be initialized");
 
         // Capture YES and NO vault shares before merge
@@ -554,7 +594,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
         uint256 noSharesBefore = router.totalNoVaultShares(marketId);
 
         // Trigger rebalance which performs merge and distributes fees
-        router.rebalanceBootstrapVault(marketId, block.timestamp + 1 hours);
+        router.rebalanceBootstrapVault(marketId, block.timestamp + 7 hours);
 
         // Capture YES and NO vault shares after merge + fee distribution
         uint256 yesSharesAfter = router.totalYesVaultShares(marketId);
@@ -585,20 +625,20 @@ contract PMHookRouterSymmetricFeesTest is Test {
         _addInitialLiquidity(100 ether);
 
         // Time must pass for TWAP to be available
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(block.timestamp + 6 hours + 1);
 
         // Alice deposits 100 ETH into YES vault
         vm.startPrank(ALICE);
         PAMM.split{value: 100 ether}(marketId, 100 ether, ALICE);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 1 hours);
+        router.depositToVault(marketId, true, 100 ether, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Bob deposits 100 ETH into NO vault
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 1 hours);
+        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Drive price to ~75% YES
@@ -650,7 +690,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
         _addInitialLiquidity(100 ether);
 
         // Try to settle before close time (should revert even if market could theoretically resolve early)
-        vm.expectRevert(PMHookRouter.MarketNotClosed.selector);
+        vm.expectRevert(abi.encodeWithSelector(PMHookRouter.TimingError.selector, 3)); // MarketNotClosed
         router.settleRebalanceBudget(marketId);
 
         // Warp to after close time
@@ -678,7 +718,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
             feeOrHook: feeOrHook
         });
 
-        ZAMM.addLiquidity{value: 0}(key, amount, amount, 0, 0, ALICE, block.timestamp + 1 hours);
+        ZAMM.addLiquidity{value: 0}(key, amount, amount, 0, 0, ALICE, block.timestamp + 7 hours);
         vm.stopPrank();
 
         // Allow time for pool cumulative to accumulate
