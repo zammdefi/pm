@@ -250,7 +250,7 @@ contract PMHookRouterDynamicSpreadTest is Test {
 
     function test_DynamicSpread_OneHourBeforeClose() public {
         // Market closes in 1 hour
-        marketId = _createMarketWithClose(uint64(block.timestamp + 7 hours));
+        marketId = _createMarketWithClose(uint64(block.timestamp + 1 hours));
 
         // Balanced inventory
         uint256 yesShares = 500 ether;
@@ -352,11 +352,11 @@ contract PMHookRouterDynamicSpreadTest is Test {
     }
 
     function test_DynamicSpread_PastCloseWindow() public {
-        // Market closes soon (1 hour) but we'll simulate being past close by warping time
+        // Market closes soon (7 hours) but we'll simulate being past close by warping time
         marketId = _createMarketWithClose(uint64(block.timestamp + 7 hours));
 
-        // Warp forward 2 hours so we're past close
-        vm.warp(block.timestamp + 2 hours);
+        // Warp forward 8 hours so we're past close
+        vm.warp(block.timestamp + 8 hours);
 
         // Balanced inventory
         uint256 yesShares = 500 ether;

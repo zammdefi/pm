@@ -531,8 +531,8 @@ contract PMHookRouterInvariantTest is Test {
         vm.prank(BOB);
         router.buyWithBootstrap(marketId, true, 300 ether, 0, BOB, DEADLINE_FAR_FUTURE);
 
-        // Wait for withdrawal cooldown (30 minutes total from deposit)
-        vm.warp(block.timestamp + 24 minutes);
+        // Wait for withdrawal cooldown (6 hours total from deposit + buffer)
+        vm.warp(block.timestamp + 6 hours);
 
         // Full withdrawal
         vm.startPrank(ALICE);
@@ -594,8 +594,8 @@ contract PMHookRouterInvariantTest is Test {
             vaultNo, routerBalanceNo, "NO vault accounting should match PAMM balance after OTC"
         );
 
-        // Wait for withdrawal cooldown (30 minutes total from deposit)
-        vm.warp(block.timestamp + 25 minutes);
+        // Wait for withdrawal cooldown (6 hours total from deposit + buffer)
+        vm.warp(block.timestamp + 6 hours);
 
         // Partial withdrawal
         vm.startPrank(ALICE);
@@ -647,8 +647,8 @@ contract PMHookRouterInvariantTest is Test {
         vm.prank(CHARLIE);
         router.buyWithBootstrap(marketId, true, 800 ether, 0, CHARLIE, DEADLINE_FAR_FUTURE);
 
-        // Wait for withdrawal cooldown (30 minutes total from deposit)
-        vm.warp(block.timestamp + 24 minutes);
+        // Wait for withdrawal cooldown (6 hours total from deposit + buffer)
+        vm.warp(block.timestamp + 6 hours);
 
         // Scenario A: Alice does 3 partial withdrawals
         uint256 aliceTotalFees = 0;
@@ -671,7 +671,7 @@ contract PMHookRouterInvariantTest is Test {
         router.buyWithBootstrap(marketId, true, 500 ether, 0, CHARLIE, DEADLINE_FAR_FUTURE);
 
         // Wait for withdrawal cooldown before next withdrawal
-        vm.warp(block.timestamp + 30 minutes);
+        vm.warp(block.timestamp + 6 hours);
 
         // Withdraw another 1/3
         vm.startPrank(ALICE);
@@ -688,8 +688,8 @@ contract PMHookRouterInvariantTest is Test {
         vm.prank(CHARLIE);
         router.buyWithBootstrap(marketId, true, 300 ether, 0, CHARLIE, DEADLINE_FAR_FUTURE);
 
-        // Wait for withdrawal cooldown before final withdrawal
-        vm.warp(block.timestamp + 30 minutes);
+        // Wait for withdrawal cooldown before final withdrawal (6 hours)
+        vm.warp(block.timestamp + 6 hours);
 
         // Withdraw final portion
         vm.startPrank(ALICE);

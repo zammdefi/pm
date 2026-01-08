@@ -153,6 +153,7 @@ contract PMHookRouterVaultAccountingTest is Test {
         PAMM.setOperator(address(router), true);
 
         // Deposit shortly before market close to test cooldown enforcement
+        // Note: Deposits within 12h of close require 24h cooldown, not 6h
         vm.warp(DEADLINE_2028 - 1 hours);
         router.depositToVault(marketId, true, 50 ether, ALICE, DEADLINE_2028);
 
@@ -167,12 +168,12 @@ contract PMHookRouterVaultAccountingTest is Test {
             marketId, true, aliceYesVaultShares, ALICE, DEADLINE_2028 + 1 hours
         );
 
-        // Warp past cooldown (6h from deposit time)
-        vm.warp(DEADLINE_2028 - 1 hours + 6 hours + 1);
+        // Warp past cooldown (24h from deposit time because deposit was in final window)
+        vm.warp(DEADLINE_2028 - 1 hours + 24 hours + 1);
 
         // Now withdrawal should succeed
         (uint256 sharesReturned,) = router.withdrawFromVault(
-            marketId, true, aliceYesVaultShares, ALICE, DEADLINE_2028 + 7 hours
+            marketId, true, aliceYesVaultShares, ALICE, DEADLINE_2028 + 25 hours
         );
         assertGt(sharesReturned, 0, "Should withdraw after cooldown expires");
         vm.stopPrank();
@@ -287,7 +288,7 @@ contract PMHookRouterVaultAccountingTest is Test {
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 100 ether, BOB, block.timestamp + 7 hours);
+        router.depositToVault(marketId, true, 100 ether, BOB, block.timestamp + 8 hours);
         vm.stopPrank();
 
         // Wait for Bob's cooldown
@@ -354,14 +355,22 @@ contract PMHookRouterVaultAccountingTest is Test {
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 7 hours);
+        router.depositToVault(marketId, false, 100 ether, BOB, block.timestamp + 8 hours);
         vm.stopPrank();
 
-        // Generate more fees with both sides
+        // Generate balanced fees with trades in both directions
         vm.warp(block.timestamp + 6 hours + 1);
+
+        // Buy YES to generate fees for YES LPs
         vm.prank(CAROL);
-        router.buyWithBootstrap{value: 30 ether}(
-            marketId, true, 30 ether, 0, CAROL, block.timestamp + 1 hours
+        router.buyWithBootstrap{value: 15 ether}(
+            marketId, true, 15 ether, 0, CAROL, block.timestamp + 1 hours
+        );
+
+        // Buy NO to generate fees for NO LPs (Bob)
+        vm.prank(CAROL);
+        router.buyWithBootstrap{value: 15 ether}(
+            marketId, false, 15 ether, 0, CAROL, block.timestamp + 1 hours
         );
 
         // Both should have fees
@@ -375,7 +384,7 @@ contract PMHookRouterVaultAccountingTest is Test {
         vm.stopPrank();
 
         assertGt(aliceFees, 0, "Alice should have fees");
-        assertGt(bobFees, 0, "Bob should have fees from second round");
+        assertGt(bobFees, 0, "Bob should have fees from second round trades");
         assertGt(aliceFees, bobFees, "Alice should have more (two rounds vs one)");
     }
 
@@ -644,7 +653,7 @@ contract PMHookRouterVaultAccountingTest is Test {
         vm.startPrank(BOB);
         PAMM.split{value: 100 ether}(marketId, 100 ether, BOB);
         PAMM.setOperator(address(router), true);
-        router.depositToVault(marketId, true, 100 ether, BOB, block.timestamp + 7 hours);
+        router.depositToVault(marketId, true, 100 ether, BOB, block.timestamp + 8 hours);
         vm.stopPrank();
 
         // Generate fees round 2
