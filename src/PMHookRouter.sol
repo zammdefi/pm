@@ -122,6 +122,8 @@ contract PMHookRouter {
 
     // Transient storage slots (EIP-1153)
     uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21268;
+    uint256 constant ETH_SPENT_SLOT = 0x929eee149b4bd21269;
+    uint256 constant MULTICALL_DEPTH_SLOT = 0x929eee149b4bd2126a;
 
     IZAMM constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
     IPAMM constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
@@ -140,6 +142,10 @@ contract PMHookRouter {
     function _guardExit() internal {
         assembly ("memory-safe") {
             tstore(REENTRANCY_SLOT, 0)
+            // Clear ETH tracking when exiting non-multicall functions
+            if iszero(tload(MULTICALL_DEPTH_SLOT)) {
+                tstore(ETH_SPENT_SLOT, 0)
+            }
         }
     }
 
@@ -243,32 +249,57 @@ contract PMHookRouter {
 
     function _refundExcessETH(address collateral, uint256 amountUsed) internal {
         assembly ("memory-safe") {
-            // Only refund if collateral == ETH (address(0)) and msg.value > amountUsed
-            if and(iszero(collateral), gt(callvalue(), amountUsed)) {
-                if iszero(
-                    call(
-                        gas(),
-                        caller(),
-                        sub(callvalue(), amountUsed),
-                        codesize(),
-                        0x00,
-                        codesize(),
-                        0x00
-                    )
-                ) {
-                    mstore(0x00, 0x2929f974) // TransferError(2) = ETHTransferFailed
-                    mstore(0x20, 2)
-                    revert(0x1c, 0x24)
+            // Only process if collateral == ETH (address(0))
+            if iszero(collateral) {
+                // ETH_SPENT_SLOT already updated by _validateETHAmount
+                // Skip refund if we're inside a multicall (depth > 0)
+                // Multicall will handle the final refund
+                if iszero(tload(MULTICALL_DEPTH_SLOT)) {
+                    let totalSpent := tload(ETH_SPENT_SLOT)
+                    // Only refund if total spent < msg.value
+                    if gt(callvalue(), totalSpent) {
+                        if iszero(
+                            call(
+                                gas(),
+                                caller(),
+                                sub(callvalue(), totalSpent),
+                                codesize(),
+                                0x00,
+                                codesize(),
+                                0x00
+                            )
+                        ) {
+                            mstore(0x00, 0x2929f974) // TransferError(2) = ETHTransferFailed
+                            mstore(0x20, 2)
+                            revert(0x1c, 0x24)
+                        }
+                    }
                 }
             }
         }
     }
 
-    function _validateETHAmount(address collateral, uint256 requiredAmount) internal view {
-        if (collateral == ETH) {
-            if (msg.value < requiredAmount) _revert(ERR_VALIDATION, 6); // InvalidETHAmount
-        } else if (msg.value != 0) {
-            _revert(ERR_VALIDATION, 6); // InvalidETHAmount
+    function _validateETHAmount(address collateral, uint256 requiredAmount) internal {
+        assembly ("memory-safe") {
+            if iszero(collateral) {
+                // For ETH: check cumulative requirement across multicall
+                let cumulativeRequired := add(tload(ETH_SPENT_SLOT), requiredAmount)
+                if lt(callvalue(), cumulativeRequired) {
+                    mstore(0x00, 0x077a9c33) // ValidationError(6) = InvalidETHAmount
+                    mstore(0x20, 6)
+                    revert(0x1c, 0x24)
+                }
+                // Track cumulative ETH required (actual spend tracking)
+                tstore(ETH_SPENT_SLOT, cumulativeRequired)
+            }
+            // If non-ETH collateral but ETH sent, revert (unless in multicall)
+            if and(iszero(iszero(collateral)), iszero(iszero(callvalue()))) {
+                if iszero(tload(MULTICALL_DEPTH_SLOT)) {
+                    mstore(0x00, 0x077a9c33) // ValidationError(6) = InvalidETHAmount
+                    mstore(0x20, 6)
+                    revert(0x1c, 0x24)
+                }
+            }
         }
     }
 
@@ -656,9 +687,9 @@ contract PMHookRouter {
         view
         returns (uint64 close, address collateral)
     {
-        _requireNotResolved(marketId);
-        close = _getClose(marketId);
-        collateral = _getCollateral(marketId);
+        bool resolved;
+        (resolved,,, close, collateral) = _staticMarkets(marketId);
+        if (resolved) _revert(ERR_STATE, 0); // MarketResolved
         // Check if market exists (close == 0 indicates nonexistent market)
         if (close == 0) _revert(ERR_STATE, 2); // MarketNotRegistered
         if (block.timestamp >= close) _revert(ERR_TIMING, 2); // MarketClosed
@@ -741,6 +772,8 @@ contract PMHookRouter {
             address hook = address(uint160(feeOrHook));
             (bool ok, uint256 window) = _staticUint(hook, 0x7c3a8f32, marketId); // getCloseWindow
             closeWindow = (ok && window > 0) ? window : 3600;
+            // Clamp to prevent malicious hooks from permanently disabling vault features
+            if (closeWindow > 7 days) closeWindow = 7 days;
         } else {
             closeWindow = 3600; // 1 hour fallback for non-hooked markets
         }
@@ -763,7 +796,21 @@ contract PMHookRouter {
     // ============ Multicall ============
 
     /// @notice Execute multiple calls in a single transaction
-    function multicall(bytes[] calldata data) public returns (bytes[] memory results) {
+    function multicall(bytes[] calldata data) public payable returns (bytes[] memory results) {
+        // Increment depth counter to prevent premature ETH refunds
+        assembly ("memory-safe") {
+            // Prevent reentrant entry into multicall while a guarded function is executing
+            if tload(REENTRANCY_SLOT) {
+                mstore(0x00, 0xab143c06) // Reentrancy()
+                revert(0x1c, 0x04)
+            }
+
+            let depth := tload(MULTICALL_DEPTH_SLOT)
+            tstore(MULTICALL_DEPTH_SLOT, add(depth, 1))
+            // If entering outermost multicall, reset ETH tracking
+            if iszero(depth) { tstore(ETH_SPENT_SLOT, 0) }
+        }
+
         results = new bytes[](data.length);
         for (uint256 i; i != data.length; ++i) {
             (bool ok, bytes memory result) = address(this).delegatecall(data[i]);
@@ -771,6 +818,39 @@ contract PMHookRouter {
                 if iszero(ok) { revert(add(result, 0x20), mload(result)) }
             }
             results[i] = result;
+        }
+
+        // Decrement depth and handle final ETH refund if exiting outermost multicall
+        assembly ("memory-safe") {
+            let depth := sub(tload(MULTICALL_DEPTH_SLOT), 1)
+            tstore(MULTICALL_DEPTH_SLOT, depth)
+
+            // Only the outermost multicall does final refund + clears ETH tracking
+            if iszero(depth) {
+                let totalSpent := tload(ETH_SPENT_SLOT)
+                tstore(ETH_SPENT_SLOT, 0)
+
+                // Only refund if we received ETH and didn't spend it all
+                if callvalue() {
+                    if gt(callvalue(), totalSpent) {
+                        if iszero(
+                            call(
+                                gas(),
+                                caller(),
+                                sub(callvalue(), totalSpent),
+                                codesize(),
+                                0x00,
+                                codesize(),
+                                0x00
+                            )
+                        ) {
+                            mstore(0x00, 0x2929f974) // TransferError(2) = ETHTransferFailed
+                            mstore(0x20, 2)
+                            revert(0x1c, 0x24)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2160,7 +2240,8 @@ contract PMHookRouter {
                     )
 
                 // Compute timeElapsed (wrap-safe uint32 arithmetic)
-                let timeElapsed := sub(and(timestamp(), 0xffffffff), blockTimestampLast)
+                let timeElapsed :=
+                    and(sub(and(timestamp(), 0xffffffff), blockTimestampLast), 0xffffffff)
 
                 switch iszero(timeElapsed)
                 case 1 {
@@ -2633,6 +2714,10 @@ contract PMHookRouter {
             let rawShares := div(mul(collateralIn, 10000), effectivePriceBps)
 
             let maxSharesFromVault := div(mul(availableShares, 3000), 10000) // 30% max vault depletion
+            // Ensure at least 1 share when vault has inventory and raw fill is nonzero
+            if and(gt(availableShares, 0), and(gt(rawShares, 0), iszero(maxSharesFromVault))) {
+                maxSharesFromVault := 1
+            }
 
             sharesOut := rawShares
             if gt(sharesOut, maxSharesFromVault) { sharesOut := maxSharesFromVault }
