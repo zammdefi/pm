@@ -181,7 +181,7 @@ contract PMHookRouter {
     {
         assembly ("memory-safe") {
             let m := mload(0x40)
-            mstore(m, sel)
+            mstore(m, shl(224, sel))
             mstore(add(m, 0x04), arg)
             ok := staticcall(gas(), target, m, 0x24, m, 0x20)
             if and(ok, eq(returndatasize(), 0x20)) { out := mload(m) }
@@ -247,22 +247,22 @@ contract PMHookRouter {
         }
     }
 
-    function _refundExcessETH(address collateral, uint256 amountUsed) internal {
+    function _refundExcessETH(address collateral, uint256 amountValidated) internal {
         assembly ("memory-safe") {
             // Only process if collateral == ETH (address(0))
             if iszero(collateral) {
-                // ETH_SPENT_SLOT already updated by _validateETHAmount
                 // Skip refund if we're inside a multicall (depth > 0)
                 // Multicall will handle the final refund
                 if iszero(tload(MULTICALL_DEPTH_SLOT)) {
-                    let totalSpent := tload(ETH_SPENT_SLOT)
-                    // Only refund if total spent < msg.value
-                    if gt(callvalue(), totalSpent) {
+                    // Only refund if validated amount < msg.value
+                    if gt(callvalue(), amountValidated) {
+                        // Note: Reentrancy guard already active from _guardEnter
+                        // No need to modify REENTRANCY_SLOT here
                         if iszero(
                             call(
                                 gas(),
                                 caller(),
-                                sub(callvalue(), totalSpent),
+                                sub(callvalue(), amountValidated),
                                 codesize(),
                                 0x00,
                                 codesize(),
@@ -283,7 +283,14 @@ contract PMHookRouter {
         assembly ("memory-safe") {
             if iszero(collateral) {
                 // For ETH: check cumulative requirement across multicall
-                let cumulativeRequired := add(tload(ETH_SPENT_SLOT), requiredAmount)
+                let prev := tload(ETH_SPENT_SLOT)
+                let cumulativeRequired := add(prev, requiredAmount)
+                // Check for overflow (only when adding non-zero amount)
+                if and(gt(requiredAmount, 0), lt(cumulativeRequired, prev)) {
+                    mstore(0x00, 0x077a9c33) // ValidationError(0) = Overflow
+                    mstore(0x20, 0)
+                    revert(0x1c, 0x24)
+                }
                 if lt(callvalue(), cumulativeRequired) {
                     mstore(0x00, 0x077a9c33) // ValidationError(6) = InvalidETHAmount
                     mstore(0x20, 6)
@@ -669,7 +676,6 @@ contract PMHookRouter {
 
     constructor() payable {
         PAMM.setOperator(address(ZAMM), true);
-        PAMM.setOperator(address(PAMM), true);
     }
 
     receive() external payable {}
@@ -833,6 +839,8 @@ contract PMHookRouter {
                 // Only refund if we received ETH and didn't spend it all
                 if callvalue() {
                     if gt(callvalue(), totalSpent) {
+                        // Set reentrancy lock before external call
+                        tstore(REENTRANCY_SLOT, 1)
                         if iszero(
                             call(
                                 gas(),
@@ -844,10 +852,14 @@ contract PMHookRouter {
                                 0x00
                             )
                         ) {
+                            // Clear lock before revert
+                            tstore(REENTRANCY_SLOT, 0)
                             mstore(0x00, 0x2929f974) // TransferError(2) = ETHTransferFailed
                             mstore(0x20, 2)
                             revert(0x1c, 0x24)
                         }
+                        // Clear reentrancy lock after successful call
+                        tstore(REENTRANCY_SLOT, 0)
                     }
                 }
             }
@@ -1430,8 +1442,9 @@ contract PMHookRouter {
         returns (uint256 totalShares)
     {
         uint256 poolId = canonicalPoolId[marketId];
+        if (poolId == 0) return 0;
         (uint112 r0, uint112 r1) = _getReserves(poolId);
-        if (poolId == 0 || r0 == 0 || r1 == 0) return 0;
+        if (r0 == 0 || r1 == 0) return 0;
 
         uint256 feeBps = _getPoolFeeBps(canonicalFeeOrHook[marketId], poolId);
         uint256 noId = _getNoId(marketId);
@@ -1853,7 +1866,7 @@ contract PMHookRouter {
         uint256 spotYesBps;
         unchecked {
             spotYesBps =
-                (validation.noReserve * 10_000) / (validation.yesReserve + validation.noReserve);
+                (validation.yesReserve * 10_000) / (validation.yesReserve + validation.noReserve);
         }
 
         assembly ("memory-safe") {
@@ -1916,7 +1929,7 @@ contract PMHookRouter {
         bool isHook = (feeOrHook & (FLAG_BEFORE | FLAG_AFTER)) != 0;
         if (isHook) {
             address hook = address(uint160(feeOrHook));
-            (bool ok, uint256 fee) = _staticUint(hook, 0x9f3ce55a, canonical); // getCurrentFeeBps
+            (bool ok, uint256 fee) = _staticUint(hook, 0xb9056dbd, canonical); // getCurrentFeeBps
             feeBps = (ok && fee < 10000) ? fee : DEFAULT_FEE_BPS;
         } else {
             feeBps = feeOrHook;
@@ -2383,14 +2396,14 @@ contract PMHookRouter {
     }
 
     /// @notice Convert UQ112x112 NO/YES ratio to YES probability in basis points
-    /// @dev Formula: pYES_bps = (10000 * r) / (1 + r) = 10000 * NO / (YES + NO), where r = NO/YES
+    /// @dev Formula: pYES_bps = 10000 / (1 + r) = 10000 * YES / (YES + NO), where r = NO/YES
     /// @param twapUQ112x112 NO/YES ratio in UQ112x112 fixed-point format
     /// @return twapBps Probability of YES outcome in basis points [1-9999]
     function _convertUQ112x112ToBps(uint256 twapUQ112x112) internal pure returns (uint256 twapBps) {
-        // Compute pYES = (10000 * r) / (2^112 + r), where r = NO/YES in UQ112x112
+        // Compute pYES = (10000 * 2^112) / (2^112 + r), where r = NO/YES in UQ112x112
         assembly ("memory-safe") {
             let denom := add(shl(112, 1), twapUQ112x112)
-            twapBps := div(mul(10000, twapUQ112x112), denom)
+            twapBps := div(mul(10000, shl(112, 1)), denom)
             if iszero(twapBps) { twapBps := 1 }
             if iszero(lt(twapBps, 10000)) { twapBps := 9999 }
         }
@@ -2681,7 +2694,7 @@ contract PMHookRouter {
                 let noRes := xor(r1, mul(xor(r1, r0), iszero(yesIsId0)))
 
                 let total := add(yesRes, noRes)
-                let spotYesBps := div(mul(noRes, 10000), total)
+                let spotYesBps := div(mul(yesRes, 10000), total)
 
                 if iszero(spotYesBps) { spotYesBps := 1 }
 
