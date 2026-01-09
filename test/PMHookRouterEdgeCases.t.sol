@@ -583,7 +583,9 @@ contract PMFeeHookV1Configurable {
         view
         returns (uint256)
     {
-        return currentFee; // Return the configured fee
+        // Cap fee at 9999 bps (match real PMFeeHookV1 behavior)
+        // Fees >= 10000 are invalid and would cause swaps to fail
+        return currentFee >= 10000 ? 9999 : currentFee;
     }
 
     // afterAction has dynamic parameters depending on the action, so we use fallback

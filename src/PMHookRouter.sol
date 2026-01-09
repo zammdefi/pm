@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.31;
 
 interface IZAMM {
     struct PoolKey {
@@ -142,10 +142,7 @@ contract PMHookRouter {
     function _guardExit() internal {
         assembly ("memory-safe") {
             tstore(REENTRANCY_SLOT, 0)
-            // Clear ETH tracking when exiting non-multicall functions
-            if iszero(tload(MULTICALL_DEPTH_SLOT)) {
-                tstore(ETH_SPENT_SLOT, 0)
-            }
+            // Note: ETH_SPENT_SLOT is only used in multicall context and cleared there
         }
     }
 
@@ -227,9 +224,9 @@ contract PMHookRouter {
             mstore(m, SELECTOR_MARKETS_SHIFTED)
             mstore(add(m, 0x04), marketId)
             // 7 return words = 0xe0 bytes
-            if iszero(
+            let ok :=
                 staticcall(gas(), 0x000000000044bfe6c2BBFeD8862973E0612f07C0, m, 0x24, m, 0xe0)
-            ) {
+            if iszero(and(ok, eq(returndatasize(), 0xe0))) {
                 revert(0, 0)
             }
             // resolver @ 0x00 (unused)
@@ -254,7 +251,8 @@ contract PMHookRouter {
                 // Skip refund if we're inside a multicall (depth > 0)
                 // Multicall will handle the final refund
                 if iszero(tload(MULTICALL_DEPTH_SLOT)) {
-                    // Only refund if validated amount < msg.value
+                    // Standalone refund: use amountValidated (the single required amount for this call)
+                    // ETH_SPENT_SLOT is only tracked in multicall; multicall handles refund separately
                     if gt(callvalue(), amountValidated) {
                         // Note: Reentrancy guard already active from _guardEnter
                         // No need to modify REENTRANCY_SLOT here
@@ -282,22 +280,37 @@ contract PMHookRouter {
     function _validateETHAmount(address collateral, uint256 requiredAmount) internal {
         assembly ("memory-safe") {
             if iszero(collateral) {
-                // For ETH: check cumulative requirement across multicall
-                let prev := tload(ETH_SPENT_SLOT)
-                let cumulativeRequired := add(prev, requiredAmount)
-                // Check for overflow (only when adding non-zero amount)
-                if and(gt(requiredAmount, 0), lt(cumulativeRequired, prev)) {
-                    mstore(0x00, 0x077a9c33) // ValidationError(0) = Overflow
-                    mstore(0x20, 0)
-                    revert(0x1c, 0x24)
+                let inMulticall := tload(MULTICALL_DEPTH_SLOT)
+
+                // Branch: inside multicall vs standalone call
+                switch iszero(inMulticall)
+                case 1 {
+                    // Standalone call: simple validation against msg.value
+                    if lt(callvalue(), requiredAmount) {
+                        mstore(0x00, 0x077a9c33) // ValidationError(6) = InvalidETHAmount
+                        mstore(0x20, 6)
+                        revert(0x1c, 0x24)
+                    }
+                    // No ETH_SPENT_SLOT tracking in standalone mode
                 }
-                if lt(callvalue(), cumulativeRequired) {
-                    mstore(0x00, 0x077a9c33) // ValidationError(6) = InvalidETHAmount
-                    mstore(0x20, 6)
-                    revert(0x1c, 0x24)
+                default {
+                    // Multicall: track cumulative ETH requirement
+                    let prev := tload(ETH_SPENT_SLOT)
+                    let cumulativeRequired := add(prev, requiredAmount)
+                    // Check for overflow (only when adding non-zero amount)
+                    if and(gt(requiredAmount, 0), lt(cumulativeRequired, prev)) {
+                        mstore(0x00, 0x077a9c33) // ValidationError(0) = Overflow
+                        mstore(0x20, 0)
+                        revert(0x1c, 0x24)
+                    }
+                    if lt(callvalue(), cumulativeRequired) {
+                        mstore(0x00, 0x077a9c33) // ValidationError(6) = InvalidETHAmount
+                        mstore(0x20, 6)
+                        revert(0x1c, 0x24)
+                    }
+                    // Track cumulative ETH required (only in multicall)
+                    tstore(ETH_SPENT_SLOT, cumulativeRequired)
                 }
-                // Track cumulative ETH required (actual spend tracking)
-                tstore(ETH_SPENT_SLOT, cumulativeRequired)
             }
             // If non-ETH collateral but ETH sent, revert (unless in multicall)
             if and(iszero(iszero(collateral)), iszero(iszero(callvalue()))) {
@@ -840,7 +853,7 @@ contract PMHookRouter {
                 if callvalue() {
                     if gt(callvalue(), totalSpent) {
                         // Set reentrancy lock before external call
-                        tstore(REENTRANCY_SLOT, 1)
+                        tstore(REENTRANCY_SLOT, address())
                         if iszero(
                             call(
                                 gas(),
