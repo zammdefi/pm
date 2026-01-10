@@ -97,8 +97,8 @@ interface IPMFeeHook {
 
 /// @title PMHookRouter
 /// @notice Prediction market router with vault market-making
-/// @dev Execution: vault OTC => mint => AMM
-///      LPs earn principal (seller-side) + 90% of scarcity-weighted spread (40-60% tilt).
+/// @dev Execution: best of (vault OTC vs AMM) first, then remainder to other venue, then mint fallback
+///      LPs earn principal (seller-side) + spread fees (90% when balanced, 70% when imbalanced).
 ///      Only markets created via bootstrapMarket() are supported.
 /// @dev REQUIRES EIP-1153 (transient storage) - only deploy on chains with Cancun support
 contract PMHookRouter {
@@ -164,7 +164,7 @@ contract PMHookRouter {
     /// @dev Generic revert helper - consolidated for bytecode savings
     function _revert(bytes4 selector, uint8 code) internal pure {
         assembly ("memory-safe") {
-            mstore(0x00, selector)
+            mstore(0x00, shr(224, selector))
             mstore(0x20, code)
             revert(0x1c, 0x24)
         }
@@ -178,7 +178,7 @@ contract PMHookRouter {
     {
         assembly ("memory-safe") {
             let m := mload(0x40)
-            mstore(m, shl(224, sel))
+            mstore(m, sel)
             mstore(add(m, 0x04), arg)
             ok := staticcall(gas(), target, m, 0x24, m, 0x20)
             if and(ok, eq(returndatasize(), 0x20)) { out := mload(m) }
@@ -227,7 +227,9 @@ contract PMHookRouter {
             let ok :=
                 staticcall(gas(), 0x000000000044bfe6c2BBFeD8862973E0612f07C0, m, 0x24, m, 0xe0)
             if iszero(and(ok, eq(returndatasize(), 0xe0))) {
-                revert(0, 0)
+                mstore(0x00, 0xd06e7808) // StateError(2) = MarketNotRegistered
+                mstore(0x20, 2)
+                revert(0x1c, 0x24)
             }
             // resolver @ 0x00 (unused)
             // resolved @ 0x20
@@ -332,6 +334,32 @@ contract PMHookRouter {
         }
     }
 
+    /// @dev Refund unused collateral to caller, adjusting multicall ETH tracking
+    /// @dev Use this when returning collateral that was previously validated via _validateETHAmount
+    function _refundCollateralToCaller(address collateral, uint256 amount) internal {
+        if (collateral == ETH) {
+            assembly ("memory-safe") {
+                // If in multicall, decrement ETH spent tracking so subsequent calls can use refunded ETH
+                if tload(MULTICALL_DEPTH_SLOT) {
+                    let spent := tload(ETH_SPENT_SLOT)
+                    if spent {
+                        let decrement := amount
+                        if gt(decrement, spent) { decrement := spent }
+                        tstore(ETH_SPENT_SLOT, sub(spent, decrement))
+                    }
+                }
+                // Transfer ETH to caller
+                if iszero(call(gas(), caller(), amount, codesize(), 0x00, codesize(), 0x00)) {
+                    mstore(0x00, 0x2929f974) // TransferError(2) = ETHTransferFailed
+                    mstore(0x20, 2)
+                    revert(0x1c, 0x24)
+                }
+            }
+        } else {
+            safeTransfer(collateral, msg.sender, amount);
+        }
+    }
+
     /// @dev Helper to split shares via PAMM (handles ETH vs ERC20)
     function _splitShares(uint256 marketId, uint256 amount, address collateral) internal {
         if (collateral == ETH) {
@@ -371,7 +399,7 @@ contract PMHookRouter {
     /// @param feeAmount Total fees to distribute
     /// @param preYes Pre-merge YES inventory
     /// @param preNo Pre-merge NO inventory
-    /// @param twap TWAP price in bps
+    /// @param twap P(YES) = NO/(YES+NO) from TWAP [1-9999]
     function _distributeFeesSplit(
         uint256 marketId,
         uint256 feeAmount,
@@ -381,10 +409,10 @@ contract PMHookRouter {
     ) internal {
         // Dynamic budget split based on inventory imbalance
         uint64 close = _getClose(marketId);
-        // Pass buyYes based on which side is scarce to ensure symmetric imbalance detection
-        bool buyYes = preYes < preNo;
+        // Use yesScarce as fake "buyYes" to compute symmetric imbalance for non-directional fees
+        bool yesScarce = preYes < preNo;
         (uint256 toLPs, uint256 toRebalance) =
-            _calculateFeeSplit(preYes, preNo, buyYes, close, feeAmount);
+            _calculateFeeSplit(preYes, preNo, yesScarce, close, feeAmount);
         if (!_addVaultFeesSymmetricWithSnapshot(marketId, toLPs, preYes, preNo, twap)) {
             unchecked {
                 rebalanceCollateralBudget[marketId] += toLPs + toRebalance;
@@ -401,7 +429,7 @@ contract PMHookRouter {
     /// @param buyYes True for YES, false for NO
     /// @param sharesOut Shares sold by vault
     /// @param collateralUsed Total collateral paid
-    /// @param pYes TWAP probability [1..9999]
+    /// @param pYes P(YES) = NO/(YES+NO) from TWAP [1-9999]
     /// @param preYesInv YES inventory before trade
     /// @param preNoInv NO inventory before trade
     /// @return principal Fair value at TWAP
@@ -424,7 +452,7 @@ contract PMHookRouter {
             principal := div(add(mul(sharesOut, fairBps), 9999), 10000)
         }
 
-        if (collateralUsed < principal) _revert(ERR_VALIDATION, 0); // Overflow
+        if (collateralUsed < principal) _revert(ERR_VALIDATION, 0); // Underpayment (guards unchecked sub)
         unchecked {
             spreadFee = collateralUsed - principal;
         }
@@ -510,35 +538,30 @@ contract PMHookRouter {
             }
         }
 
-        // Weighted cooldown: prevents both griefing and bypass
-        // Small deposits barely move timestamp; large deposits move it significantly
-        if (existingVaultShares == 0) {
-            // First deposit - set timestamp directly
-            position.lastDepositTime = uint32(block.timestamp);
-        } else {
-            // Check if depositing in final window (last 12h before close)
-            uint64 close = _getClose(marketId);
-            bool inFinalWindow = block.timestamp > close || (close - block.timestamp) < 43200;
-
-            if (inFinalWindow) {
-                // Late deposit: force timestamp to now (ensures 24h cooldown)
-                // NOTE: This prevents the weighted cooldown bypass but reintroduces
-                // cheap griefing in the final 12h window. An attacker can deposit 1 share
-                // to any receiver and lock them for 24h. This is acceptable because:
-                // (1) Bypass prevention is more critical than griefing protection
-                // (2) Users depositing near market close should expect lock until settlement
-                // (3) Limited attack window and impact vs. added complexity of mitigations
+        // Cooldown logic:
+        // - Self-deposits: always update (prevents bypass)
+        // - First deposit to any address: always set cooldown (prevents fresh-address sniping)
+        // - Third-party deposit to existing position: NO update (prevents griefing existing LPs)
+        // Note: Third parties CAN set cooldown on fresh addresses, but victim has no prior funds at risk
+        if (receiver == msg.sender || existingVaultShares == 0) {
+            if (existingVaultShares == 0) {
                 position.lastDepositTime = uint32(block.timestamp);
             } else {
-                // Weighted average based on relative size of new deposit
-                uint256 oldTime = position.lastDepositTime;
-                uint256 newTotal = existingVaultShares + vaultSharesMinted;
+                uint64 close = _getClose(marketId);
+                bool inFinalWindow = block.timestamp > close || (close - block.timestamp) < 43200;
 
-                unchecked {
-                    uint256 weightedTime =
-                        (existingVaultShares * oldTime + vaultSharesMinted * block.timestamp)
-                            / newTotal;
-                    position.lastDepositTime = uint32(weightedTime);
+                if (inFinalWindow) {
+                    position.lastDepositTime = uint32(block.timestamp);
+                } else {
+                    uint256 oldTime = position.lastDepositTime;
+                    uint256 newTotal = existingVaultShares + vaultSharesMinted;
+
+                    unchecked {
+                        uint256 weightedTime =
+                            (existingVaultShares * oldTime + vaultSharesMinted * block.timestamp)
+                                / newTotal;
+                        position.lastDepositTime = uint32(weightedTime);
+                    }
                 }
             }
         }
@@ -566,9 +589,8 @@ contract PMHookRouter {
     struct TWAPObservations {
         uint32 timestamp0; // Older checkpoint (4 bytes) \
         uint32 timestamp1; // Newer checkpoint (4 bytes)  |
-        uint32 cachedTwapBps; // Cached TWAP value [0-10000] (4 bytes) |-- packed in slot 0
-        uint32 cacheBlockNum; // Block number of cache (4 bytes)        |
-        uint128 reservesAtObs1; // Pool reserves at timestamp1 (16 bytes)/
+        uint32 cachedTwapBps; // Cached TWAP value [1-9999] or 0 if unavailable (4 bytes) |-- packed in slot 0
+        uint32 cacheBlockNum; // Block number of cache (4 bytes)       /
         uint256 cumulative0; // ZAMM's cumulative at timestamp0 (slot 1: 32 bytes)
         uint256 cumulative1; // ZAMM's cumulative at timestamp1 (slot 2: 32 bytes)
     }
@@ -579,7 +601,7 @@ contract PMHookRouter {
 
     // ============ Vault LP Accounting ============
     // ERC4626-style accounting with reward debt pattern
-    // OTC principal -> seller-side LPs; spread -> 90% LPs, 10% budget
+    // OTC principal -> seller-side LPs; spread -> LPs (90% balanced, 70% imbalanced) + budget
 
     struct UserVaultPosition {
         uint112 yesVaultShares; // 14 bytes  \
@@ -637,7 +659,7 @@ contract PMHookRouter {
     event MarketFinalized(
         uint256 indexed marketId,
         uint256 totalToDAO,
-        uint256 sharesMerged,
+        uint256 sharesRedeemed,
         uint256 budgetDistributed
     );
 
@@ -651,6 +673,7 @@ contract PMHookRouter {
     uint256 constant DEFAULT_FEE_BPS = 30; // 0.3% fallback AMM fee
     uint256 constant LP_FEE_SPLIT_BPS_BALANCED = 9000; // 90% to LPs when balanced
     uint256 constant LP_FEE_SPLIT_BPS_IMBALANCED = 7000; // 70% to LPs when imbalanced
+    uint256 constant BOOTSTRAP_WINDOW = 2 days; // Mint path disabled within this window of close
 
     uint256 constant MAX_COLLATERAL_IN = type(uint256).max / 10_000;
     uint256 constant MAX_ACC_PER_SHARE = type(uint256).max / type(uint112).max;
@@ -720,8 +743,8 @@ contract PMHookRouter {
     }
 
     /// @dev Check withdrawal cooldown (shared by withdraw and harvest)
+    /// @dev Normal deposits: 6h cooldown. Late deposits (within 12h of close): 24h cooldown
     /// @dev Enforced even after market close to prevent end-of-market fee sniping
-    /// @dev Late deposits (within 12h of close) require 24h cooldown
     function _checkWithdrawalCooldown(uint256 marketId) internal view {
         uint256 depositTime = vaultPositions[marketId][msg.sender].lastDepositTime;
         if (depositTime != 0) {
@@ -789,7 +812,7 @@ contract PMHookRouter {
         bool isHook = (feeOrHook & (FLAG_BEFORE | FLAG_AFTER)) != 0;
         if (isHook) {
             address hook = address(uint160(feeOrHook));
-            (bool ok, uint256 window) = _staticUint(hook, 0x7c3a8f32, marketId); // getCloseWindow
+            (bool ok, uint256 window) = _staticUint(hook, 0x5f598ac3, marketId); // getCloseWindow
             closeWindow = (ok && window > 0) ? window : 3600;
             // Clamp to prevent malicious hooks from permanently disabling vault features
             if (closeWindow > 7 days) closeWindow = 7 days;
@@ -898,6 +921,7 @@ contract PMHookRouter {
         bytes32 r,
         bytes32 s
     ) public {
+        _guardEnter();
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0xd505accf00000000000000000000000000000000000000000000000000000000)
@@ -926,6 +950,7 @@ contract PMHookRouter {
 
             mstore(0x40, add(m, 0x100)) // Update free memory pointer (32-byte aligned)
         }
+        _guardExit();
     }
 
     /// @notice DAI-style permit (use in multicall before operations)
@@ -947,6 +972,7 @@ contract PMHookRouter {
         bytes32 r,
         bytes32 s
     ) public {
+        _guardEnter();
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x8fcbaf0c00000000000000000000000000000000000000000000000000000000)
@@ -976,6 +1002,7 @@ contract PMHookRouter {
 
             mstore(0x40, add(m, 0x120)) // Update free memory pointer (32-byte aligned)
         }
+        _guardExit();
     }
 
     // ============ Hook Integration ============
@@ -1039,7 +1066,7 @@ contract PMHookRouter {
         if (block.timestamp >= close) _revert(ERR_VALIDATION, 7); // InvalidCloseTime
         _requireNonZero(collateralForLP);
 
-        if (to == address(0)) to = msg.sender;
+        assembly { if iszero(to) { to := caller() } }
 
         uint256 totalCollateral = collateralForLP + collateralForBuy;
 
@@ -1079,7 +1106,6 @@ contract PMHookRouter {
                 timestamp1: uint32(block.timestamp),
                 cachedTwapBps: 0,
                 cacheBlockNum: 0,
-                reservesAtObs1: 0,
                 cumulative0: initialCumulative,
                 cumulative1: initialCumulative
             });
@@ -1128,7 +1154,7 @@ contract PMHookRouter {
         PAMM.transfer(to, desiredTokenId, sharesOut);
     }
 
-    /// @notice Buy shares via vault OTC => mint => AMM waterfall
+    /// @notice Buy shares via best-execution routing: (vault OTC vs AMM) => remainder => mint fallback
     /// @param marketId Market ID
     /// @param buyYes True for YES, false for NO
     /// @param collateralIn Collateral to spend
@@ -1148,13 +1174,15 @@ contract PMHookRouter {
     ) public payable returns (uint256 sharesOut, bytes4 source, uint256 vaultSharesMinted) {
         _guardEnter();
         (, address collateral) = _requireMarketOpen(marketId);
-        if (block.timestamp > deadline) _revert(ERR_TIMING, 0); // Expired
+        _checkDeadline(deadline);
         _requireNonZero(collateralIn);
         if (collateralIn > MAX_COLLATERAL_IN) _revert(ERR_VALIDATION, 0); // Overflow
-        if (to == address(0)) to = msg.sender;
+        assembly { if iszero(to) { to := caller() } }
 
-        _requireRegistered(marketId);
         uint256 feeOrHook = canonicalFeeOrHook[marketId];
+        uint256 poolId = canonicalPoolId[marketId];
+        if (poolId == 0) _revert(ERR_STATE, 2); // MarketNotRegistered
+        if (_getPoolFeeBps(feeOrHook, poolId) >= 10000) _revert(ERR_TIMING, 2); // MarketClosed (halt mode)
         uint256 noId = _getNoId(marketId);
         // Take collateral from user (cached from _requireMarketOpen)
         _validateETHAmount(collateral, collateralIn);
@@ -1305,7 +1333,7 @@ contract PMHookRouter {
         if (venueCount > 1) source = SOURCE_MULT;
 
         if (remainingCollateral != 0) {
-            _transferCollateral(collateral, msg.sender, remainingCollateral);
+            _refundCollateralToCaller(collateral, remainingCollateral);
         }
 
         _refundExcessETH(collateral, collateralIn);
@@ -1373,7 +1401,7 @@ contract PMHookRouter {
         }
 
         // VENUE 1: Vault OTC (if best execution)
-        if (tryVaultFirst && vaultFillable && vaultQuoteShares != 0) {
+        if (tryVaultFirst) {
             totalSharesOut += vaultQuoteShares;
             remainingCollateral -= vaultQuoteCollateral;
             usesVault = true;
@@ -1402,7 +1430,18 @@ contract PMHookRouter {
             }
         }
 
-        // VENUE 4: Mint (only if remaining collateral and can satisfy min)
+        // VENUE 4: AMM (remaining after vault, if vault went first)
+        if (remainingCollateral != 0 && tryVaultFirst) {
+            uint256 ammShares = _quoteAMMBuy(marketId, buyYes, remainingCollateral);
+            if (ammShares != 0) {
+                totalSharesOut += ammShares;
+                remainingCollateral = 0;
+                if (source == bytes4(0)) source = SOURCE_AMM;
+                ++venueCount;
+            }
+        }
+
+        // VENUE 5: Mint (fallback if no AMM liquidity or specific conditions met)
         bool mintCanSatisfyMin = (minSharesOut <= totalSharesOut + remainingCollateral);
         if (
             remainingCollateral != 0 && mintCanSatisfyMin
@@ -1413,8 +1452,8 @@ contract PMHookRouter {
                 buyYes ? totalNoVaultShares[marketId] : totalYesVaultShares[marketId];
             uint256 totalAssets = buyYes ? vault.noShares : vault.yesShares;
 
-            // Zombie state: skip mint
-            bool canMint = !(totalVaultShares != 0 && totalAssets == 0);
+            // Zombie state (shares exist but assets are zero): skip mint
+            bool canMint = totalVaultShares == 0 || totalAssets != 0;
 
             if (canMint) {
                 uint256 estimatedVaultShares = (totalVaultShares == 0 || totalAssets == 0)
@@ -1430,17 +1469,6 @@ contract PMHookRouter {
                     remainingCollateral = 0;
                     ++venueCount;
                 }
-            }
-        }
-
-        // VENUE 5: AMM (remaining after vault, if vault went first)
-        if (remainingCollateral != 0 && tryVaultFirst) {
-            uint256 ammShares = _quoteAMMBuy(marketId, buyYes, remainingCollateral);
-            if (ammShares != 0) {
-                totalSharesOut += ammShares;
-                remainingCollateral = 0;
-                if (source == bytes4(0)) source = SOURCE_AMM;
-                ++venueCount;
             }
         }
 
@@ -1460,6 +1488,7 @@ contract PMHookRouter {
         if (r0 == 0 || r1 == 0) return 0;
 
         uint256 feeBps = _getPoolFeeBps(canonicalFeeOrHook[marketId], poolId);
+        if (feeBps >= 10000) return 0; // Market halted
         uint256 noId = _getNoId(marketId);
 
         assembly ("memory-safe") {
@@ -1489,7 +1518,7 @@ contract PMHookRouter {
         _requireRegistered(marketId);
         if (shares == 0) _revert(ERR_SHARES, 0); // ZeroShares
         if (shares > MAX_UINT112) _revert(ERR_SHARES, 3); // SharesOverflow
-        if (receiver == address(0)) receiver = msg.sender;
+        assembly { if iszero(receiver) { receiver := caller() } }
 
         PAMM.transferFrom(msg.sender, address(this), isYes ? marketId : _getNoId(marketId), shares);
 
@@ -1515,7 +1544,7 @@ contract PMHookRouter {
         _checkWithdrawalCooldown(marketId);
 
         if (vaultSharesToRedeem == 0) _revert(ERR_SHARES, 1); // ZeroVaultShares
-        if (receiver == address(0)) receiver = msg.sender;
+        assembly { if iszero(receiver) { receiver := caller() } }
 
         UserVaultPosition storage position = vaultPositions[marketId][msg.sender];
         uint256 userVaultShares = isYes ? position.yesVaultShares : position.noVaultShares;
@@ -1617,8 +1646,8 @@ contract PMHookRouter {
     /// @param vaultYesShares YES shares to deposit to vault
     /// @param vaultNoShares NO shares to deposit to vault
     /// @param ammLPShares YES+NO shares to add to AMM
-    /// @param minAmount0 Minimum YES to AMM
-    /// @param minAmount1 Minimum NO to AMM
+    /// @param minAmount0 Minimum amount0 (lower token ID) to AMM
+    /// @param minAmount1 Minimum amount1 (higher token ID) to AMM
     /// @param receiver Recipient
     /// @param deadline Deadline
     function provideLiquidity(
@@ -1641,7 +1670,7 @@ contract PMHookRouter {
         _checkDeadline(deadline);
         _requireRegistered(marketId);
         _requireNonZero(collateralAmount);
-        if (receiver == address(0)) receiver = msg.sender;
+        assembly { if iszero(receiver) { receiver := caller() } }
 
         // Load canonical feeOrHook for this market
         uint256 feeOrHook = canonicalFeeOrHook[marketId];
@@ -1721,11 +1750,8 @@ contract PMHookRouter {
         _guardEnter();
         _requireRegistered(marketId);
         // Check market close time or early resolution
-        (bool resolved,,,,) = _staticMarkets(marketId);
-        if (!resolved) {
-            uint64 close = _getClose(marketId);
-            if (block.timestamp < close) _revert(ERR_TIMING, 3); // MarketNotClosed
-        }
+        (bool resolved,,, uint64 close,) = _staticMarkets(marketId);
+        if (!resolved && block.timestamp < close) _revert(ERR_TIMING, 3); // MarketNotClosed
 
         BootstrapVault storage vault = bootstrapVaults[marketId];
 
@@ -1858,13 +1884,12 @@ contract PMHookRouter {
     }
 
     /// @notice Validate TWAP and spot price for rebalancing
-    function _validateRebalanceConditions(uint256 marketId, uint256 canonical)
+    function _validateRebalanceConditions(uint256 marketId, uint256 canonical, uint256 twapBps)
         internal
         view
         returns (RebalanceValidation memory validation)
     {
-        validation.twapBps = _getTWAPPrice(marketId);
-        if (validation.twapBps == 0) _revert(ERR_COMPUTATION, 3); // TWAPRequired
+        validation.twapBps = twapBps;
 
         // Read spot reserves for deviation check (safety valve against manipulation)
         (uint112 r0, uint112 r1) = _getReserves(canonical);
@@ -1876,28 +1901,26 @@ contract PMHookRouter {
         validation.yesReserve = validation.yesIsId0 ? uint256(r0) : uint256(r1);
         validation.noReserve = validation.yesIsId0 ? uint256(r1) : uint256(r0);
 
-        uint256 spotYesBps;
+        // Compute spot P(YES) = NO/(YES+NO) to match TWAP convention
+        uint256 spotPYesBps;
         unchecked {
-            spotYesBps =
-                (validation.yesReserve * 10_000) / (validation.yesReserve + validation.noReserve);
+            spotPYesBps =
+                (validation.noReserve * 10_000) / (validation.yesReserve + validation.noReserve);
         }
 
         assembly ("memory-safe") {
-            if iszero(spotYesBps) { spotYesBps := 1 }
-            if iszero(lt(spotYesBps, 10000)) { spotYesBps := 9999 }
+            if iszero(spotPYesBps) { spotPYesBps := 1 }
+            if iszero(lt(spotPYesBps, 10000)) { spotPYesBps := 9999 }
         }
 
         // Calculate deviation and check against max
         uint256 deviation;
         assembly ("memory-safe") {
-            // Load twapBps from struct at offset 0
-            let twapBps := mload(validation)
-
-            // Calculate absolute difference: |spotYesBps - twapBps|
-            let diff := sub(spotYesBps, twapBps)
+            // Calculate absolute difference: |spotPYesBps - twapBps|
+            let diff := sub(spotPYesBps, twapBps)
             deviation := xor(
                 diff,
-                mul(xor(diff, sub(twapBps, spotYesBps)), sgt(twapBps, spotYesBps))
+                mul(xor(diff, sub(twapBps, spotPYesBps)), sgt(twapBps, spotPYesBps))
             )
         }
         if (deviation > 500) _revert(ERR_COMPUTATION, 5); // SpotDeviantFromTWAP
@@ -1943,13 +1966,13 @@ contract PMHookRouter {
         if (isHook) {
             address hook = address(uint160(feeOrHook));
             (bool ok, uint256 fee) = _staticUint(hook, 0xb9056dbd, canonical); // getCurrentFeeBps
-            feeBps = (ok && fee < 10000) ? fee : DEFAULT_FEE_BPS;
+            feeBps = ok ? fee : DEFAULT_FEE_BPS; // Propagate 10001 sentinel for halted markets
         } else {
             feeBps = feeOrHook;
         }
 
         assembly ("memory-safe") {
-            if iszero(lt(feeBps, 10000)) {
+            if gt(feeBps, 10001) {
                 feeBps := DEFAULT_FEE_BPS
             }
         }
@@ -1981,7 +2004,7 @@ contract PMHookRouter {
             ) {
                 (uint256 currentCumulative, bool success) = _getCurrentCumulative(marketId);
                 if (success && currentCumulative >= obs.cumulative1) {
-                    _updateTWAPObservation(obs, marketId, currentCumulative);
+                    _updateTWAPObservation(obs, currentCumulative);
                 }
             }
         }
@@ -1997,7 +2020,8 @@ contract PMHookRouter {
         uint256 twapBps = _getTWAPPrice(marketId);
         if (twapBps == 0) return 0;
 
-        RebalanceValidation memory validation = _validateRebalanceConditions(marketId, canonical);
+        RebalanceValidation memory validation =
+            _validateRebalanceConditions(marketId, canonical, twapBps);
 
         uint256 totalYes = totalYesVaultShares[marketId];
         uint256 totalNo = totalNoVaultShares[marketId];
@@ -2008,7 +2032,7 @@ contract PMHookRouter {
 
         bool yesIsLower = vault.yesShares < vault.noShares;
 
-        if ((yesIsLower && totalYes == 0) || (!yesIsLower && totalNo == 0)) return 0;
+        if ((yesIsLower ? totalYes : totalNo) == 0) return 0;
 
         uint112 preMergeYes = vault.yesShares;
         uint112 preMergeNo = vault.noShares;
@@ -2049,6 +2073,7 @@ contract PMHookRouter {
         if (_derivePoolId(k) != canonical) _revert(ERR_COMPUTATION, 7); // NonCanonicalPool
 
         uint256 feeBps = _getPoolFeeBps(feeOrHook, canonical);
+        if (feeBps >= 10000) return 0; // Market halted
 
         uint256 minOut = _calculateRebalanceMinOut(
             collateralForSwap,
@@ -2199,8 +2224,7 @@ contract PMHookRouter {
     {
         uint64 close = _getClose(marketId);
         unchecked {
-            if (close < block.timestamp + 2 days) {
-                // BOOTSTRAP_WINDOW
+            if (close < block.timestamp + BOOTSTRAP_WINDOW) {
                 return false;
             }
         }
@@ -2222,9 +2246,8 @@ contract PMHookRouter {
         if (larger > smaller * 2) return false; // Max 2x imbalance for mint
         if (yesShares == noShares) return true;
 
-        // Allow only if adding to the scarce side
-        bool yesScarce = yesShares < noShares;
-        return (buyYes && !yesScarce) || (!buyYes && yesScarce);
+        // Allow only if buying from the abundant side
+        return buyYes != (yesShares < noShares);
     }
 
     // ============ TWAP Functions ============
@@ -2319,6 +2342,7 @@ contract PMHookRouter {
     /// @notice Update TWAP observation (permissionless)
     /// @param marketId Market ID
     function updateTWAPObservation(uint256 marketId) public {
+        _guardEnter();
         TWAPObservations storage obs = twapObservations[marketId];
 
         if (obs.timestamp1 == 0) _revert(ERR_COMPUTATION, 3); // TWAPRequired
@@ -2333,11 +2357,12 @@ contract PMHookRouter {
 
         if (currentCumulative < obs.cumulative1) _revert(ERR_TIMING, 4); // PoolNotReady
 
-        _updateTWAPObservation(obs, marketId, currentCumulative);
+        _updateTWAPObservation(obs, currentCumulative);
+        _guardExit();
     }
 
-    /// @notice Get TWAP price for a market
-    /// @return twapBps TWAP in basis points [1-9999], or 0 if unavailable
+    /// @notice Get TWAP P(YES) for a market
+    /// @return twapBps P(YES) = NO/(YES+NO) in basis points [1-9999], or 0 if unavailable
     function _getTWAPPrice(uint256 marketId) internal view returns (uint256 twapBps) {
         TWAPObservations storage obs = twapObservations[marketId];
 
@@ -2382,20 +2407,13 @@ contract PMHookRouter {
     }
 
     /// @dev Update TWAP observation with new cumulative value
-    function _updateTWAPObservation(
-        TWAPObservations storage obs,
-        uint256 marketId,
-        uint256 currentCumulative
-    ) internal {
-        uint256 poolId = canonicalPoolId[marketId];
-        (bool ok, uint112 r0, uint112 r1,,,) = _staticPools(poolId);
-        uint128 totalReserves = ok ? uint128(r0) + uint128(r1) : 0;
-
+    function _updateTWAPObservation(TWAPObservations storage obs, uint256 currentCumulative)
+        internal
+    {
         obs.timestamp0 = obs.timestamp1;
         obs.cumulative0 = obs.cumulative1;
         obs.timestamp1 = uint32(block.timestamp);
         obs.cumulative1 = currentCumulative;
-        obs.reservesAtObs1 = totalReserves;
 
         uint256 timeElapsed = uint32(block.timestamp) - obs.timestamp0;
         if (timeElapsed > 0 && obs.cumulative1 >= obs.cumulative0) {
@@ -2408,15 +2426,16 @@ contract PMHookRouter {
         }
     }
 
-    /// @notice Convert UQ112x112 NO/YES ratio to YES probability in basis points
-    /// @dev Formula: pYES_bps = 10000 / (1 + r) = 10000 * YES / (YES + NO), where r = NO/YES
+    /// @notice Convert UQ112x112 NO/YES ratio to P(YES) in basis points
+    /// @dev Formula: 10000 * r / (1 + r) = 10000 * NO / (YES + NO), where r = NO/YES
+    /// @dev This matches PMFeeHook._getProbability: P(YES) = NO_reserve / total
     /// @param twapUQ112x112 NO/YES ratio in UQ112x112 fixed-point format
-    /// @return twapBps Probability of YES outcome in basis points [1-9999]
+    /// @return twapBps P(YES) in basis points [1-9999]
     function _convertUQ112x112ToBps(uint256 twapUQ112x112) internal pure returns (uint256 twapBps) {
-        // Compute pYES = (10000 * 2^112) / (2^112 + r), where r = NO/YES in UQ112x112
+        // Compute P(YES) = NO/(YES+NO) = (10000 * r) / (2^112 + r), where r = NO/YES in UQ112x112
         assembly ("memory-safe") {
             let denom := add(shl(112, 1), twapUQ112x112)
-            twapBps := div(mul(10000, shl(112, 1)), denom)
+            twapBps := div(mul(10000, twapUQ112x112), denom)
             if iszero(twapBps) { twapBps := 1 }
             if iszero(lt(twapBps, 10000)) { twapBps := 9999 }
         }
@@ -2535,7 +2554,7 @@ contract PMHookRouter {
     /// @param feeAmount Fees to distribute
     /// @param yesInv Pre-trade YES inventory
     /// @param noInv Pre-trade NO inventory
-    /// @param pYes TWAP price in bps
+    /// @param pYes P(YES) = NO/(YES+NO) in bps [1-9999]
     function _addVaultFeesSymmetricWithSnapshot(
         uint256 marketId,
         uint256 feeAmount,
@@ -2670,7 +2689,7 @@ contract PMHookRouter {
     }
 
     /// @notice Try vault OTC fill (supports partial)
-    /// @param yesTwapBps TWAP price in bps
+    /// @param pYesTwapBps P(YES) = NO/(YES+NO) from TWAP [1-9999]
     /// @return sharesOut Shares filled (0 if none)
     /// @return collateralUsed Collateral consumed (0 if none)
     /// @return filled True if vault participated
@@ -2678,11 +2697,11 @@ contract PMHookRouter {
         uint256 marketId,
         bool buyYes,
         uint256 collateralIn,
-        uint256 yesTwapBps
+        uint256 pYesTwapBps
     ) internal view returns (uint256 sharesOut, uint256 collateralUsed, bool filled) {
         if (collateralIn == 0 || collateralIn > MAX_COLLATERAL_IN) return (0, 0, false);
 
-        if (yesTwapBps == 0) return (0, 0, false);
+        if (pYesTwapBps == 0) return (0, 0, false);
 
         uint64 close = _getClose(marketId);
         if (_isInCloseWindow(marketId, close)) return (0, 0, false);
@@ -2706,15 +2725,16 @@ contract PMHookRouter {
                 let yesRes := xor(r0, mul(xor(r0, r1), iszero(yesIsId0)))
                 let noRes := xor(r1, mul(xor(r1, r0), iszero(yesIsId0)))
 
+                // Compute spot P(YES) = NO/(YES+NO) to match TWAP convention
                 let total := add(yesRes, noRes)
-                let spotYesBps := div(mul(yesRes, 10000), total)
+                let spotPYesBps := div(mul(noRes, 10000), total)
 
-                if iszero(spotYesBps) { spotYesBps := 1 }
+                if iszero(spotPYesBps) { spotPYesBps := 1 }
 
-                let diff := sub(spotYesBps, yesTwapBps)
+                let diff := sub(spotPYesBps, pYesTwapBps)
                 deviation := xor(
                     diff,
-                    mul(xor(diff, sub(yesTwapBps, spotYesBps)), sgt(yesTwapBps, spotYesBps))
+                    mul(xor(diff, sub(pYesTwapBps, spotPYesBps)), sgt(pYesTwapBps, spotPYesBps))
                 )
             }
 
@@ -2725,7 +2745,7 @@ contract PMHookRouter {
 
         assembly ("memory-safe") {
             let sharePriceBps :=
-                xor(yesTwapBps, mul(xor(yesTwapBps, sub(10000, yesTwapBps)), iszero(buyYes)))
+                xor(pYesTwapBps, mul(xor(pYesTwapBps, sub(10000, pYesTwapBps)), iszero(buyYes)))
 
             // Hybrid spread: max(minAbsolute, fairPrice * relativeSpread / 10000)
             let relativeSpread := div(mul(sharePriceBps, relativeSpreadBps), 10000)

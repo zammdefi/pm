@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 
 interface IERC20Permit {
     function permit(
@@ -93,7 +93,7 @@ interface IZAMM {
 /// @notice Tests for multicall, permit, rebalancing, LP fees, and hook integration
 contract PMHookRouterAdvancedTest is Test {
     PMHookRouter public router;
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     IPAMM public constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     IZAMM public constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
 
@@ -114,7 +114,7 @@ contract PMHookRouterAdvancedTest is Test {
     address constant REGISTRAR = 0x0000000000BADa259Cb860c12ccD9500d9496B3e;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main2"));
 
         // Generate deterministic test accounts with private keys for permit signing
         aliceKey = 0xA11CE;
@@ -122,7 +122,7 @@ contract PMHookRouterAdvancedTest is Test {
         bobKey = 0xB0B;
         bob = vm.addr(bobKey);
 
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         // Deploy router at REGISTRAR address using vm.etch
         // This allows hook.registerMarket to accept calls from the router
@@ -545,7 +545,7 @@ contract PMHookRouterAdvancedTest is Test {
         // If OTC wasn't used (e.g., deviation too high), test passes but doesn't verify fees
     }
 
-    // ============ PMFeeHookV1 Dynamic Fee Tests ============
+    // ============ PMFeeHook Dynamic Fee Tests ============
 
     /// @notice Test hook returns dynamic fees based on market age
     function test_HookIntegration_DynamicFeesDecay() public {
@@ -653,7 +653,7 @@ contract PMHookRouterAdvancedTest is Test {
     /// @notice Test hook halts trading during close window
     function test_HookIntegration_CloseWindowHalt() public {
         // Configure market to use closeWindowMode = 0 (halt mode)
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = (cfg.flags & ~uint16(0x0C)) | (uint16(0) << 2); // Set bits 2-3 to 00 (halt mode)
 
         vm.prank(hook.owner());
@@ -691,7 +691,7 @@ contract PMHookRouterAdvancedTest is Test {
         vm.stopPrank();
 
         // Set custom config (requires hook owner)
-        PMFeeHookV1.Config memory customConfig = PMFeeHookV1.Config({
+        PMFeeHook.Config memory customConfig = PMFeeHook.Config({
             minFeeBps: 5, // 0.05% min
             maxFeeBps: 200, // 2.00% max
             maxSkewFeeBps: 150, // 1.50% skew

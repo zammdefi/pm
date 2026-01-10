@@ -2,17 +2,17 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 import {IPAMM} from "../src/PMHookRouter.sol";
 import {IZAMM} from "../src/PMHookRouter.sol";
 
 /// @notice Malicious contract attempting reentrancy during beforeAction
 contract MaliciousReentrantBeforeAction {
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     uint256 public poolId;
     bool public attacked;
 
-    constructor(PMFeeHookV1 _hook, uint256 _poolId) {
+    constructor(PMFeeHook _hook, uint256 _poolId) {
         hook = _hook;
         poolId = _poolId;
     }
@@ -44,11 +44,11 @@ contract MaliciousReentrantBeforeAction {
 
 /// @notice Malicious contract attempting reentrancy during afterAction
 contract MaliciousReentrantAfterAction {
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     uint256 public poolId;
     bool public attacked;
 
-    constructor(PMFeeHookV1 _hook, uint256 _poolId) {
+    constructor(PMFeeHook _hook, uint256 _poolId) {
         hook = _hook;
         poolId = _poolId;
     }
@@ -86,11 +86,11 @@ contract MaliciousReentrantAfterAction {
 
 /// @notice Malicious contract attempting cross-function reentrancy (beforeAction → afterAction)
 contract MaliciousCrossFunctionReentrant {
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     uint256 public poolId;
     bool public attacked;
 
-    constructor(PMFeeHookV1 _hook, uint256 _poolId) {
+    constructor(PMFeeHook _hook, uint256 _poolId) {
         hook = _hook;
         poolId = _poolId;
     }
@@ -123,8 +123,8 @@ contract MaliciousCrossFunctionReentrant {
     }
 }
 
-contract PMFeeHookV1ReentrancyTest is Test {
-    PMFeeHookV1 public hook;
+contract PMFeeHookReentrancyTest is Test {
+    PMFeeHook public hook;
     IPAMM public constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     IZAMM public constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
 
@@ -133,9 +133,9 @@ contract PMFeeHookV1ReentrancyTest is Test {
     uint256 public poolId;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main2"));
 
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         vm.deal(ALICE, 1000 ether);
 
@@ -176,7 +176,7 @@ contract PMFeeHookV1ReentrancyTest is Test {
         vm.deal(address(attacker), 1 ether);
 
         // Attack should revert with Unauthorized (can't call beforeAction directly)
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         attacker.attack();
 
         assertFalse(attacker.attacked(), "Attack should not have succeeded");
@@ -193,7 +193,7 @@ contract PMFeeHookV1ReentrancyTest is Test {
         vm.deal(address(attacker), 1 ether);
 
         // Attack should revert with Unauthorized (can't call afterAction directly)
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         attacker.attack();
 
         assertFalse(attacker.attacked(), "Attack should not have succeeded");
@@ -206,7 +206,7 @@ contract PMFeeHookV1ReentrancyTest is Test {
         vm.deal(address(attacker), 1 ether);
 
         // Attack should revert with Unauthorized
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         attacker.attack();
 
         assertFalse(attacker.attacked(), "Attack should not have succeeded");

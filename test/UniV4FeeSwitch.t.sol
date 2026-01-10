@@ -27,7 +27,7 @@ contract UniV4FeeSwitchTest is Test {
 
     function setUp() public {
         // Fork mainnet
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main7"));
 
         // Create test actors with ETH
         ALICE = makeAddr("ALICE");

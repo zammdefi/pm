@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 
 interface IPAMM {
     function setOperator(address operator, bool approved) external returns (bool);
@@ -21,7 +21,7 @@ contract ETHLogger {
 /// @title Diagnostic test to understand refund behavior
 contract PMHookRouterRefundDiagnosticTest is Test {
     PMHookRouter public router;
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
 
     IPAMM public constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     address public constant ETH = address(0);
@@ -33,10 +33,10 @@ contract PMHookRouterRefundDiagnosticTest is Test {
     uint256 public marketId;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main5"));
 
         // Deploy hook
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         // Deploy router at expected address
         PMHookRouter routerImpl = new PMHookRouter();

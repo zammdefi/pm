@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
 import {PAMM, IZAMM} from "../src/PAMM.sol";
 
@@ -33,7 +33,7 @@ contract PMHookRouterDynamicSpreadTest is Test {
     uint16 constant MAX_SPREAD_BPS = 500; // 5% overall cap
     uint16 constant IMBALANCE_THRESHOLD_BPS = 5000; // 50%
 
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     PMHookRouter public router;
     DynamicSpreadHarness public harness;
     address public ALICE;
@@ -43,9 +43,9 @@ contract PMHookRouterDynamicSpreadTest is Test {
     uint256 public poolId;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main3"));
 
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         // Deploy router at REGISTRAR address using vm.etch so hook.registerMarket accepts calls
         PMHookRouter tempRouter = new PMHookRouter();

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 
 interface IERC20 {
     function balanceOf(address) external view returns (uint256);
@@ -94,10 +94,10 @@ interface IZAMM {
     ) external payable returns (uint256 amountOut);
 }
 
-/// @title PMFeeHookV1 Comprehensive Test Suite
+/// @title PMFeeHook Comprehensive Test Suite
 /// @notice Tests for dynamic fee hook covering all features and edge cases
-contract PMFeeHookV1Test is Test {
-    PMFeeHookV1 public hook;
+contract PMFeeHookTest is Test {
+    PMFeeHook public hook;
 
     IPAMM public constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     IZAMM public constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
@@ -114,13 +114,13 @@ contract PMFeeHookV1Test is Test {
     uint64 public TEST_DEADLINE;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main2"));
 
         TEST_DEADLINE = uint64(block.timestamp + 365 days);
 
         // Deploy hook (owner will be tx.origin)
         vm.startPrank(address(this), address(this)); // Set tx.origin to this
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
         vm.stopPrank();
 
         alice = makeAddr("alice");
@@ -129,7 +129,7 @@ contract PMFeeHookV1Test is Test {
         deal(address(USDC), alice, 10_000e6);
         deal(address(USDC), bob, 10_000e6);
 
-        console.log("=== PMFeeHookV1 Test Suite ===");
+        console.log("=== PMFeeHook Test Suite ===");
         console.log("Hook deployed:", address(hook));
         console.log("Owner:", hook.owner());
         console.log("");
@@ -175,7 +175,7 @@ contract PMFeeHookV1Test is Test {
     }
 
     function test_RevertRegisterInvalidMarket() public {
-        vm.expectRevert(PMFeeHookV1.InvalidMarket.selector);
+        vm.expectRevert(PMFeeHook.InvalidMarket.selector);
         hook.registerMarket(999999);
     }
 
@@ -185,7 +185,7 @@ contract PMFeeHookV1Test is Test {
         // Fast forward past deadline and resolve
         vm.warp(TEST_DEADLINE + 1);
 
-        vm.expectRevert(PMFeeHookV1.MarketClosed.selector);
+        vm.expectRevert(PMFeeHook.MarketClosed.selector);
         hook.registerMarket(marketId);
     }
 
@@ -193,7 +193,7 @@ contract PMFeeHookV1Test is Test {
         _createTestMarket();
         hook.registerMarket(marketId);
 
-        vm.expectRevert(PMFeeHookV1.AlreadyRegistered.selector);
+        vm.expectRevert(PMFeeHook.AlreadyRegistered.selector);
         hook.registerMarket(marketId);
     }
 
@@ -239,7 +239,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Set config to mode 0 (halt) since default is now mode 1
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = (cfg.flags & ~uint16(0x0C)); // Clear bits 2-3 to set mode 0
         vm.prank(hook.owner());
         hook.setMarketConfig(marketId, cfg);
@@ -266,7 +266,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Change config to mode 1
-        PMFeeHookV1.Config memory cfg = _getConfig();
+        PMFeeHook.Config memory cfg = _getConfig();
         cfg.flags = uint8((uint256(cfg.flags) & ~uint256(0x0C)) | (1 << 2)); // Set bits 2-3 to mode 1
         cfg.closeWindowFeeBps = 50; // 0.50% fixed fee
         vm.prank(hook.owner());
@@ -285,7 +285,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Change config to mode 2
-        PMFeeHookV1.Config memory cfg = _getConfig();
+        PMFeeHook.Config memory cfg = _getConfig();
         cfg.flags = (cfg.flags & ~uint8(0x0C)) | uint8(2 << 2); // Set bits 2-3 to mode 2
         vm.prank(hook.owner());
         hook.setMarketConfig(marketId, cfg);
@@ -303,7 +303,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Change config to mode 3
-        PMFeeHookV1.Config memory cfg = _getConfig();
+        PMFeeHook.Config memory cfg = _getConfig();
         cfg.flags = (cfg.flags & ~uint8(0x0C)) | uint8(3 << 2); // Set bits 2-3 to mode 3
         vm.prank(hook.owner());
         hook.setMarketConfig(marketId, cfg);
@@ -327,7 +327,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Disable price impact for this test (we're testing skew fees, not impact limits)
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = cfg.flags & ~uint16(0x20); // Clear FLAG_PRICE_IMPACT
         vm.prank(hook.owner());
         hook.setMarketConfig(marketId, cfg);
@@ -432,7 +432,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Set config to mode 0 (halt) since default is now mode 1
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = (cfg.flags & ~uint16(0x0C)); // Clear bits 2-3 to set mode 0
         vm.prank(hook.owner());
         hook.setMarketConfig(marketId, cfg);
@@ -453,34 +453,34 @@ contract PMFeeHookV1Test is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_SetDefaultConfig() public {
-        PMFeeHookV1.Config memory newCfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory newCfg = hook.getDefaultConfig();
         newCfg.minFeeBps = 20;
         newCfg.maxFeeBps = 200;
         newCfg.feeCapBps = 350; // Must be >= maxFeeBps + maxSkewFeeBps + asymmetricFeeBps + thinLiquidityFeeBps + volatilityFeeBps
 
         vm.expectEmit(false, false, false, false);
-        emit PMFeeHookV1.DefaultConfigUpdated(newCfg);
+        emit PMFeeHook.DefaultConfigUpdated(newCfg);
 
         vm.prank(hook.owner());
         hook.setDefaultConfig(newCfg);
 
-        PMFeeHookV1.Config memory updated = hook.getDefaultConfig();
+        PMFeeHook.Config memory updated = hook.getDefaultConfig();
         assertEq(updated.minFeeBps, 20, "Should update min fee");
         assertEq(updated.maxFeeBps, 200, "Should update max fee");
     }
 
     function test_RevertSetDefaultConfig_Unauthorized() public {
-        PMFeeHookV1.Config memory newCfg = _getConfig();
+        PMFeeHook.Config memory newCfg = _getConfig();
 
         vm.prank(alice);
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         hook.setDefaultConfig(newCfg);
     }
 
     function test_SetMarketConfig() public {
         _createTestMarket();
 
-        PMFeeHookV1.Config memory newCfg = _getConfig();
+        PMFeeHook.Config memory newCfg = _getConfig();
         newCfg.minFeeBps = 15;
 
         vm.prank(hook.owner());
@@ -488,7 +488,7 @@ contract PMFeeHookV1Test is Test {
 
         assertTrue(hook.hasMarketConfig(marketId), "Should have market config");
 
-        PMFeeHookV1.Config memory cfg = _getMarketConfig(marketId);
+        PMFeeHook.Config memory cfg = _getMarketConfig(marketId);
         assertEq(cfg.minFeeBps, 15, "Should have custom min fee");
     }
 
@@ -496,7 +496,7 @@ contract PMFeeHookV1Test is Test {
         _createTestMarket();
 
         // Set custom config
-        PMFeeHookV1.Config memory newCfg = _getConfig();
+        PMFeeHook.Config memory newCfg = _getConfig();
         newCfg.minFeeBps = 15;
         vm.prank(hook.owner());
         hook.setMarketConfig(marketId, newCfg);
@@ -509,21 +509,21 @@ contract PMFeeHookV1Test is Test {
     }
 
     function test_RevertInvalidConfig_MinGreaterThanMax() public {
-        PMFeeHookV1.Config memory badCfg = _getConfig();
+        PMFeeHook.Config memory badCfg = _getConfig();
         badCfg.minFeeBps = 200;
         badCfg.maxFeeBps = 100;
 
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.InvalidConfig.selector);
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
         hook.setDefaultConfig(badCfg);
     }
 
     function test_RevertInvalidConfig_FeeCapTooLow() public {
-        PMFeeHookV1.Config memory badCfg = _getConfig();
+        PMFeeHook.Config memory badCfg = _getConfig();
         badCfg.feeCapBps = 5; // Less than minFeeBps (10)
 
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.InvalidConfig.selector);
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
         hook.setDefaultConfig(badCfg);
     }
 
@@ -536,7 +536,7 @@ contract PMFeeHookV1Test is Test {
         uint64 newStart = uint64(block.timestamp); // Current time is valid
 
         vm.expectEmit(true, false, false, true);
-        emit PMFeeHookV1.BootstrapStartAdjusted(poolId, oldStart, newStart);
+        emit PMFeeHook.BootstrapStartAdjusted(poolId, oldStart, newStart);
 
         vm.prank(hook.owner());
         hook.adjustBootstrapStart(poolId, newStart);
@@ -551,7 +551,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         vm.prank(alice);
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         hook.adjustBootstrapStart(poolId, uint64(block.timestamp));
     }
 
@@ -559,7 +559,7 @@ contract PMFeeHookV1Test is Test {
         uint256 fakePoolId = 123456;
 
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.InvalidPoolId.selector);
+        vm.expectRevert(PMFeeHook.InvalidPoolId.selector);
         hook.adjustBootstrapStart(fakePoolId, uint64(block.timestamp));
     }
 
@@ -569,7 +569,7 @@ contract PMFeeHookV1Test is Test {
         (uint64 oldStart,,) = hook.meta(poolId);
 
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.InvalidBootstrapStart.selector);
+        vm.expectRevert(PMFeeHook.InvalidBootstrapStart.selector);
         hook.adjustBootstrapStart(poolId, oldStart - 1); // Try to go backwards
     }
 
@@ -577,7 +577,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.InvalidBootstrapStart.selector);
+        vm.expectRevert(PMFeeHook.InvalidBootstrapStart.selector);
         hook.adjustBootstrapStart(poolId, uint64(block.timestamp + 1 days)); // Future not allowed
     }
 
@@ -589,7 +589,7 @@ contract PMFeeHookV1Test is Test {
         (,,,, uint64 liveClose,,) = PAMM.markets(mktId);
 
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.InvalidBootstrapStart.selector);
+        vm.expectRevert(PMFeeHook.InvalidBootstrapStart.selector);
         hook.adjustBootstrapStart(poolId, liveClose); // At or after live close not allowed
     }
 
@@ -599,7 +599,7 @@ contract PMFeeHookV1Test is Test {
         (uint64 oldStart,,) = hook.meta(poolId);
 
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.InvalidBootstrapStart.selector);
+        vm.expectRevert(PMFeeHook.InvalidBootstrapStart.selector);
         hook.adjustBootstrapStart(poolId, oldStart); // Should fail even with same timestamp
     }
 
@@ -621,7 +621,7 @@ contract PMFeeHookV1Test is Test {
 
         // Simulate beforeAction call from ZAMM for a swap
         vm.prank(address(ZAMM));
-        vm.expectRevert(PMFeeHookV1.InvalidPoolId.selector);
+        vm.expectRevert(PMFeeHook.InvalidPoolId.selector);
         hook.beforeAction(IZAMM.swapExactIn.selector, fakePoolId, address(this), "");
     }
 
@@ -633,7 +633,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Set volatilityWindow greater than block.timestamp to test underflow protection
-        PMFeeHookV1.Config memory cfg = _getConfig();
+        PMFeeHook.Config memory cfg = _getConfig();
         cfg.flags = cfg.flags | 0x40; // Enable volatility fee (bit 6)
         cfg.volatilityWindow = uint32(block.timestamp + 1000); // Future timestamp
         cfg.volatilityFeeBps = 50;
@@ -652,7 +652,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable volatility fee
-        PMFeeHookV1.Config memory cfg = _getConfig();
+        PMFeeHook.Config memory cfg = _getConfig();
         cfg.flags = cfg.flags | 0x40; // Enable volatility fee (bit 6)
         cfg.volatilityFeeBps = 50;
 
@@ -744,7 +744,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Set closeWindowFeeBps higher than feeCapBps
-        PMFeeHookV1.Config memory cfg = _getConfig();
+        PMFeeHook.Config memory cfg = _getConfig();
         cfg.flags = (cfg.flags & ~uint8(0x0C)) | uint8(1 << 2); // Set mode 1
         cfg.closeWindowFeeBps = 500; // 5%
         cfg.feeCapBps = 300; // 3% cap
@@ -796,7 +796,7 @@ contract PMFeeHookV1Test is Test {
         address receiver = address(0xBEEF);
 
         vm.prank(alice);
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         hook.rescueETH(receiver, 0.5 ether);
     }
 
@@ -810,7 +810,7 @@ contract PMFeeHookV1Test is Test {
 
         vm.prank(oldOwner);
         vm.expectEmit(true, true, false, false);
-        emit PMFeeHookV1.OwnershipTransferred(oldOwner, newOwner);
+        emit PMFeeHook.OwnershipTransferred(oldOwner, newOwner);
         hook.transferOwnership(newOwner);
 
         assertEq(hook.owner(), newOwner, "Owner should be updated");
@@ -823,13 +823,13 @@ contract PMFeeHookV1Test is Test {
         hook.transferOwnership(newOwner);
 
         // New owner should be able to call admin functions
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.minFeeBps = 20;
 
         vm.prank(newOwner);
         hook.setDefaultConfig(cfg);
 
-        PMFeeHookV1.Config memory updatedCfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory updatedCfg = hook.getDefaultConfig();
         assertEq(updatedCfg.minFeeBps, 20, "New owner should be able to update config");
     }
 
@@ -841,11 +841,11 @@ contract PMFeeHookV1Test is Test {
         hook.transferOwnership(newOwner);
 
         // Old owner should no longer have access
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.minFeeBps = 20;
 
         vm.prank(oldOwner);
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         hook.setDefaultConfig(cfg);
     }
 
@@ -853,13 +853,13 @@ contract PMFeeHookV1Test is Test {
         address newOwner = address(0xBEEF);
 
         vm.prank(alice);
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         hook.transferOwnership(newOwner);
     }
 
     function test_RevertTransferOwnership_ZeroAddress() public {
         vm.prank(hook.owner());
-        vm.expectRevert(PMFeeHookV1.Unauthorized.selector);
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
         hook.transferOwnership(address(0));
     }
 
@@ -921,9 +921,9 @@ contract PMFeeHookV1Test is Test {
                             HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function _getConfig() internal pure returns (PMFeeHookV1.Config memory cfg) {
+    function _getConfig() internal pure returns (PMFeeHook.Config memory cfg) {
         // Return expected default config
-        cfg = PMFeeHookV1.Config({
+        cfg = PMFeeHook.Config({
             minFeeBps: 10,
             maxFeeBps: 100,
             maxSkewFeeBps: 80,
@@ -944,7 +944,7 @@ contract PMFeeHookV1Test is Test {
     function _getMarketConfig(uint256 _marketId)
         internal
         view
-        returns (PMFeeHookV1.Config memory cfg)
+        returns (PMFeeHook.Config memory cfg)
     {
         return hook.getMarketConfig(_marketId);
     }
@@ -1043,7 +1043,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable volatility fee
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = cfg.flags | 0x40; // FLAG_VOLATILITY
         cfg.volatilityFeeBps = 50;
         cfg.volatilityWindow = 1 hours;
@@ -1062,7 +1062,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable volatility fee
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = cfg.flags | 0x40; // FLAG_VOLATILITY
         cfg.volatilityFeeBps = 50;
 
@@ -1080,7 +1080,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable volatility fee
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x43; // skew + bootstrap + volatility
         cfg.volatilityFeeBps = 100;
         cfg.volatilityWindow = 0; // No staleness check
@@ -1133,7 +1133,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable features that use cache
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x71; // skew + asymmetric + price_impact + volatility
         cfg.maxPriceImpactBps = 1000;
 
@@ -1191,7 +1191,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Only skew fee enabled (feeNeedsReserves=true, afterNeedsReserves=false)
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x01; // Only FLAG_SKEW
         cfg.maxSkewFeeBps = 50;
 
@@ -1232,7 +1232,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Only volatility enabled (feeNeedsReserves=false, afterNeedsReserves=true)
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x42; // bootstrap + volatility
         cfg.volatilityFeeBps = 50;
 
@@ -1280,7 +1280,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable both fee and after reserve needs
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x71; // skew + asymmetric + price_impact + volatility
         cfg.maxPriceImpactBps = 500;
         cfg.volatilityFeeBps = 50;
@@ -1326,7 +1326,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Skew fee enabled: reserves loaded in beforeAction and passed through
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x01; // FLAG_SKEW only
         cfg.maxSkewFeeBps = 80;
 
@@ -1371,7 +1371,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable price impact with limit
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x21; // skew + price_impact
         cfg.maxPriceImpactBps = 10000; // Very high to not revert, just test path
 
@@ -1436,7 +1436,7 @@ contract PMFeeHookV1Test is Test {
         poolId = hook.registerMarket(marketId);
 
         // Set config with mode 1 (fixed fee in close window) instead of mode 0 (halt)
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = (cfg.flags & ~uint16(0x0C)) | (1 << 2); // Set bits 2-3 to 01 (mode 1)
         cfg.closeWindowFeeBps = 50; // 0.5% fee in close window
         vm.prank(hook.owner());
@@ -1500,11 +1500,11 @@ contract PMFeeHookV1Test is Test {
         uint256 pool2 = hook.registerMarket(market2);
 
         // Different configs for each
-        PMFeeHookV1.Config memory cfg1 = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg1 = hook.getDefaultConfig();
         cfg1.maxFeeBps = 200;
         cfg1.flags = 0x03; // skew + bootstrap
 
-        PMFeeHookV1.Config memory cfg2 = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg2 = hook.getDefaultConfig();
         cfg2.maxFeeBps = 100;
         cfg2.flags = 0x13; // skew + bootstrap + asymmetric
 
@@ -1529,7 +1529,7 @@ contract PMFeeHookV1Test is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Config_MaxBounds() public {
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
 
         // Set to maximum valid values
         // Note: feeCapBps must be < 10000 (100% fee would halt trading)
@@ -1547,7 +1547,7 @@ contract PMFeeHookV1Test is Test {
         vm.prank(hook.owner());
         hook.setDefaultConfig(cfg);
 
-        PMFeeHookV1.Config memory retrieved = hook.getDefaultConfig();
+        PMFeeHook.Config memory retrieved = hook.getDefaultConfig();
         assertEq(retrieved.minFeeBps, 9999, "Min fee should be set to 9999");
         assertEq(retrieved.feeCapBps, 9999, "Fee cap should be 9999 (< 10000)");
         assertEq(retrieved.maxFeeBps, 10000, "Max fee can be 10000 (will be capped)");
@@ -1560,7 +1560,7 @@ contract PMFeeHookV1Test is Test {
 
         // Test all 4 decay modes: 0=linear, 1=exp, 2=sqrt, 3=log
         for (uint16 mode = 0; mode < 4; mode++) {
-            PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+            PMFeeHook.Config memory cfg = hook.getDefaultConfig();
             cfg.flags = 0x02; // Bootstrap enabled
             cfg.extraFlags = mode << 2; // Set decay mode in bits 2-3
             cfg.bootstrapWindow = 7 days;
@@ -1599,7 +1599,7 @@ contract PMFeeHookV1Test is Test {
 
         // Test all 4 skew curves: 0=linear, 1=quadratic, 2=cubic, 3=quartic
         for (uint16 curve = 0; curve < 4; curve++) {
-            PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+            PMFeeHook.Config memory cfg = hook.getDefaultConfig();
             cfg.flags = 0x01; // Skew enabled
             cfg.extraFlags = curve; // Set skew curve in bits 0-1
             cfg.maxSkewFeeBps = 80;
@@ -1625,7 +1625,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Initial config
-        PMFeeHookV1.Config memory cfg1 = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg1 = hook.getDefaultConfig();
         cfg1.flags = 0x01; // Only skew
         cfg1.maxSkewFeeBps = 50;
 
@@ -1635,7 +1635,7 @@ contract PMFeeHookV1Test is Test {
         uint256 fee1 = hook.getCurrentFeeBps(poolId);
 
         // Change config mid-lifecycle
-        PMFeeHookV1.Config memory cfg2 = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg2 = hook.getDefaultConfig();
         cfg2.flags = 0x11; // Skew + asymmetric
         cfg2.maxSkewFeeBps = 50;
         cfg2.asymmetricFeeBps = 30;
@@ -1664,7 +1664,7 @@ contract PMFeeHookV1Test is Test {
         ];
 
         for (uint256 i = 0; i < flagCombos.length; i++) {
-            PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+            PMFeeHook.Config memory cfg = hook.getDefaultConfig();
             cfg.flags = flagCombos[i];
             cfg.volatilityFeeBps = 50;
             cfg.maxPriceImpactBps = 500;
@@ -1689,7 +1689,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable all features
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x73; // skew + bootstrap + asymmetric + price_impact + volatility
         cfg.maxPriceImpactBps = 1000;
         cfg.volatilityFeeBps = 50;
@@ -1774,7 +1774,7 @@ contract PMFeeHookV1Test is Test {
         _setupMarketWithPool();
 
         // Enable volatility tracking
-        PMFeeHookV1.Config memory cfg = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
         cfg.flags = 0x43; // skew + bootstrap + volatility
         cfg.volatilityFeeBps = 100;
         cfg.volatilityWindow = 0;
@@ -1831,7 +1831,7 @@ contract PMFeeHookV1Test is Test {
         bool zeroForOne = marketId < noId;
 
         // Swap with config 1
-        PMFeeHookV1.Config memory cfg1 = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg1 = hook.getDefaultConfig();
         cfg1.flags = 0x01; // skew only
         vm.stopPrank();
 
@@ -1857,7 +1857,7 @@ contract PMFeeHookV1Test is Test {
         vm.stopPrank();
 
         // Switch config
-        PMFeeHookV1.Config memory cfg2 = hook.getDefaultConfig();
+        PMFeeHook.Config memory cfg2 = hook.getDefaultConfig();
         cfg2.flags = 0x71; // skew + asymmetric + price_impact + volatility
         cfg2.maxPriceImpactBps = 1000;
         cfg2.volatilityFeeBps = 50;
@@ -1886,6 +1886,351 @@ contract PMFeeHookV1Test is Test {
         vm.stopPrank();
 
         console.log("Config switch during activity: passed");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    NEW VIEW FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetPriceHistory_Empty() public {
+        _setupMarketWithPool();
+
+        (
+            uint64[10] memory timestamps,
+            uint32[10] memory prices,
+            uint8 currentIndex,
+            uint8 validCount
+        ) = hook.getPriceHistory(poolId);
+
+        // No swaps yet, should be empty
+        assertEq(validCount, 0, "Should have no valid snapshots initially");
+        assertEq(currentIndex, 0, "Index should be 0");
+        assertEq(timestamps[0], 0, "First timestamp should be 0");
+        assertEq(prices[0], 0, "First price should be 0");
+
+        console.log("getPriceHistory empty: passed");
+    }
+
+    function test_GetPriceHistory_AfterSwaps() public {
+        _setupMarketWithPool();
+
+        // Enable volatility to trigger snapshot recording
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x40; // FLAG_VOLATILITY
+        cfg.volatilityFeeBps = 50;
+
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 2000e6);
+        USDC.approve(address(PAMM), 2000e6);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        // Execute 5 swaps with new blocks
+        // Use explicit block tracking to ensure each swap is in a unique block
+        uint256 currentBlock = block.number;
+        for (uint256 i = 0; i < 5; i++) {
+            currentBlock++;
+            vm.roll(currentBlock);
+            PAMM.split(marketId, 100e6, alice);
+            ZAMM.swapExactIn(
+                IZAMM.PoolKey({
+                    id0: key.id0,
+                    id1: key.id1,
+                    token0: key.token0,
+                    token1: key.token1,
+                    feeOrHook: key.feeOrHook
+                }),
+                50e6,
+                0,
+                i % 2 == 0 ? zeroForOne : !zeroForOne,
+                alice,
+                block.timestamp + 1 hours
+            );
+        }
+        vm.stopPrank();
+
+        (
+            uint64[10] memory timestamps,
+            uint32[10] memory prices,
+            uint8 currentIndex,
+            uint8 validCount
+        ) = hook.getPriceHistory(poolId);
+
+        assertEq(validCount, 5, "Should have 5 valid snapshots");
+        assertEq(currentIndex, 5, "Index should be 5");
+
+        // Verify snapshots are populated
+        for (uint8 i = 0; i < 5; i++) {
+            assertGt(timestamps[i], 0, "Timestamp should be set");
+            assertGt(prices[i], 0, "Price should be set");
+            assertLe(prices[i], 10000, "Price should be <= 10000 bps");
+        }
+
+        console.log("getPriceHistory after swaps: passed");
+        console.log("  Valid count:", validCount);
+        console.log("  Current index:", currentIndex);
+    }
+
+    function test_GetPriceHistory_CircularBuffer() public {
+        _setupMarketWithPool();
+
+        // Enable volatility
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x40;
+        cfg.volatilityFeeBps = 50;
+
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 5000e6);
+        USDC.approve(address(PAMM), 5000e6);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        // Execute 12 swaps to wrap around circular buffer
+        // Use explicit block tracking to ensure each swap is in a unique block
+        uint256 currentBlock = block.number;
+        for (uint256 i = 0; i < 12; i++) {
+            currentBlock++;
+            vm.roll(currentBlock);
+            PAMM.split(marketId, 100e6, alice);
+            ZAMM.swapExactIn(
+                IZAMM.PoolKey({
+                    id0: key.id0,
+                    id1: key.id1,
+                    token0: key.token0,
+                    token1: key.token1,
+                    feeOrHook: key.feeOrHook
+                }),
+                30e6,
+                0,
+                i % 2 == 0 ? zeroForOne : !zeroForOne,
+                alice,
+                block.timestamp + 1 hours
+            );
+        }
+        vm.stopPrank();
+
+        (
+            uint64[10] memory timestamps,
+            uint32[10] memory prices,
+            uint8 currentIndex,
+            uint8 validCount
+        ) = hook.getPriceHistory(poolId);
+
+        assertEq(validCount, 10, "Should have 10 valid snapshots (buffer full)");
+        assertEq(currentIndex, 2, "Index should wrap to 2 (12 mod 10)");
+
+        // All slots should be filled
+        for (uint8 i = 0; i < 10; i++) {
+            assertGt(timestamps[i], 0, "All timestamps should be set");
+            assertGt(prices[i], 0, "All prices should be set");
+        }
+
+        console.log("getPriceHistory circular buffer: passed");
+    }
+
+    function test_GetVolatility_InsufficientSnapshots() public {
+        _setupMarketWithPool();
+
+        (uint256 volatilityPct, uint8 snapshotCount, uint256 meanPriceBps) =
+            hook.getVolatility(poolId);
+
+        assertEq(volatilityPct, 0, "Volatility should be 0 with no snapshots");
+        assertEq(snapshotCount, 0, "Snapshot count should be 0");
+        assertEq(meanPriceBps, 0, "Mean price should be 0");
+
+        console.log("getVolatility insufficient snapshots: passed");
+    }
+
+    function test_GetVolatility_WithSnapshots() public {
+        _setupMarketWithPool();
+
+        // Enable volatility
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x40;
+        cfg.volatilityFeeBps = 50;
+        cfg.volatilityWindow = 0; // No staleness check
+
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 3000e6);
+        USDC.approve(address(PAMM), 3000e6);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        // Execute 5 swaps to get enough snapshots
+        // Use explicit block tracking to ensure each swap is in a unique block
+        uint256 currentBlock = block.number;
+        for (uint256 i = 0; i < 5; i++) {
+            currentBlock++;
+            vm.roll(currentBlock);
+            PAMM.split(marketId, 150e6, alice);
+            ZAMM.swapExactIn(
+                IZAMM.PoolKey({
+                    id0: key.id0,
+                    id1: key.id1,
+                    token0: key.token0,
+                    token1: key.token1,
+                    feeOrHook: key.feeOrHook
+                }),
+                50e6,
+                0,
+                i % 2 == 0 ? zeroForOne : !zeroForOne,
+                alice,
+                block.timestamp + 1 hours
+            );
+        }
+        vm.stopPrank();
+
+        (uint256 volatilityPct, uint8 snapshotCount, uint256 meanPriceBps) =
+            hook.getVolatility(poolId);
+
+        assertGe(snapshotCount, 3, "Should have at least 3 snapshots");
+        assertGt(meanPriceBps, 0, "Mean price should be positive");
+        // Volatility can be 0 if prices are stable, so just check it doesn't revert
+
+        console.log("getVolatility with snapshots: passed");
+        console.log("  Volatility %:", volatilityPct);
+        console.log("  Snapshot count:", snapshotCount);
+        console.log("  Mean price bps:", meanPriceBps);
+    }
+
+    function test_GetVolatility_HighVolatility() public {
+        _setupMarketWithPool();
+
+        // Enable volatility
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x40;
+        cfg.volatilityFeeBps = 100;
+        cfg.volatilityWindow = 0;
+
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 5000e6);
+        USDC.approve(address(PAMM), 5000e6);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        // Execute large swaps to create high volatility
+        // Use explicit block tracking to ensure each swap is in a unique block
+        uint256 currentBlock = block.number;
+        for (uint256 i = 0; i < 6; i++) {
+            currentBlock++;
+            vm.roll(currentBlock);
+            PAMM.split(marketId, 400e6, alice);
+            // Alternate directions with larger amounts
+            ZAMM.swapExactIn(
+                IZAMM.PoolKey({
+                    id0: key.id0,
+                    id1: key.id1,
+                    token0: key.token0,
+                    token1: key.token1,
+                    feeOrHook: key.feeOrHook
+                }),
+                200e6,
+                0,
+                i % 2 == 0 ? zeroForOne : !zeroForOne,
+                alice,
+                block.timestamp + 1 hours
+            );
+        }
+        vm.stopPrank();
+
+        (uint256 volatilityPct, uint8 snapshotCount, uint256 meanPriceBps) =
+            hook.getVolatility(poolId);
+
+        assertGe(snapshotCount, 3, "Should have at least 3 snapshots");
+        assertGt(meanPriceBps, 0, "Mean price should be positive");
+        // With alternating large swaps, expect some volatility
+        assertGt(volatilityPct, 0, "Should detect some volatility from price swings");
+
+        console.log("getVolatility high volatility: passed");
+        console.log("  Volatility %:", volatilityPct);
+        console.log("  Snapshot count:", snapshotCount);
+        console.log("  Mean price bps:", meanPriceBps);
+    }
+
+    function test_GetVolatility_UnregisteredPool() public {
+        uint256 fakePoolId = 999999;
+
+        (uint256 volatilityPct, uint8 snapshotCount, uint256 meanPriceBps) =
+            hook.getVolatility(fakePoolId);
+
+        assertEq(volatilityPct, 0, "Volatility should be 0 for unregistered pool");
+        assertEq(snapshotCount, 0, "Snapshot count should be 0");
+        assertEq(meanPriceBps, 0, "Mean price should be 0");
+
+        console.log("getVolatility unregistered pool: passed");
+    }
+
+    function test_GetVolatility_RespectsVolatilityWindow() public {
+        _setupMarketWithPool();
+
+        // Enable volatility with a window
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x40;
+        cfg.volatilityFeeBps = 50;
+        cfg.volatilityWindow = 1 hours; // Only use snapshots from last hour
+
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 3000e6);
+        USDC.approve(address(PAMM), 3000e6);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        // Execute swaps
+        // Use explicit block tracking to ensure each swap is in a unique block
+        uint256 currentBlock = block.number;
+        for (uint256 i = 0; i < 4; i++) {
+            currentBlock++;
+            vm.roll(currentBlock);
+            PAMM.split(marketId, 150e6, alice);
+            ZAMM.swapExactIn(
+                IZAMM.PoolKey({
+                    id0: key.id0,
+                    id1: key.id1,
+                    token0: key.token0,
+                    token1: key.token1,
+                    feeOrHook: key.feeOrHook
+                }),
+                50e6,
+                0,
+                zeroForOne,
+                alice,
+                block.timestamp + 1 hours
+            );
+        }
+        vm.stopPrank();
+
+        // Get volatility now (all 4 snapshots should be within window)
+        (, uint8 countNow,) = hook.getVolatility(poolId);
+        assertEq(countNow, 4, "Should have 4 snapshots within window");
+
+        // Warp past the volatility window
+        vm.warp(block.timestamp + 2 hours);
+
+        // Now snapshots should be outside the window
+        (, uint8 countLater,) = hook.getVolatility(poolId);
+        assertEq(countLater, 0, "Snapshots should be stale after window expires");
+
+        console.log("getVolatility respects window: passed");
     }
 
     /*//////////////////////////////////////////////////////////////

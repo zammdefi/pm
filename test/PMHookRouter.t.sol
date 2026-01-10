@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 
 interface IERC20 {
     function balanceOf(address) external view returns (uint256);
@@ -29,15 +29,15 @@ contract PMHookRouterTest is Test {
     uint64 constant DEADLINE_2028 = 1861919999;
 
     PMHookRouter public router;
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     address public ALICE;
     uint256 public marketId;
     uint256 public poolId;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main2"));
 
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         // Deploy router at REGISTRAR address using vm.etch so hook.registerMarket accepts calls
         PMHookRouter tempRouter = new PMHookRouter();
@@ -352,14 +352,14 @@ contract PMHookRouterTest is Test {
         vm.warp(block.timestamp + 7 hours);
 
         // Get TWAP observation before update
-        (uint32 ts0Before, uint32 ts1Before,,,, uint256 c0Before, uint256 c1Before) =
+        (uint32 ts0Before, uint32 ts1Before,,, uint256 c0Before, uint256 c1Before) =
             router.twapObservations(marketId);
 
         // Update TWAP
         router.updateTWAPObservation(marketId);
 
         // Get TWAP observation after update
-        (uint32 ts0After, uint32 ts1After,,,, uint256 c0After, uint256 c1After) =
+        (uint32 ts0After, uint32 ts1After,,, uint256 c0After, uint256 c1After) =
             router.twapObservations(marketId);
 
         console.log("Timestamp0 before:", ts0Before, "after:", ts0After);

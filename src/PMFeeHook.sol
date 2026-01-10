@@ -109,7 +109,7 @@ interface IZAMMHook {
 /// @dev Hook design: Always uses FLAG_BEFORE | FLAG_AFTER for stable poolId. Config toggles features.
 /// @dev Close modes: 0=halt, 1=fixed fee, 2=min fee, 3=dynamic. Swaps respect close/resolution, LPs always allowed.
 /// @dev SECURITY: Requires registered pools only. Unregistered pools revert on swaps to prevent post-resolution trading.
-contract PMFeeHookV1 is IZAMMHook {
+contract PMFeeHook is IZAMMHook {
     // ═══════════════════════════════════════════════════════════
     //                         CONSTANTS
     // ═══════════════════════════════════════════════════════════
@@ -466,7 +466,7 @@ contract PMFeeHookV1 is IZAMMHook {
     )
         public
         payable
-        override
+        override(IZAMMHook)
         nonReentrant
         returns (uint256 feeBps)
     {
@@ -548,7 +548,7 @@ contract PMFeeHookV1 is IZAMMHook {
         int256 d1,
         int256, /* dLiq */
         bytes calldata /* data */
-    ) public payable override nonReentrant {
+    ) public payable override(IZAMMHook) nonReentrant {
         if (msg.sender != address(ZAMM)) revert Unauthorized();
 
         // Skip all checks for non-swap operations (LP operations)
@@ -849,14 +849,14 @@ contract PMFeeHookV1 is IZAMMHook {
             uint256 range = uint256(c.maxFeeBps) - uint256(c.minFeeBps); // Safe: validated
             uint256 progressBps = (elapsed * 10000) / uint256(c.bootstrapWindow);
 
-            // Apply decay curve: 0=linear, 1=exponential, 2=sqrt, 3=log
+            // Apply decay curve: 0=linear, 1=cubic, 2=sqrt, 3=log
             uint8 mode = _getBootstrapDecayMode(c);
             uint256 ratio;
 
             if (mode == 0) {
                 ratio = progressBps; // Linear
             } else if (mode == 1) {
-                // Exponential decay: ratio = 1 - (1-x)^3, where x = progressBps/10000
+                // Cubic decay: ratio = 1 - (1-x)^3, where x = progressBps/10000
                 // r = (1-x) * 10000, so ratio = 10000 - r^3 / 10000^2
                 uint256 r = 10000 - progressBps;
                 ratio = 10000 - (r * r * r) / BPS_SQUARED;
@@ -1093,6 +1093,88 @@ contract PMFeeHookV1 is IZAMMHook {
         return _getProbability(yesReserve, noReserve);
     }
 
+    /// @notice Get volatility price history for a pool
+    /// @param poolId The pool to query
+    /// @return timestamps Array of 10 snapshot timestamps (0 = empty slot)
+    /// @return prices Array of 10 snapshot prices in bps (0-10000)
+    /// @return currentIndex Current write position in circular buffer
+    /// @return validCount Number of non-empty snapshots
+    function getPriceHistory(uint256 poolId)
+        public
+        view
+        returns (
+            uint64[10] memory timestamps,
+            uint32[10] memory prices,
+            uint8 currentIndex,
+            uint8 validCount
+        )
+    {
+        currentIndex = priceHistoryIndex[poolId];
+        for (uint8 i; i != 10; ++i) {
+            PriceSnapshot memory snap = priceHistory[poolId][i];
+            timestamps[i] = snap.timestamp;
+            prices[i] = snap.priceBps;
+            if (snap.timestamp != 0) ++validCount;
+        }
+    }
+
+    /// @notice Get volatility metrics for a pool
+    /// @param poolId The pool to query
+    /// @return volatilityPct Coefficient of variation as percentage (0-100+)
+    /// @return snapshotCount Number of snapshots used in calculation
+    /// @return meanPriceBps Mean price in basis points
+    function getVolatility(uint256 poolId)
+        public
+        view
+        returns (uint256 volatilityPct, uint8 snapshotCount, uint256 meanPriceBps)
+    {
+        if (!meta[poolId].active) return (0, 0, 0);
+
+        uint256 marketId = poolToMarket[poolId];
+        Config storage c = _cfg(marketId);
+
+        uint256 vw = uint256(c.volatilityWindow);
+        uint256 cutoff = (vw == 0 || vw > block.timestamp) ? 0 : block.timestamp - vw;
+
+        uint256 sum;
+        uint256 sumSq;
+
+        assembly ("memory-safe") {
+            mstore(0x00, poolId)
+            mstore(0x20, priceHistory.slot)
+            let base := keccak256(0x00, 0x40)
+
+            for { let i := 0 } lt(i, 10) { i := add(i, 1) } {
+                let w := sload(add(base, i))
+                let ts := and(w, 0xFFFFFFFFFFFFFFFF)
+                if ts {
+                    if or(iszero(cutoff), iszero(lt(ts, cutoff))) {
+                        let p := and(shr(64, w), 0xFFFFFFFF)
+                        sum := add(sum, p)
+                        sumSq := add(sumSq, mul(p, p))
+                        snapshotCount := add(snapshotCount, 1)
+                    }
+                }
+            }
+        }
+
+        if (snapshotCount < 3) return (0, snapshotCount, 0);
+
+        meanPriceBps = sum / snapshotCount;
+        if (meanPriceBps == 0) return (0, snapshotCount, 0);
+
+        uint256 varianceSum;
+        unchecked {
+            varianceSum =
+                sumSq - (2 * meanPriceBps * sum) + (snapshotCount * meanPriceBps * meanPriceBps);
+        }
+        uint256 variance = varianceSum / snapshotCount;
+
+        unchecked {
+            volatilityPct = (_sqrt(variance) * 100) / meanPriceBps;
+        }
+    }
+
     /// @notice Calculate expected price impact for a hypothetical trade as probability delta
     /// @param poolId The pool to check
     /// @param amountIn Amount of input tokens
@@ -1204,7 +1286,7 @@ contract PMFeeHookV1 is IZAMMHook {
     /// @return closeWindow Close window duration in seconds
     /// @return closeMode Close window mode (0=halt, 1=fixed, 2=min, 3=dynamic)
     function getMarketStatus(uint256 marketId)
-        external
+        public
         view
         returns (bool active, bool resolved, uint64 close, uint16 closeWindow, uint8 closeMode)
     {

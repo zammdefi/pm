@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 
 interface IERC20 {
     function balanceOf(address) external view returns (uint256);
@@ -27,7 +27,7 @@ contract PMHookRouterVaultAccountingTest is Test {
     uint64 constant DEADLINE_2028 = 1861919999;
 
     PMHookRouter public router;
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
 
     address public ALICE;
     address public BOB;
@@ -37,9 +37,9 @@ contract PMHookRouterVaultAccountingTest is Test {
     uint256 public poolId;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main7"));
 
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         // Deploy router at REGISTRAR address
         PMHookRouter tempRouter = new PMHookRouter();

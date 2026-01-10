@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 
 interface IPAMM {
     function markets(uint256 marketId)
@@ -24,7 +24,7 @@ interface IPAMM {
 
 contract PMHookRouterRefundDebugTest is Test {
     PMHookRouter public router;
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     IPAMM public constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     address public constant ETH = address(0);
     address public constant EXPECTED_ROUTER = 0x0000000000BADa259Cb860c12ccD9500d9496B3e;
@@ -36,9 +36,9 @@ contract PMHookRouterRefundDebugTest is Test {
     uint256 public marketId;
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main5"));
 
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         PMHookRouter routerImpl = new PMHookRouter();
         vm.etch(EXPECTED_ROUTER, address(routerImpl).code);
@@ -54,6 +54,9 @@ contract PMHookRouterRefundDebugTest is Test {
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
+        // Clear any existing contract code at these addresses (mainnet fork may have contracts)
+        vm.etch(alice, "");
+        vm.etch(bob, "");
         vm.deal(alice, 10000 ether);
         vm.deal(bob, 10000 ether);
 

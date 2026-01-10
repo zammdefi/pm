@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
-import {PMFeeHookV1} from "../src/PMFeeHookV1.sol";
+import {PMFeeHook} from "../src/PMFeeHook.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
 import {PAMM, IZAMM} from "../src/PAMM.sol";
 
@@ -32,7 +32,7 @@ contract PMHookRouterInvariantTest is Test {
     uint256 constant FLAG_AFTER = 1 << 254;
     address constant REGISTRAR = 0x0000000000BADa259Cb860c12ccD9500d9496B3e;
 
-    PMFeeHookV1 public hook;
+    PMFeeHook public hook;
     PMHookRouter public router;
     address public ALICE;
     address public BOB;
@@ -55,9 +55,9 @@ contract PMHookRouterInvariantTest is Test {
     }
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main3"));
 
-        hook = new PMFeeHookV1();
+        hook = new PMFeeHook();
 
         // Deploy router at REGISTRAR address using vm.etch
         PMHookRouter tempRouter = new PMHookRouter();

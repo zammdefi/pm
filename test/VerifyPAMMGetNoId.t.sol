@@ -11,7 +11,7 @@ contract VerifyPAMMGetNoIdTest is Test {
     IPAMM constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
 
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("main"));
+        vm.createSelectFork(vm.rpcUrl("main7"));
     }
 
     function _getNoIdRouter(uint256 marketId) internal pure returns (uint256 noId) {
