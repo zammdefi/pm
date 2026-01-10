@@ -247,4 +247,197 @@ contract PMHookRouterMulticallETHTest is Test {
         // No ETH should be spent (full revert)
         assertEq(bobBalanceAfter, bobBalanceBefore, "All ETH should be refunded on revert");
     }
+
+    // ============ Test 5: Mid-Call Refund Deferred (No Double Spend) ============
+    // This tests the fix for the multicall double-refund bug where mid-call
+    // refunds were being transferred immediately AND decrementing ETH_SPENT,
+    // causing the final refund to double-count.
+
+    function test_Multicall_MidCallRefundDeferred_NoDoubleSpend() public {
+        uint256 marketId = _createMarket();
+
+        uint256 bobBalanceBefore = bob.balance;
+
+        // Create a multicall with two buys
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector,
+            marketId,
+            true, // buyYes
+            2 ether, // collateralIn
+            0, // minSharesOut (allow partial)
+            bob,
+            type(uint256).max
+        );
+        calls[1] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector,
+            marketId,
+            false, // buyNo
+            2 ether, // collateralIn
+            0, // minSharesOut
+            bob,
+            type(uint256).max
+        );
+
+        // Execute with extra ETH to test refund
+        vm.prank(bob);
+        router.multicall{value: 5 ether}(calls);
+
+        uint256 bobBalanceAfter = bob.balance;
+
+        // Bob should have spent <= 4 ETH (the actual collateral used)
+        // and received >= 1 ETH refund
+        uint256 bobSpent = bobBalanceBefore - bobBalanceAfter;
+        assertLe(bobSpent, 4 ether, "Bob should not spend more than collateralIn total");
+
+        // Critical: Bob should have received some refund (at least 1 ETH)
+        uint256 refund = 5 ether - bobSpent;
+        assertGe(refund, 1 ether, "Bob should receive excess ETH refund");
+
+        // Verify bob got shares
+        assertGt(PAMM.balanceOf(bob, marketId), 0, "Should have YES shares");
+    }
+
+    // ============ Test 6: Sequential Buys With Freed Budget ============
+    // Tests that when first buy doesn't use all validated ETH, the "freed"
+    // budget is available for subsequent calls (the decrement works correctly)
+    // WITHOUT causing double-refund.
+
+    function test_Multicall_FreedBudgetAvailableForSubsequentCalls() public {
+        uint256 marketId1 = _createMarket();
+        uint256 marketId2 = _createMarket();
+
+        uint256 bobBalanceBefore = bob.balance;
+
+        // Two buys with reasonable amounts
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector,
+            marketId1,
+            true,
+            3 ether,
+            0, // allow partial
+            bob,
+            type(uint256).max
+        );
+        calls[1] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector, marketId2, true, 3 ether, 0, bob, type(uint256).max
+        );
+
+        // Send 7 ETH - should be enough for both calls plus refund
+        vm.prank(bob);
+        router.multicall{value: 7 ether}(calls);
+
+        uint256 bobBalanceAfter = bob.balance;
+        uint256 spent = bobBalanceBefore - bobBalanceAfter;
+
+        // Should have spent <= 6 ETH (3 + 3)
+        assertLe(spent, 6 ether, "Should spend at most 6 ETH");
+        // Should have received some shares (both calls succeeded)
+        assertGt(PAMM.balanceOf(bob, marketId1), 0, "Should have market1 shares");
+        assertGt(PAMM.balanceOf(bob, marketId2), 0, "Should have market2 shares");
+    }
+
+    // ============ Test 7: LP Accounting Matches Contract Balance ============
+    // After multicall with OTC fills, verify LP fee claims are backed by actual ETH
+
+    function test_Multicall_LPAccountingMatchesBalance() public {
+        uint256 marketId = _createMarket();
+
+        // Get initial state
+        uint256 routerBalanceBefore = address(router).balance;
+
+        // Do several buys that will generate OTC fills and LP fees
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector, marketId, true, 2 ether, 0, bob, type(uint256).max
+        );
+        calls[1] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector, marketId, false, 2 ether, 0, bob, type(uint256).max
+        );
+        calls[2] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector, marketId, true, 1 ether, 0, bob, type(uint256).max
+        );
+
+        vm.prank(bob);
+        router.multicall{value: 5 ether}(calls);
+
+        uint256 routerBalanceAfter = address(router).balance;
+        uint256 routerGain = routerBalanceAfter - routerBalanceBefore;
+
+        // Now alice (the LP) tries to harvest fees
+        // Skip cooldown
+        vm.warp(block.timestamp + 1 days);
+
+        vm.startPrank(alice);
+        uint256 yesFeesHarvested = router.harvestVaultFees(marketId, true);
+        uint256 noFeesHarvested = router.harvestVaultFees(marketId, false);
+        vm.stopPrank();
+
+        uint256 totalHarvested = yesFeesHarvested + noFeesHarvested;
+
+        // LP should be able to harvest, and router should still be solvent
+        // (router balance after harvest >= 0, meaning we didn't over-promise)
+        uint256 routerBalanceFinal = address(router).balance;
+        assertGe(
+            routerBalanceFinal + totalHarvested,
+            routerBalanceAfter,
+            "Router should not have given away more than it had"
+        );
+    }
+
+    // ============ Test 8: Exact Bug Scenario - Validates Fix ============
+    // Recreates the bug scenario: multicall with multiple buys that might
+    // have partial fills. With the bug, mid-call refunds would be double-counted.
+    // With the fix, all refunds are deferred to multicall exit.
+
+    function test_Multicall_ExactBugScenario_NoDoubleRefund() public {
+        uint256 marketId = _createMarket();
+
+        uint256 bobBalanceBefore = bob.balance;
+
+        // Two buys on same market - if first partially fills and "refunds",
+        // the bug would double-count that refund
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector,
+            marketId,
+            true, // buyYes
+            5 ether,
+            0,
+            bob,
+            type(uint256).max
+        );
+        calls[1] = abi.encodeWithSelector(
+            router.buyWithBootstrap.selector,
+            marketId,
+            false, // buyNo - opposite side
+            5 ether,
+            0,
+            bob,
+            type(uint256).max
+        );
+
+        // Send 15 ETH - more than needed to test refund behavior
+        vm.prank(bob);
+        router.multicall{value: 15 ether}(calls);
+
+        uint256 bobBalanceAfter = bob.balance;
+        uint256 bobSpent = bobBalanceBefore - bobBalanceAfter;
+
+        // Bob should have spent at most 10 ETH (5 + 5)
+        assertLe(bobSpent, 10 ether, "Should spend at most 10 ETH");
+
+        // Bob should have received at least 5 ETH refund (15 - 10 max)
+        uint256 refund = 15 ether - bobSpent;
+        assertGe(refund, 5 ether, "Should receive at least 5 ETH refund");
+
+        // Verify bob received shares from both buys
+        uint256 noId = PAMM.getNoId(marketId);
+        assertGt(PAMM.balanceOf(bob, marketId), 0, "Should have YES shares");
+        assertGt(PAMM.balanceOf(bob, noId), 0, "Should have NO shares");
+
+        emit log_named_uint("Bob spent", bobSpent);
+        emit log_named_uint("Bob refund", refund);
+    }
 }

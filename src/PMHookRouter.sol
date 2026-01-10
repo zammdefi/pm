@@ -113,7 +113,6 @@ contract PMHookRouter {
     bytes4 constant ERR_COMPUTATION = 0x05832717;
     bytes4 constant ERR_TIMING = 0x3703bac9;
     bytes4 constant ERR_STATE = 0xd06e7808;
-    bytes4 constant ERR_TRANSFER = 0x2929f974;
 
     // pools(uint256) = 0xac4afa38 = bytes4(keccak256("pools(uint256)"))
     // markets(uint256) = 0xb1283e77 = bytes4(keccak256("markets(uint256)"))
@@ -339,8 +338,11 @@ contract PMHookRouter {
     function _refundCollateralToCaller(address collateral, uint256 amount) internal {
         if (collateral == ETH) {
             assembly ("memory-safe") {
-                // If in multicall, decrement ETH spent tracking so subsequent calls can use refunded ETH
-                if tload(MULTICALL_DEPTH_SLOT) {
+                let inMulticall := tload(MULTICALL_DEPTH_SLOT)
+
+                // In multicall: decrement tracking only, defer actual transfer to multicall exit
+                // This keeps ETH in contract so subsequent calls can use the freed budget
+                if inMulticall {
                     let spent := tload(ETH_SPENT_SLOT)
                     if spent {
                         let decrement := amount
@@ -348,11 +350,14 @@ contract PMHookRouter {
                         tstore(ETH_SPENT_SLOT, sub(spent, decrement))
                     }
                 }
-                // Transfer ETH to caller
-                if iszero(call(gas(), caller(), amount, codesize(), 0x00, codesize(), 0x00)) {
-                    mstore(0x00, 0x2929f974) // TransferError(2) = ETHTransferFailed
-                    mstore(0x20, 2)
-                    revert(0x1c, 0x24)
+
+                // Not in multicall: transfer immediately
+                if iszero(inMulticall) {
+                    if iszero(call(gas(), caller(), amount, codesize(), 0x00, codesize(), 0x00)) {
+                        mstore(0x00, 0x2929f974) // TransferError(2) = ETHTransferFailed
+                        mstore(0x20, 2)
+                        revert(0x1c, 0x24)
+                    }
                 }
             }
         } else {

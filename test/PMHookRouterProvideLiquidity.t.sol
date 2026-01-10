@@ -119,7 +119,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         vm.prank(BOB);
         (uint256 yesVaultShares, uint256 noVaultShares, uint256 ammLiq) = router.provideLiquidity{
             value: collateral
-        }(marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours);
+        }(
+            marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours
+        );
 
         // Should receive vault shares for both sides
         assertGt(yesVaultShares, 0, "Should receive YES vault shares");
@@ -147,7 +149,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         vm.prank(BOB);
         (uint256 yesVaultShares, uint256 noVaultShares, uint256 ammLiq) = router.provideLiquidity{
             value: collateral
-        }(marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours);
+        }(
+            marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours
+        );
 
         assertGt(yesVaultShares, 0, "Should receive YES vault shares");
         assertGt(noVaultShares, 0, "Should receive NO vault shares");
@@ -171,7 +175,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         vm.prank(BOB);
         (uint256 yesVaultShares, uint256 noVaultShares, uint256 ammLiq) = router.provideLiquidity{
             value: collateral
-        }(marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours);
+        }(
+            marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours
+        );
 
         assertEq(yesVaultShares, 0, "Should NOT receive YES vault shares");
         assertEq(noVaultShares, 0, "Should NOT receive NO vault shares");
@@ -194,7 +200,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         vm.prank(BOB);
         (uint256 yesVaultShares, uint256 noVaultShares, uint256 ammLiq) = router.provideLiquidity{
             value: collateral
-        }(marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours);
+        }(
+            marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours
+        );
 
         assertGt(yesVaultShares, 0, "Should receive YES vault shares");
         assertGt(noVaultShares, 0, "Should receive NO vault shares");
@@ -218,7 +226,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         vm.prank(BOB);
         (uint256 yesVaultShares, uint256 noVaultShares, uint256 ammLiq) = router.provideLiquidity{
             value: collateral
-        }(marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours);
+        }(
+            marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours
+        );
 
         assertGt(yesVaultShares, 0, "Should receive YES vault shares");
         assertGt(noVaultShares, 0, "Should receive NO vault shares");
@@ -329,18 +339,22 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
 
     /// @notice Test provideLiquidity updates lastActivity timestamp
     function test_ProvideLiquidity_UpdatesLastActivity() public {
-        uint256 initialTimestamp = block.timestamp;
+        // Get initial lastActivity from bootstrap
+        (,, uint32 initialActivity) = router.bootstrapVaults(marketId);
 
-        vm.warp(block.timestamp + 1 hours);
+        // Warp forward to create a timestamp difference
+        vm.warp(block.timestamp + 2 hours);
+        uint256 newTimestamp = block.timestamp;
 
         vm.prank(BOB);
         router.provideLiquidity{value: 50 ether}(
             marketId, 50 ether, 20 ether, 20 ether, 0, 0, 0, BOB, block.timestamp + 1 hours
         );
 
-        // The vault's lastActivity should be updated
+        // The vault's lastActivity should be updated to new timestamp
         (,, uint32 lastActivity) = router.bootstrapVaults(marketId);
-        assertGt(lastActivity, uint32(initialTimestamp), "lastActivity should be updated");
+        assertEq(lastActivity, uint32(newTimestamp), "lastActivity should equal current timestamp");
+        assertGt(lastActivity, initialActivity, "lastActivity should be greater than initial");
     }
 
     // ============ settleRebalanceBudget Tests ============
@@ -437,6 +451,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         router.withdrawFromVault(marketId, false, aliceNo, ALICE, block.timestamp + 1 hours);
         vm.stopPrank();
 
+        // Warp past market close time before resolving
+        vm.warp(DEADLINE_2028 + 1);
+
         // Resolve market as YES
         vm.prank(ALICE);
         PAMM.resolve(marketId, true);
@@ -471,6 +488,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         router.withdrawFromVault(marketId, true, aliceYes, ALICE, block.timestamp + 1 hours);
         router.withdrawFromVault(marketId, false, aliceNo, ALICE, block.timestamp + 1 hours);
         vm.stopPrank();
+
+        // Warp past market close time before resolving
+        vm.warp(DEADLINE_2028 + 1);
 
         // Resolve as NO
         vm.prank(ALICE);
@@ -514,26 +534,25 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         // 1. BOB provides liquidity
         vm.prank(BOB);
         router.provideLiquidity{value: 200 ether}(
-            marketId, 200 ether, 50 ether, 50 ether, 50 ether, 0, 0, BOB, block.timestamp + 1 hours
+            marketId, 200 ether, 50 ether, 50 ether, 50 ether, 0, 0, BOB, DEADLINE_2028
         );
 
-        // 2. Wait for cooldown
+        // 2. Wait for cooldown and update TWAP
         vm.warp(block.timestamp + 6 hours + 1);
+        router.updateTWAPObservation(marketId);
 
         // 3. CAROL trades
         vm.prank(CAROL);
-        router.buyWithBootstrap{value: 50 ether}(
-            marketId, true, 50 ether, 0, CAROL, block.timestamp + 1 hours
-        );
+        router.buyWithBootstrap{value: 50 ether}(marketId, true, 50 ether, 0, CAROL, DEADLINE_2028);
 
         // 4. BOB withdraws vault position
         vm.startPrank(BOB);
         (uint112 bobYes, uint112 bobNo,,,) = router.vaultPositions(marketId, BOB);
         if (bobYes > 0) {
-            router.withdrawFromVault(marketId, true, bobYes, BOB, block.timestamp + 1 hours);
+            router.withdrawFromVault(marketId, true, bobYes, BOB, DEADLINE_2028);
         }
         if (bobNo > 0) {
-            router.withdrawFromVault(marketId, false, bobNo, BOB, block.timestamp + 1 hours);
+            router.withdrawFromVault(marketId, false, bobNo, BOB, DEADLINE_2028);
         }
         vm.stopPrank();
 
@@ -605,7 +624,9 @@ contract PMHookRouterProvideLiquidityTest is BaseTest {
         vm.prank(BOB);
         (uint256 yesVaultShares, uint256 noVaultShares, uint256 ammLiq) = router.provideLiquidity{
             value: collateral
-        }(marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours);
+        }(
+            marketId, collateral, vaultYes, vaultNo, ammLP, 0, 0, BOB, block.timestamp + 1 hours
+        );
 
         // Validate outputs match inputs
         if (vaultYes > 0) assertGt(yesVaultShares, 0, "Should have YES vault shares");

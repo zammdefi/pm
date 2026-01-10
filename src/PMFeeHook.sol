@@ -10,16 +10,6 @@ interface IZAMM {
         uint256 feeOrHook;
     }
 
-    struct Pool {
-        uint112 reserve0;
-        uint112 reserve1;
-        uint32 blockTimestampLast;
-        uint256 price0CumulativeLast;
-        uint256 price1CumulativeLast;
-        uint256 kLast;
-        uint256 supply;
-    }
-
     function pools(uint256 poolId)
         external
         view

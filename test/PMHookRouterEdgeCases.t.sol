@@ -1014,12 +1014,7 @@ contract PMHookRouterCloseWindowIntegrationTest is Test {
         vm.deal(address(this), 10 ether);
 
         (uint256 sharesOut,,) = router.buyWithBootstrap{value: 1 ether}(
-            marketId,
-            true,
-            1 ether,
-            0,
-            address(this),
-            block.timestamp + 2 hours
+            marketId, true, 1 ether, 0, address(this), block.timestamp + 2 hours
         );
 
         assertTrue(sharesOut > 0, "Should have received shares");
