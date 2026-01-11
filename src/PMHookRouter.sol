@@ -1647,7 +1647,6 @@ contract PMHookRouter {
         _checkDeadline(deadline);
         _requireRegistered(marketId);
         if (shares == 0) _revert(ERR_SHARES, 0); // ZeroShares
-        if (shares > MAX_UINT112) _revert(ERR_SHARES, 3); // SharesOverflow
         assembly { if iszero(receiver) { receiver := caller() } }
 
         PAMM.transferFrom(msg.sender, address(this), isYes ? marketId : _getNoId(marketId), shares);
@@ -1687,7 +1686,6 @@ contract PMHookRouter {
 
         uint256 totalShares = isYes ? vault.yesShares : vault.noShares;
         sharesReturned = mulDiv(vaultSharesToRedeem, totalShares, totalVaultShares);
-        if (sharesReturned > MAX_UINT112) _revert(ERR_SHARES, 5); // SharesReturnedOverflow
 
         unchecked {
             uint256 accPerShare =
@@ -2360,7 +2358,6 @@ contract PMHookRouter {
         unchecked {
             totalAcquired = collateralForSwap + swappedShares;
         }
-        if (totalAcquired > MAX_UINT112) _revert(ERR_SHARES, 3); // SharesOverflow
         _checkU112Overflow(currentShares, totalAcquired);
 
         // Update vault shares and lastActivity
@@ -2408,11 +2405,6 @@ contract PMHookRouter {
 
         uint112 preYesInv = vault.yesShares;
         uint112 preNoInv = vault.noShares;
-
-        // Defensive checks and vault update
-        if (otcShares > MAX_UINT112) _revert(ERR_SHARES, 3); // SharesOverflow
-        uint256 available = buyYes ? vault.yesShares : vault.noShares;
-        if (otcShares > available) _revert(ERR_VALIDATION, 4); // InsufficientShares
 
         // Update vault shares
         assembly ("memory-safe") {
