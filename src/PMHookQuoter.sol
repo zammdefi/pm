@@ -293,7 +293,8 @@ contract PMHookQuoter {
         if (venueCount > 1) source = bytes4("mult");
     }
 
-    /// @dev Quote AMM sell: swap shares → opposite, merge to collateral
+    /// @dev Quote AMM sell: swap partial shares to balance, then merge to collateral
+    /// Mirrors the router's fixed implementation that swaps only enough to balance for merge
     function _quoteAMMSell(uint256 marketId, bool sellYes, uint256 sharesIn)
         internal
         view
@@ -310,13 +311,104 @@ contract PMHookQuoter {
         uint256 noId = _getNoId(marketId);
         bool yesIsId0 = marketId < noId;
         bool zeroForOne = yesIsId0 == sellYes;
-        uint256 amountInWithFee = sharesIn * (10000 - feeBps);
-        uint256 rIn = zeroForOne ? r0 : r1;
-        uint256 rOut = zeroForOne ? r1 : r0;
-        uint256 swapOut = (amountInWithFee * rOut) / (rIn * 10000 + amountInWithFee);
+        uint256 rIn = zeroForOne ? uint256(r0) : uint256(r1);
+        uint256 rOut = zeroForOne ? uint256(r1) : uint256(r0);
 
-        // Merge min(sharesIn, swapOut) to collateral
-        collateralOut = sharesIn < swapOut ? sharesIn : swapOut;
+        // Calculate optimal swap amount to balance for merge
+        uint256 swapAmount = _calcSwapAmountForMerge(sharesIn, rIn, rOut, feeBps);
+        if (swapAmount == 0 || swapAmount >= sharesIn) return 0;
+
+        unchecked {
+            // Quote the swap output
+            // Safe: feeBps < 10000 checked in _calcSwapAmountForMerge
+            uint256 amountInWithFee = swapAmount * (10000 - feeBps);
+            uint256 swapOut = (amountInWithFee * rOut) / (rIn * 10000 + amountInWithFee);
+
+            // Kept shares after swap
+            // Safe: swapAmount < sharesIn checked above
+            uint256 keptShares = sharesIn - swapAmount;
+
+            // Merge min(keptShares, swapOut) to collateral
+            collateralOut = keptShares < swapOut ? keptShares : swapOut;
+        }
+    }
+
+    /// @dev Calculate optimal swap amount to balance shares for merge
+    /// Solves: sharesIn - X = X * rOut * fm / (rIn * 10000 + X * fm)
+    /// where fm = 10000 - feeBps
+    function _calcSwapAmountForMerge(uint256 sharesIn, uint256 rIn, uint256 rOut, uint256 feeBps)
+        internal
+        pure
+        returns (uint256 swapAmount)
+    {
+        if (sharesIn == 0 || rIn == 0 || rOut == 0 || feeBps >= 10000) return 0;
+
+        // Quadratic formula solution for optimal swap amount
+        // a*X^2 + b*X + c = 0 where:
+        // a = fm, b = rIn*10000 + fm*(rOut - sharesIn), c = -sharesIn*rIn*10000
+        uint256 fm;
+        uint256 rIn10k;
+        unchecked {
+            fm = 10000 - feeBps; // Safe: feeBps < 10000 checked above
+            rIn10k = rIn * 10000;
+        }
+
+        // Calculate b (can be negative if sharesIn > rOut)
+        bool bPositive;
+        uint256 b;
+        unchecked {
+            if (rOut > sharesIn) {
+                b = rIn10k + fm * (rOut - sharesIn); // Safe: rOut > sharesIn
+                bPositive = true;
+            } else {
+                uint256 fmDiff = fm * (sharesIn - rOut); // Safe: sharesIn >= rOut
+                if (fmDiff > rIn10k) {
+                    b = fmDiff - rIn10k; // Safe: fmDiff > rIn10k
+                    bPositive = false;
+                } else {
+                    b = rIn10k - fmDiff; // Safe: rIn10k >= fmDiff
+                    bPositive = true;
+                }
+            }
+        }
+
+        // discriminant = b^2 + 4*fm*sharesIn*rIn*10000
+        uint256 absC = sharesIn * rIn10k;
+        uint256 discriminant = b * b + 4 * fm * absC;
+
+        // sqrt via Newton's method
+        uint256 sqrtD = _sqrt(discriminant);
+
+        // X = (-b + sqrtD) / (2*fm)
+        uint256 numerator;
+        unchecked {
+            if (bPositive) {
+                numerator = sqrtD > b ? sqrtD - b : 0; // Safe: sqrtD > b checked
+            } else {
+                numerator = sqrtD + b; // Safe: bounded by discriminant
+            }
+        }
+
+        uint256 denominator;
+        unchecked {
+            denominator = 2 * fm; // Safe: fm <= 10000, so 2*fm <= 20000
+        }
+        if (denominator == 0) return 0;
+
+        swapAmount = numerator / denominator;
+        if (swapAmount > sharesIn) swapAmount = sharesIn;
+    }
+
+    /// @dev Integer square root via Newton's method
+    function _sqrt(uint256 x) internal pure returns (uint256) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        uint256 y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+        return y;
     }
 
     // ============ Internal Helpers ============

@@ -580,4 +580,59 @@ contract PMHookRouterQuoteTest is Test {
 
         console.log("Source verification complete");
     }
+
+    /// @notice Test that sell quote matches actual execution
+    function test_SellQuoteVsExecution() public {
+        _bootstrapMarket();
+
+        console.log("=== SELL QUOTE VS EXECUTION ===");
+
+        // Wait for TWAP
+        vm.warp(block.timestamp + 35 minutes);
+        vm.roll(block.number + 175);
+        router.updateTWAPObservation(marketId);
+
+        // BOB buys YES shares first
+        vm.startPrank(BOB);
+        (uint256 sharesBought,,) = router.buyWithBootstrap{value: 10 ether}(
+            marketId, true, 10 ether, 0, BOB, block.timestamp + 1 hours
+        );
+        console.log("BOB bought YES shares:", sharesBought);
+
+        // Get quote for selling half
+        uint256 sharesToSell = sharesBought / 2;
+        (uint256 quotedCollateral, bytes4 quotedSource) =
+            quoter.quoteSellWithBootstrap(marketId, true, sharesToSell);
+
+        console.log("Quote - collateral:", quotedCollateral);
+        console.log("Quote - source:", string(abi.encodePacked(quotedSource)));
+
+        // Approve router and execute
+        PAMM.setOperator(address(router), true);
+        (uint256 actualCollateral, bytes4 actualSource) = router.sellWithBootstrap(
+            marketId, true, sharesToSell, 0, BOB, block.timestamp + 1 hours
+        );
+
+        console.log("Actual - collateral:", actualCollateral);
+        console.log("Actual - source:", string(abi.encodePacked(actualSource)));
+
+        vm.stopPrank();
+
+        // Quote should be close to actual (within 5% for AMM path due to rounding)
+        assertGt(quotedCollateral, 0, "Quote should return non-zero collateral");
+        assertGt(actualCollateral, 0, "Execution should return non-zero collateral");
+
+        uint256 diff = quotedCollateral > actualCollateral
+            ? quotedCollateral - actualCollateral
+            : actualCollateral - quotedCollateral;
+        uint256 percentDiff = (diff * 100) / actualCollateral;
+
+        console.log("Difference (%):", percentDiff);
+        assertLe(percentDiff, 5, "Quote should be within 5% of actual");
+
+        // Sources should match
+        assertEq(quotedSource, actualSource, "Quote source should match actual source");
+
+        console.log("PASS: Sell quote matches execution");
+    }
 }

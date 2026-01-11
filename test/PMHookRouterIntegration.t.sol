@@ -2070,7 +2070,9 @@ contract PMHookRouterIntegrationTest is BaseTest {
         assertLt(bobYesAfter, bobYesBefore, "YES balance should decrease");
         // Verify collateral was received
         assertGt(bobEthAfter, bobEthBefore, "Should have received ETH");
-        assertEq(bobEthAfter - bobEthBefore, collateralOut, "ETH received should match collateralOut");
+        assertEq(
+            bobEthAfter - bobEthBefore, collateralOut, "ETH received should match collateralOut"
+        );
         // Should use AMM source (no OTC in this scenario since vault is balanced)
         assertTrue(source == bytes4("amm") || source == bytes4("mult"), "Should use AMM path");
 
@@ -2141,7 +2143,9 @@ contract PMHookRouterIntegrationTest is BaseTest {
         assertLt(bobNoAfter, bobNoBefore, "NO balance should decrease");
         // Verify collateral was received
         assertGt(bobEthAfter, bobEthBefore, "Should have received ETH");
-        assertEq(bobEthAfter - bobEthBefore, collateralOut, "ETH received should match collateralOut");
+        assertEq(
+            bobEthAfter - bobEthBefore, collateralOut, "ETH received should match collateralOut"
+        );
 
         vm.stopPrank();
 
