@@ -397,7 +397,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
 
         // Quote function removed to reduce bytecode size
         // (uint256 quoteShares, bool quoteFilled, bytes4 quoteSource,) =
-        //     router.quoteBootstrapBuy(marketId, true, 10 ether);
+        //     quoter.quoteBootstrapBuy(marketId, true, 10 ether);
         // console.log("Before deposit - shares:", quoteShares, "filled:", quoteFilled);
         // console.log("Before deposit - source (bytes4):", uint32(quoteSource));
 
@@ -414,7 +414,7 @@ contract PMHookRouterSymmetricFeesTest is Test {
 
         // Quote function removed to reduce bytecode size
         // (quoteShares, quoteFilled, quoteSource,) =
-        //     router.quoteBootstrapBuy(marketId, true, 10 ether);
+        //     quoter.quoteBootstrapBuy(marketId, true, 10 ether);
         // console.log("After deposit - shares:", quoteShares, "filled:", quoteFilled);
         // console.log("After deposit - source (bytes4):", uint32(quoteSource));
 

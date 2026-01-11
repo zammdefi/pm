@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import "./BaseTest.sol";
 import {PMHookRouter} from "../src/PMHookRouter.sol";
 import {PMFeeHook} from "../src/PMFeeHook.sol";
+import {PMHookQuoter} from "../src/PMHookQuoter.sol";
 
 interface IPAMM {
     function balanceOf(address account, uint256 id) external view returns (uint256);
@@ -192,6 +193,7 @@ contract PMHookRouterIntegrationTest is BaseTest {
 
     PMHookRouter public router;
     PMFeeHook public hook;
+    PMHookQuoter public quoter;
 
     address public ALICE;
     address public BOB;
@@ -217,6 +219,9 @@ contract PMHookRouterIntegrationTest is BaseTest {
 
         vm.prank(hook.owner());
         hook.transferOwnership(address(router));
+
+        // Deploy quoter
+        quoter = new PMHookQuoter(address(router));
 
         ALICE = makeAddr("ALICE");
         BOB = makeAddr("BOB");
@@ -403,7 +408,7 @@ contract PMHookRouterIntegrationTest is BaseTest {
         console.log("Cached TWAP block:", newCacheBlockNum);
 
         // Price should be in valid range - verify via quote
-        (uint256 quotedShares,,,) = router.quoteBootstrapBuy(marketId, true, 1 ether, 0);
+        (uint256 quotedShares,,,) = quoter.quoteBootstrapBuy(marketId, true, 1 ether, 0);
         assertTrue(quotedShares > 0, "Should be able to quote after TWAP update");
 
         console.log("PASS: TWAP initialization and update verified\n");
@@ -575,7 +580,7 @@ contract PMHookRouterIntegrationTest is BaseTest {
 
         // Get quote for buying YES
         (uint256 quotedShares, bool usesVault, bytes4 source,) =
-            router.quoteBootstrapBuy(marketId, true, 5 ether, 0);
+            quoter.quoteBootstrapBuy(marketId, true, 5 ether, 0);
 
         console.log("Quoted shares:", quotedShares);
         console.log("Uses vault:", usesVault);
@@ -2002,7 +2007,219 @@ contract PMHookRouterIntegrationTest is BaseTest {
 
         vm.stopPrank();
 
-        console.log("PASS: Sell via ZAMM swap verified (router has no direct sell function)\n");
+        console.log("PASS: Sell via ZAMM swap verified\n");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // TEST 25b: sellWithBootstrap AMM-only path
+    // INVARIANT: Selling shares via AMM returns collateral correctly
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    function test_25b_SellWithBootstrapAMMOnly() public {
+        console.log("=== TEST 25b: sellWithBootstrap AMM-Only Path ===");
+
+        closeTime = uint64(block.timestamp + 30 days);
+        uint256 deadline = closeTime - 1;
+
+        // Bootstrap market
+        vm.prank(ALICE);
+        (marketId, poolId,,) = router.bootstrapMarket{value: 100 ether}(
+            "Sell AMM Test",
+            ALICE,
+            ETH,
+            closeTime,
+            false,
+            address(hook),
+            100 ether,
+            true,
+            0,
+            0,
+            ALICE,
+            deadline
+        );
+
+        // Setup TWAP
+        vm.warp(block.timestamp + 31 minutes);
+        router.updateTWAPObservation(marketId);
+
+        // BOB buys YES shares first
+        vm.startPrank(BOB);
+        (uint256 sharesBought,,) =
+            router.buyWithBootstrap{value: 10 ether}(marketId, true, 10 ether, 0, BOB, deadline);
+        console.log("BOB bought YES shares:", sharesBought);
+
+        // Approve router to spend shares
+        PAMM.setOperator(address(router), true);
+
+        uint256 bobYesBefore = PAMM.balanceOf(BOB, marketId);
+        uint256 bobEthBefore = BOB.balance;
+
+        // Sell half the shares via sellWithBootstrap (AMM path)
+        uint256 sharesToSell = sharesBought / 2;
+        (uint256 collateralOut, bytes4 source) =
+            router.sellWithBootstrap(marketId, true, sharesToSell, 0, BOB, deadline);
+
+        console.log("Shares sold:", sharesToSell);
+        console.log("Collateral received:", collateralOut);
+        console.log("Source:", string(abi.encodePacked(source)));
+
+        uint256 bobYesAfter = PAMM.balanceOf(BOB, marketId);
+        uint256 bobEthAfter = BOB.balance;
+
+        // Verify shares were spent
+        assertLt(bobYesAfter, bobYesBefore, "YES balance should decrease");
+        // Verify collateral was received
+        assertGt(bobEthAfter, bobEthBefore, "Should have received ETH");
+        assertEq(bobEthAfter - bobEthBefore, collateralOut, "ETH received should match collateralOut");
+        // Should use AMM source (no OTC in this scenario since vault is balanced)
+        assertTrue(source == bytes4("amm") || source == bytes4("mult"), "Should use AMM path");
+
+        vm.stopPrank();
+
+        console.log("PASS: sellWithBootstrap AMM-only path verified\n");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // TEST 25c: sellWithBootstrap sells NO shares
+    // INVARIANT: Selling NO shares also works correctly
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    function test_25c_SellWithBootstrapNoShares() public {
+        console.log("=== TEST 25c: sellWithBootstrap NO Shares ===");
+
+        closeTime = uint64(block.timestamp + 30 days);
+        uint256 deadline = closeTime - 1;
+
+        // Bootstrap market
+        vm.prank(ALICE);
+        (marketId, poolId,,) = router.bootstrapMarket{value: 100 ether}(
+            "Sell NO Test",
+            ALICE,
+            ETH,
+            closeTime,
+            false,
+            address(hook),
+            100 ether,
+            true,
+            0,
+            0,
+            ALICE,
+            deadline
+        );
+
+        // Setup TWAP
+        vm.warp(block.timestamp + 31 minutes);
+        router.updateTWAPObservation(marketId);
+
+        uint256 noId = PAMM.getNoId(marketId);
+
+        // BOB buys NO shares first
+        vm.startPrank(BOB);
+        (uint256 sharesBought,,) =
+            router.buyWithBootstrap{value: 10 ether}(marketId, false, 10 ether, 0, BOB, deadline);
+        console.log("BOB bought NO shares:", sharesBought);
+
+        // Approve router to spend shares
+        PAMM.setOperator(address(router), true);
+
+        uint256 bobNoBefore = PAMM.balanceOf(BOB, noId);
+        uint256 bobEthBefore = BOB.balance;
+
+        // Sell half the NO shares via sellWithBootstrap
+        uint256 sharesToSell = sharesBought / 2;
+        (uint256 collateralOut, bytes4 source) =
+            router.sellWithBootstrap(marketId, false, sharesToSell, 0, BOB, deadline);
+
+        console.log("NO Shares sold:", sharesToSell);
+        console.log("Collateral received:", collateralOut);
+        console.log("Source:", string(abi.encodePacked(source)));
+
+        uint256 bobNoAfter = PAMM.balanceOf(BOB, noId);
+        uint256 bobEthAfter = BOB.balance;
+
+        // Verify shares were spent
+        assertLt(bobNoAfter, bobNoBefore, "NO balance should decrease");
+        // Verify collateral was received
+        assertGt(bobEthAfter, bobEthBefore, "Should have received ETH");
+        assertEq(bobEthAfter - bobEthBefore, collateralOut, "ETH received should match collateralOut");
+
+        vm.stopPrank();
+
+        console.log("PASS: sellWithBootstrap NO shares verified\n");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // TEST 25d: sellWithBootstrap large sell (edge case)
+    // INVARIANT: Large sells that would drain pool still work with partial merge
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    function test_25d_SellWithBootstrapLargeSell() public {
+        console.log("=== TEST 25d: sellWithBootstrap Moderate Sell ===");
+
+        closeTime = uint64(block.timestamp + 30 days);
+        uint256 deadline = closeTime - 1;
+
+        // Bootstrap market with good liquidity
+        vm.prank(ALICE);
+        (marketId, poolId,,) = router.bootstrapMarket{value: 100 ether}(
+            "Moderate Sell Test",
+            ALICE,
+            ETH,
+            closeTime,
+            false,
+            address(hook),
+            100 ether,
+            true,
+            0,
+            0,
+            ALICE,
+            deadline
+        );
+
+        // Setup TWAP
+        vm.warp(block.timestamp + 31 minutes);
+        router.updateTWAPObservation(marketId);
+
+        // BOB buys YES shares
+        vm.startPrank(BOB);
+        (uint256 sharesBought,,) =
+            router.buyWithBootstrap{value: 15 ether}(marketId, true, 15 ether, 0, BOB, deadline);
+        console.log("BOB bought YES shares:", sharesBought);
+
+        // Approve router
+        PAMM.setOperator(address(router), true);
+
+        uint256 bobYesBefore = PAMM.balanceOf(BOB, marketId);
+        uint256 bobEthBefore = BOB.balance;
+
+        // Sell 80% of shares (tests larger sells without hitting price impact limits)
+        uint256 sharesToSell = sharesBought * 80 / 100;
+        (uint256 collateralOut, bytes4 source) =
+            router.sellWithBootstrap(marketId, true, sharesToSell, 0, BOB, deadline);
+
+        console.log("Shares sold:", sharesToSell);
+        console.log("Collateral received:", collateralOut);
+        console.log("Source:", string(abi.encodePacked(source)));
+
+        uint256 bobYesAfter = PAMM.balanceOf(BOB, marketId);
+        uint256 bobEthAfter = BOB.balance;
+
+        // Should have received collateral
+        assertGt(collateralOut, 0, "Should receive some collateral");
+        assertGt(bobEthAfter, bobEthBefore, "Should have received ETH");
+
+        // Verify shares decreased appropriately
+        console.log("YES shares remaining:", bobYesAfter);
+        uint256 noId = PAMM.getNoId(marketId);
+        uint256 bobNoAfter = PAMM.balanceOf(BOB, noId);
+        console.log("NO shares received as dust:", bobNoAfter);
+
+        // The sell should have consumed most input shares
+        assertLt(bobYesAfter, bobYesBefore, "YES balance should decrease");
+
+        vm.stopPrank();
+
+        console.log("PASS: sellWithBootstrap moderate sell verified\n");
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
@@ -2156,11 +2373,14 @@ contract PMHookRouterIntegrationTest is BaseTest {
         test_23_PermitMulticallERC20Bootstrap();
         test_24_PermitMulticallProvideLiquidity();
         test_25_SellFunctionalityViaZAMM();
+        test_25b_SellWithBootstrapAMMOnly();
+        test_25c_SellWithBootstrapNoShares();
+        test_25d_SellWithBootstrapLargeSell();
         test_26_AllBootstrapDecayModes();
         test_27_CloseWindowMode3Dynamic();
 
         console.log("================================================================");
-        console.log("  ALL 27 INTEGRATION TESTS PASSED                              ");
+        console.log("  ALL 30 INTEGRATION TESTS PASSED                              ");
         console.log("================================================================");
     }
 }

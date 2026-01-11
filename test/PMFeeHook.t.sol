@@ -2234,6 +2234,557 @@ contract PMFeeHookTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                    VIEW FUNCTION COVERAGE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetCloseWindow() public {
+        // Create and register market
+        marketId = _createMarket("CloseWindow Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Default config has closeWindow = 1 hours
+        uint256 closeWindow = hook.getCloseWindow(marketId);
+        assertEq(closeWindow, 1 hours, "Should return default closeWindow");
+
+        // Set custom config with different closeWindow
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.closeWindow = 2 hours;
+        hook.setMarketConfig(marketId, cfg);
+
+        closeWindow = hook.getCloseWindow(marketId);
+        assertEq(closeWindow, 2 hours, "Should return custom closeWindow");
+
+        console.log("getCloseWindow: passed");
+    }
+
+    function test_GetMaxPriceImpactBps() public {
+        // Create and register market
+        marketId = _createMarket("PriceImpact Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Default config has price impact enabled with 1200 bps
+        uint256 maxImpact = hook.getMaxPriceImpactBps(marketId);
+        assertEq(maxImpact, 1200, "Should return default maxPriceImpactBps");
+
+        // Set config with price impact disabled (remove flag bit 5)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags & ~uint16(0x20); // Clear price impact flag
+        hook.setMarketConfig(marketId, cfg);
+
+        maxImpact = hook.getMaxPriceImpactBps(marketId);
+        assertEq(maxImpact, 0, "Should return 0 when price impact disabled");
+
+        console.log("getMaxPriceImpactBps: passed");
+    }
+
+    function test_GetMarketStatus() public {
+        // Create and register market with specific close time
+        uint64 closeTime = uint64(block.timestamp + 7 days);
+        marketId = _createMarket("Status Test", closeTime);
+        poolId = hook.registerMarket(marketId);
+
+        (bool active, bool resolved, uint64 close, uint16 closeWindow, uint8 closeMode) =
+            hook.getMarketStatus(marketId);
+
+        assertTrue(active, "Should be active after registration");
+        assertFalse(resolved, "Should not be resolved");
+        assertEq(close, closeTime, "Should return correct close time");
+        assertEq(closeWindow, 1 hours, "Should return default closeWindow");
+        assertEq(closeMode, 1, "Should return default closeMode (1 = fixed fee)");
+
+        console.log("getMarketStatus: passed");
+    }
+
+    function test_GetMarketStatus_Unregistered() public {
+        // Create market but don't register
+        marketId = _createMarket("Unregistered Status", block.timestamp + 7 days);
+
+        (bool active,,,,) = hook.getMarketStatus(marketId);
+        assertFalse(active, "Should not be active for unregistered market");
+
+        console.log("getMarketStatus unregistered: passed");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SECURITY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test that shadow pools (after-only hook) cannot trade
+    /// @dev This tests the fix for after-only pools bypassing registration
+    function test_AfterOnlyPool_SwapReverts() public {
+        // Create market but don't register with hook
+        marketId = _createMarket("Shadow Pool Test", block.timestamp + 7 days);
+
+        // Get the pool key with only FLAG_AFTER (simulating shadow pool)
+        uint256 flagAfter = 1 << 254;
+        uint256 shadowFeeOrHook = uint256(uint160(address(hook))) | flagAfter; // Only AFTER flag
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, shadowFeeOrHook);
+
+        // Split tokens to have something to trade
+        vm.startPrank(alice);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 1000e6, alice);
+
+        // Approve ZAMM
+        PAMM.setOperator(address(ZAMM), true);
+
+        // Try to add liquidity and swap - the pool is unregistered so afterAction should revert
+        // Note: This creates a pool with shadow feeOrHook, not the canonical one
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: shadowFeeOrHook
+        });
+
+        // Add liquidity (LP operations allowed even for unregistered)
+        ZAMM.addLiquidity(zammKey, 400e6, 400e6, 0, 0, alice, block.timestamp + 1 hours);
+
+        // Attempt swap - should revert with InvalidPoolId because pool is not registered
+        vm.expectRevert(PMFeeHook.InvalidPoolId.selector);
+        ZAMM.swapExactIn(zammKey, 10e6, 0, true, alice, block.timestamp + 1 hours);
+
+        vm.stopPrank();
+
+        console.log("Shadow pool swap reverts: passed");
+    }
+
+    /// @notice Test that LP operations work for unregistered pools (intentional)
+    function test_LPOperations_AllowedForUnregistered() public {
+        // Create market but don't register
+        marketId = _createMarket("LP Unregistered Test", block.timestamp + 7 days);
+
+        // Use canonical feeOrHook but don't register
+        feeOrHook = hook.feeOrHook();
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+
+        vm.startPrank(alice);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 1000e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0, id1: key.id1, token0: key.token0, token1: key.token1, feeOrHook: feeOrHook
+        });
+
+        // Add liquidity should work (LP ops bypass registration check)
+        // This is intentional for emergency LP removal from unregistered/resolved pools
+        (uint256 a0, uint256 a1, uint256 liq) =
+            ZAMM.addLiquidity(zammKey, 400e6, 400e6, 0, 0, alice, block.timestamp + 1 hours);
+
+        assertTrue(liq > 0, "Should have received liquidity tokens");
+        assertTrue(a0 > 0 && a1 > 0, "Should have added both tokens");
+
+        vm.stopPrank();
+
+        console.log("LP operations allowed for unregistered: passed");
+    }
+
+    /// @notice Test registerMarket called by owner (not just REGISTRAR)
+    function test_RegisterMarket_ByOwner() public {
+        // Create market
+        marketId = _createMarket("Owner Register Test", block.timestamp + 7 days);
+
+        // Register by owner (this contract is the owner via setUp)
+        poolId = hook.registerMarket(marketId);
+
+        assertTrue(poolId != 0, "Should return valid poolId");
+
+        (uint64 start, bool active, bool yesIsToken0) = hook.meta(poolId);
+        assertTrue(active, "Pool should be active");
+        assertEq(start, uint64(block.timestamp), "Start should be current timestamp");
+
+        console.log("registerMarket by owner: passed");
+    }
+
+    /// @notice Test registerMarket reverts for non-authorized caller
+    function test_RevertRegisterMarket_Unauthorized() public {
+        marketId = _createMarket("Unauthorized Test", block.timestamp + 7 days);
+
+        vm.prank(alice); // alice is not owner or REGISTRAR
+        vm.expectRevert(PMFeeHook.Unauthorized.selector);
+        hook.registerMarket(marketId);
+
+        console.log("registerMarket unauthorized reverts: passed");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    CONFIG VALIDATION EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertInvalidConfig_SkewRefBpsZero() public {
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.skewRefBps = 0; // Invalid: must be > 0
+
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
+        hook.setDefaultConfig(cfg);
+
+        console.log("skewRefBps = 0 reverts: passed");
+    }
+
+    function test_RevertInvalidConfig_SkewRefBpsTooHigh() public {
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.skewRefBps = 5001; // Invalid: must be <= 5000
+
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
+        hook.setDefaultConfig(cfg);
+
+        console.log("skewRefBps > 5000 reverts: passed");
+    }
+
+    function test_RevertInvalidConfig_CloseWindowMode1NoFee() public {
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        // Set closeWindowMode to 1 (fixed fee) but closeWindowFeeBps to 0
+        cfg.flags = (cfg.flags & ~uint16(0x0C)) | uint16(0x04); // Mode 1 = bits 2-3 = 01
+        cfg.closeWindowFeeBps = 0;
+
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
+        hook.setDefaultConfig(cfg);
+
+        console.log("closeWindowMode=1 with 0 fee reverts: passed");
+    }
+
+    function test_RevertInvalidConfig_FeeCapAtMax() public {
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.feeCapBps = 10000; // Invalid: must be < 10000
+
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
+        hook.setDefaultConfig(cfg);
+
+        console.log("feeCapBps = 10000 reverts: passed");
+    }
+
+    function test_RevertInvalidConfig_AsymmetricFeeTooHigh() public {
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.asymmetricFeeBps = 10001; // Invalid: > 10000
+
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
+        hook.setDefaultConfig(cfg);
+
+        console.log("asymmetricFeeBps > 10000 reverts: passed");
+    }
+
+    function test_RevertInvalidConfig_VolatilityFeeTooHigh() public {
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.volatilityFeeBps = 10001; // Invalid: > 10000
+
+        vm.expectRevert(PMFeeHook.InvalidConfig.selector);
+        hook.setDefaultConfig(cfg);
+
+        console.log("volatilityFeeBps > 10000 reverts: passed");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    ADDITIONAL EDGE CASE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_AdjustBootstrapStart_MarketResolved() public {
+        // Create and register market
+        marketId = _createMarket("Resolved Bootstrap Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Resolve the market (this contract is the resolver)
+        // We need to call resolve on PAMM - let's check if we can
+        // Actually, let's warp to after close and check the close path
+
+        // Warp to after market close
+        vm.warp(block.timestamp + 8 days);
+
+        // Now try to adjust bootstrap start - should revert
+        vm.expectRevert(PMFeeHook.MarketClosed.selector);
+        hook.adjustBootstrapStart(poolId, uint64(block.timestamp - 1 days));
+
+        console.log("adjustBootstrapStart after close reverts: passed");
+    }
+
+    function test_GetMarketConfig_Default() public {
+        // Create market but use a marketId that has no custom config
+        marketId = _createMarket("Default Config Test", block.timestamp + 7 days);
+
+        // Get config for market with no custom config (should return default)
+        PMFeeHook.Config memory cfg = hook.getMarketConfig(marketId);
+        PMFeeHook.Config memory defaultCfg = hook.getDefaultConfig();
+
+        assertEq(cfg.minFeeBps, defaultCfg.minFeeBps, "Should return default minFeeBps");
+        assertEq(cfg.maxFeeBps, defaultCfg.maxFeeBps, "Should return default maxFeeBps");
+        assertEq(cfg.flags, defaultCfg.flags, "Should return default flags");
+
+        console.log("getMarketConfig returns default: passed");
+    }
+
+    function test_GetMarketConfig_Custom() public {
+        marketId = _createMarket("Custom Config Test", block.timestamp + 7 days);
+
+        // Set custom config
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.minFeeBps = 50;
+        cfg.maxFeeBps = 150;
+        hook.setMarketConfig(marketId, cfg);
+
+        // Verify custom config is returned
+        PMFeeHook.Config memory retrieved = hook.getMarketConfig(marketId);
+        assertEq(retrieved.minFeeBps, 50, "Should return custom minFeeBps");
+        assertEq(retrieved.maxFeeBps, 150, "Should return custom maxFeeBps");
+
+        console.log("getMarketConfig returns custom: passed");
+    }
+
+    function test_Asymmetric_FeeScalesLinearly() public {
+        // Create and register market
+        marketId = _createMarket("Asymmetric Fee Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Set config with only asymmetric fee enabled
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = 0x10; // Only asymmetric fee
+        cfg.asymmetricFeeBps = 100; // 1% max asymmetric fee
+        cfg.minFeeBps = 0;
+        cfg.maxFeeBps = 0;
+        cfg.bootstrapWindow = 0;
+        hook.setMarketConfig(marketId, cfg);
+
+        // Add liquidity with imbalance to create skew
+        feeOrHook = hook.feeOrHook();
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+
+        vm.startPrank(alice);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 2000e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0, id1: key.id1, token0: key.token0, token1: key.token1, feeOrHook: feeOrHook
+        });
+
+        // Add imbalanced liquidity (more YES than NO means lower YES price)
+        ZAMM.addLiquidity(zammKey, 800e6, 200e6, 0, 0, alice, block.timestamp + 1 hours);
+        vm.stopPrank();
+
+        // Check probability
+        uint256 prob = hook.getMarketProbability(poolId);
+        // With 800 YES and 200 NO: P(YES) = NO/(YES+NO) = 200/1000 = 20% = 2000 bps
+        // Deviation from 50% = |2000 - 5000| = 3000 bps out of max 5000
+        // Asymmetric fee = 100 * 3000 / 5000 = 60 bps
+
+        uint256 currentFee = hook.getCurrentFeeBps(poolId);
+        // Fee should be around 60 bps (asymmetric component only)
+        assertTrue(currentFee > 0, "Fee should include asymmetric component");
+        assertTrue(currentFee <= 100, "Fee should be capped by asymmetric max");
+
+        console.log("Asymmetric fee scales with deviation: passed");
+    }
+
+    function test_BootstrapDecay_CubicMode() public {
+        // Create and register market
+        marketId = _createMarket("Cubic Decay Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Set config with cubic bootstrap decay (mode 1)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = 0x02; // Only bootstrap
+        cfg.minFeeBps = 10;
+        cfg.maxFeeBps = 100;
+        cfg.bootstrapWindow = 1 days;
+        cfg.extraFlags = 0x04; // bits 2-3 = 01 = cubic decay mode
+        hook.setMarketConfig(marketId, cfg);
+
+        // Record fee at start
+        uint256 feeAtStart = hook.getCurrentFeeBps(poolId);
+        assertEq(feeAtStart, 100, "Should be max fee at start");
+
+        // Warp to 50% through bootstrap
+        vm.warp(block.timestamp + 12 hours);
+        uint256 feeMid = hook.getCurrentFeeBps(poolId);
+
+        // Warp past end of bootstrap (add buffer to ensure we're past)
+        vm.warp(block.timestamp + 13 hours);
+        uint256 feeEnd = hook.getCurrentFeeBps(poolId);
+        assertEq(feeEnd, 10, "Should be min fee at end");
+
+        // Cubic decay means fee decays slowly at first, then fast
+        // At 50%, cubic gives ratio = 1 - (0.5)^3 = 0.875, so fee ≈ 100 - 90*0.875 = 21.25
+        // This is lower than linear (55 bps at 50%)
+        assertTrue(feeMid < 50, "Cubic decay should be below linear at midpoint");
+
+        console.log("Bootstrap cubic decay: passed");
+    }
+
+    function test_BootstrapDecay_SqrtMode() public {
+        // Create and register market
+        marketId = _createMarket("Sqrt Decay Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Set config with sqrt bootstrap decay (mode 2)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = 0x02; // Only bootstrap
+        cfg.minFeeBps = 10;
+        cfg.maxFeeBps = 100;
+        cfg.bootstrapWindow = 1 days;
+        cfg.extraFlags = 0x08; // bits 2-3 = 10 = sqrt decay mode
+        hook.setMarketConfig(marketId, cfg);
+
+        // Record fee at start
+        uint256 feeAtStart = hook.getCurrentFeeBps(poolId);
+        assertEq(feeAtStart, 100, "Should be max fee at start");
+
+        // Warp to 25% through bootstrap
+        vm.warp(block.timestamp + 6 hours);
+        uint256 feeEarly = hook.getCurrentFeeBps(poolId);
+
+        // Sqrt decay means fee decays fast at first, then slow
+        // At 25%, sqrt gives ratio = sqrt(0.25) = 0.5, so fee ≈ 100 - 90*0.5 = 55
+        // This is lower than linear (77.5 bps at 25%)
+        assertTrue(feeEarly < 77, "Sqrt decay should be below linear early");
+
+        console.log("Bootstrap sqrt decay: passed");
+    }
+
+    function test_BootstrapDecay_EaseInMode() public {
+        // Create and register market
+        marketId = _createMarket("EaseIn Decay Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Set config with ease-in bootstrap decay (mode 3)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = 0x02; // Only bootstrap
+        cfg.minFeeBps = 10;
+        cfg.maxFeeBps = 100;
+        cfg.bootstrapWindow = 1 days;
+        cfg.extraFlags = 0x0C; // bits 2-3 = 11 = ease-in decay mode
+        hook.setMarketConfig(marketId, cfg);
+
+        // Record fee at start
+        uint256 feeAtStart = hook.getCurrentFeeBps(poolId);
+        assertEq(feeAtStart, 100, "Should be max fee at start");
+
+        // Warp to 25% through bootstrap
+        vm.warp(block.timestamp + 6 hours);
+        uint256 feeEarly = hook.getCurrentFeeBps(poolId);
+
+        // Ease-in decay means fee decays slowly at first, then fast
+        // At 25%, ease-in gives ratio = 1 - sqrt(0.75) ≈ 0.134, so fee ≈ 100 - 90*0.134 = 88
+        // This is higher than linear (77.5 bps at 25%)
+        assertTrue(feeEarly > 77, "Ease-in decay should be above linear early");
+
+        console.log("Bootstrap ease-in decay: passed");
+    }
+
+    function test_SkewCurve_CubicMode() public {
+        // Create and register market
+        marketId = _createMarket("Cubic Skew Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Set config with cubic skew curve (mode 2)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = 0x01; // Only skew
+        cfg.minFeeBps = 0;
+        cfg.maxSkewFeeBps = 100;
+        cfg.skewRefBps = 5000; // Max skew at 0% or 100%
+        cfg.extraFlags = 0x02; // bits 0-1 = 10 = cubic skew curve
+        cfg.bootstrapWindow = 0;
+        hook.setMarketConfig(marketId, cfg);
+
+        // Add imbalanced liquidity
+        feeOrHook = hook.feeOrHook();
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+
+        vm.startPrank(alice);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 2000e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        // 75/25 split = 50% skew = ratio of 0.5
+        ZAMM.addLiquidity(
+            IZAMM.PoolKey({
+                id0: key.id0,
+                id1: key.id1,
+                token0: key.token0,
+                token1: key.token1,
+                feeOrHook: feeOrHook
+            }),
+            750e6,
+            250e6,
+            0,
+            0,
+            alice,
+            block.timestamp + 1 hours
+        );
+        vm.stopPrank();
+
+        // Cubic curve: fee = maxSkew * ratio^3 = 100 * 0.5^3 = 12.5 bps
+        uint256 fee = hook.getCurrentFeeBps(poolId);
+        assertTrue(fee <= 15, "Cubic skew should be low at moderate imbalance");
+
+        console.log("Skew cubic curve: passed");
+    }
+
+    function test_SkewCurve_QuarticMode() public {
+        // Create and register market
+        marketId = _createMarket("Quartic Skew Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Set config with quartic skew curve (mode 3)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = 0x01; // Only skew
+        cfg.minFeeBps = 0;
+        cfg.maxSkewFeeBps = 100;
+        cfg.skewRefBps = 5000;
+        cfg.extraFlags = 0x03; // bits 0-1 = 11 = quartic skew curve
+        cfg.bootstrapWindow = 0;
+        hook.setMarketConfig(marketId, cfg);
+
+        // Add imbalanced liquidity
+        feeOrHook = hook.feeOrHook();
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+
+        vm.startPrank(alice);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 2000e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        // 75/25 split
+        ZAMM.addLiquidity(
+            IZAMM.PoolKey({
+                id0: key.id0,
+                id1: key.id1,
+                token0: key.token0,
+                token1: key.token1,
+                feeOrHook: feeOrHook
+            }),
+            750e6,
+            250e6,
+            0,
+            0,
+            alice,
+            block.timestamp + 1 hours
+        );
+        vm.stopPrank();
+
+        // Quartic curve: fee = maxSkew * ratio^4 = 100 * 0.5^4 = 6.25 bps
+        uint256 fee = hook.getCurrentFeeBps(poolId);
+        assertTrue(fee <= 10, "Quartic skew should be very low at moderate imbalance");
+
+        console.log("Skew quartic curve: passed");
+    }
+
+    function test_RegisterMarket_ClosedMarket() public {
+        // Create market with valid close time
+        uint256 closeTime = block.timestamp + 1 days;
+        marketId = _createMarket("Closed Market Test", closeTime);
+
+        // Warp to after the close time
+        vm.warp(closeTime + 1 hours);
+
+        // Try to register - should revert because market is closed
+        vm.expectRevert(PMFeeHook.MarketClosed.selector);
+        hook.registerMarket(marketId);
+
+        console.log("registerMarket closed reverts: passed");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                     HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 

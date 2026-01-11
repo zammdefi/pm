@@ -186,7 +186,7 @@ contract PMFeeHook is IZAMMHook {
         uint16 feeCapBps; // Total fee ceiling
         uint16 skewRefBps; // Skew threshold (0, 5000]
         uint16 asymmetricFeeBps; // Linear imbalance fee
-        uint16 closeWindow; // Close window duration (seconds)
+        uint16 closeWindow; // Close window duration (seconds). 0 = router uses default (1 hour)
         uint16 closeWindowFeeBps; // Mode 1 close fee
         uint16 maxPriceImpactBps; // Max impact (require flag bit 5)
         uint32 bootstrapWindow; // Decay duration (seconds)
@@ -242,13 +242,16 @@ contract PMFeeHook is IZAMMHook {
         defaultConfig.skewRefBps = 4000; // 90/10 split (tight for small pools)
         defaultConfig.asymmetricFeeBps = 20; // 0.20% directional component
         defaultConfig.closeWindow = 1 hours;
-        defaultConfig.closeWindowFeeBps = 40; // 0.40% (router disables vault here)
+        defaultConfig.closeWindowFeeBps = 40; // 0.40% fixed fee during close window
         defaultConfig.maxPriceImpactBps = 1200; // 12% CRITICAL - protects TWAP for router vault pricing
         defaultConfig.bootstrapWindow = 2 days; // Elevated fees for 29% of 1-week, 7% of 1-month
         defaultConfig.volatilityFeeBps = 0;
         defaultConfig.volatilityWindow = 0;
-        defaultConfig.flags = 0x37; // Price impact ON (essential for TWAP integrity)
-        defaultConfig.extraFlags = 0x01; // Quadratic skew, linear decay
+        // flags 0x37: skew + bootstrap + closeWindowMode=1 + asymmetric + priceImpact (no volatility)
+        // closeWindowMode=1: AMM still allows trading with fixed 0.40% fee in close window,
+        // while router independently disables vault OTC (reads hook's closeWindow via getCloseWindow)
+        defaultConfig.flags = 0x37;
+        defaultConfig.extraFlags = 0x01; // Quadratic skew curve, linear bootstrap decay
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -312,9 +315,18 @@ contract PMFeeHook is IZAMMHook {
         return defaultConfig;
     }
 
+    /// @notice Get close window for a market (0 = router uses 1-hour default)
     function getCloseWindow(uint256 marketId) public view returns (uint256) {
         Config storage c = _cfg(marketId);
         return uint256(c.closeWindow);
+    }
+
+    /// @notice Get max price impact for a market (0 if disabled)
+    /// @dev Returns 0 if price impact check is disabled (flag bit 5 = 0)
+    function getMaxPriceImpactBps(uint256 marketId) public view returns (uint256) {
+        Config storage c = _cfg(marketId);
+        bool enabled = (c.flags & 0x20) != 0; // bit 5 = price impact
+        return enabled ? uint256(c.maxPriceImpactBps) : 0;
     }
 
     /// @notice Rescue accidentally sent ETH (owner only)
@@ -545,8 +557,9 @@ contract PMFeeHook is IZAMMHook {
         if (!_isSwap(sig)) return;
 
         // Load pool metadata only for swaps (avoids SLOADs on LP operations)
+        // SECURITY: Revert (not return) to block after-only shadow pools
         Meta memory m = meta[poolId];
-        if (!m.active) return;
+        if (!m.active) revert InvalidPoolId();
 
         uint256 marketId = poolToMarket[poolId];
         Config storage c = _cfg(marketId);
@@ -792,7 +805,6 @@ contract PMFeeHook is IZAMMHook {
         // Only fetch reserves if needed and not already provided
         if ((flags & FLAG_NEEDS_RESERVES) != 0 && !hasPoolData) {
             poolData = _getPoolData(poolId);
-            hasPoolData = true;
         }
 
         uint256 total;
@@ -853,7 +865,7 @@ contract PMFeeHook is IZAMMHook {
             } else if (mode == 2) {
                 ratio = _sqrt(progressBps * 10000); // Sqrt: fast start, slow end
             } else {
-                ratio = 10000 - _sqrt((10000 - progressBps) * 10000); // Log: slow start, fast end
+                ratio = 10000 - _sqrt((10000 - progressBps) * 10000); // Ease-in: slow start, fast end
             }
 
             return uint256(c.maxFeeBps) - ((range * ratio) / 10000);
