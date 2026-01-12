@@ -129,6 +129,12 @@ contract PMHookRouter {
     uint256 constant ETH_SPENT_SLOT = 0x929eee149b4bd21269;
     uint256 constant MULTICALL_DEPTH_SLOT = 0x929eee149b4bd2126a;
 
+    // Source tags (precomputed to save bytecode vs bytes4("xxx"))
+    bytes4 constant SRC_OTC = 0x6f746300; // "otc\0"
+    bytes4 constant SRC_AMM = 0x616d6d00; // "amm\0"
+    bytes4 constant SRC_MINT = 0x6d696e74; // "mint"
+    bytes4 constant SRC_MULT = 0x6d756c74; // "mult"
+
     IZAMM constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
     IPAMM constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
     address constant DAO = 0x5E58BA0e06ED0F5558f83bE732a4b899a674053E;
@@ -1257,12 +1263,13 @@ contract PMHookRouter {
                             remainingCollateral -= otcCollateralUsed;
                             venueCount += otcVenue;
                         }
-                        if (source == bytes4(0)) source = bytes4("otc");
+                        if (source == bytes4(0)) source = SRC_OTC;
                     }
                 }
             } else {
-                // AMM
-                if (remainingCollateral != 0 && ammQuoteShares != 0) {
+                // AMM - recompute quote on current remainder (original quote may be stale after OTC)
+                uint256 ammQuoteNow = _quoteAMMBuy(marketId, buyYes, remainingCollateral);
+                if (remainingCollateral != 0 && ammQuoteNow != 0) {
                     uint256 safeAMMCollateral = maxImpactBps != 0
                         ? _findMaxAMMUnderImpact(
                             marketId, buyYes, remainingCollateral, feeBps, maxImpactBps
@@ -1284,7 +1291,7 @@ contract PMHookRouter {
                         unchecked {
                             totalSharesOut += ammSharesOut;
                             ++venueCount;
-                            if (source == bytes4(0)) source = bytes4("amm");
+                            if (source == bytes4(0)) source = SRC_AMM;
                             remainingCollateral -= safeAMMCollateral;
                         }
                     }
@@ -1323,13 +1330,13 @@ contract PMHookRouter {
                     remainingCollateral = 0;
                     ++venueCount;
                 }
-                if (source == bytes4(0)) source = bytes4("mint");
+                if (source == bytes4(0)) source = SRC_MINT;
             }
         }
 
         if (totalSharesOut < minSharesOut) _revert(ERR_VALIDATION, 2); // Slippage
 
-        if (venueCount > 1) source = bytes4("mult");
+        if (venueCount > 1) source = SRC_MULT;
 
         if (remainingCollateral != 0) {
             _refundCollateralToCaller(collateral, remainingCollateral);
@@ -1439,7 +1446,7 @@ contract PMHookRouter {
                             rebalanceCollateralBudget[marketId] = budget - collateralOut;
                             remaining -= filled;
                         }
-                        source = bytes4("otc");
+                        source = SRC_OTC;
                         emit VaultOTCFill(
                             marketId,
                             msg.sender,
@@ -1508,7 +1515,7 @@ contract PMHookRouter {
                     if (excessSwapped != 0) {
                         PAMM.transfer(to, sellYes ? noId : marketId, excessSwapped);
                     }
-                    source = source != 0 ? bytes4("mult") : bytes4("amm");
+                    source = source != 0 ? SRC_MULT : SRC_AMM;
                 } else {
                     // Edge case: swap succeeded but can't merge (keptShares or swapOut is 0)
                     // Return both token types to user to prevent stuck funds
@@ -2368,8 +2375,8 @@ contract PMHookRouter {
         uint256 reserveIn;
         uint256 reserveOut;
         assembly ("memory-safe") {
-            let yesRes := mload(add(validation, 0x40)) // validation.yesReserve at offset 2
-            let noRes := mload(add(validation, 0x60)) // validation.noReserve at offset 3
+            let yesRes := mload(add(validation, 0x20)) // validation.yesReserve at offset 1
+            let noRes := mload(add(validation, 0x40)) // validation.noReserve at offset 2
             reserveIn := xor(noRes, mul(xor(noRes, yesRes), iszero(yesIsLower)))
             reserveOut := xor(yesRes, mul(xor(yesRes, noRes), iszero(yesIsLower)))
         }
