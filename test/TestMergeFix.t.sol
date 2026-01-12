@@ -21,9 +21,8 @@ contract TestMergeFix is Test {
         uint32 activity = uint32(vaultData >> 224);
 
         // Apply CORRECT pattern (after fix)
-        vaultData = yes - sharesMerged;
-        vaultData = vaultData | ((no - sharesMerged) << 112);
-        vaultData = vaultData | (uint256(activity) << 224);
+        vaultData = uint256(yes - sharesMerged) | (uint256(no - sharesMerged) << 112)
+            | (uint256(activity) << 224);
 
         uint112 finalYes = uint112(vaultData);
         uint112 finalNo = uint112(vaultData >> 112);

@@ -136,8 +136,8 @@ contract PMHookRouter {
     function _guardEnter() internal {
         assembly ("memory-safe") {
             if tload(REENTRANCY_SLOT) {
-                mstore(0x00, shr(224, ERR_REENTRANCY))
-                revert(0x1c, 0x04)
+                mstore(0x00, ERR_REENTRANCY)
+                revert(0x00, 0x04)
             }
             tstore(REENTRANCY_SLOT, address())
         }
@@ -168,9 +168,9 @@ contract PMHookRouter {
     /// @dev Generic revert helper - consolidated for bytecode savings
     function _revert(bytes4 selector, uint8 code) internal pure {
         assembly ("memory-safe") {
-            mstore(0x00, shr(224, selector))
-            mstore(0x20, code)
-            revert(0x1c, 0x24)
+            mstore(0x00, selector)
+            mstore(0x04, code)
+            revert(0x00, 0x24)
         }
     }
 
@@ -182,10 +182,12 @@ contract PMHookRouter {
     {
         assembly ("memory-safe") {
             let m := mload(0x40)
-            mstore(m, sel)
+            mstore(m, sel) // bytes4 is already left-aligned (high bytes), no shift needed
             mstore(add(m, 0x04), arg)
             ok := staticcall(gas(), target, m, 0x24, m, 0x20)
-            if and(ok, eq(returndatasize(), 0x20)) { out := mload(m) }
+            // Gate ok on correct return size - fallback with no return should be treated as failure
+            ok := and(ok, eq(returndatasize(), 0x20))
+            if ok { out := mload(m) }
         }
     }
 
@@ -207,7 +209,9 @@ contract PMHookRouter {
             mstore(m, SELECTOR_POOLS_SHIFTED)
             mstore(add(m, 0x04), poolId)
             ok := staticcall(gas(), 0x000000000000040470635EB91b7CE4D132D616eD, m, 0x24, m, 0xe0)
-            if and(ok, eq(returndatasize(), 0xe0)) {
+            // Gate ok on correct return size for defensive coding
+            ok := and(ok, eq(returndatasize(), 0xe0))
+            if ok {
                 r0 := mload(m)
                 r1 := mload(add(m, 0x20))
                 blockTimestampLast := mload(add(m, 0x40))
@@ -231,9 +235,9 @@ contract PMHookRouter {
             let ok :=
                 staticcall(gas(), 0x000000000044bfe6c2BBFeD8862973E0612f07C0, m, 0x24, m, 0xe0)
             if iszero(and(ok, eq(returndatasize(), 0xe0))) {
-                mstore(0x00, shr(224, ERR_STATE))
-                mstore(0x20, 2)
-                revert(0x1c, 0x24)
+                mstore(0x00, ERR_STATE)
+                mstore(0x04, 2)
+                revert(0x00, 0x24)
             }
             // resolver @ 0x00 (unused)
             // resolved @ 0x20
@@ -273,9 +277,9 @@ contract PMHookRouter {
                                 0x00
                             )
                         ) {
-                            mstore(0x00, shr(224, ERR_TRANSFER))
-                            mstore(0x20, 2)
-                            revert(0x1c, 0x24)
+                            mstore(0x00, ERR_TRANSFER)
+                            mstore(0x04, 2)
+                            revert(0x00, 0x24)
                         }
                     }
                 }
@@ -293,9 +297,9 @@ contract PMHookRouter {
                 case 1 {
                     // Standalone call: simple validation against msg.value
                     if lt(callvalue(), requiredAmount) {
-                        mstore(0x00, shr(224, ERR_VALIDATION))
-                        mstore(0x20, 6)
-                        revert(0x1c, 0x24)
+                        mstore(0x00, ERR_VALIDATION)
+                        mstore(0x04, 6)
+                        revert(0x00, 0x24)
                     }
                     // No ETH_SPENT_SLOT tracking in standalone mode
                 }
@@ -305,25 +309,26 @@ contract PMHookRouter {
                     let cumulativeRequired := add(prev, requiredAmount)
                     // Check for overflow (only when adding non-zero amount)
                     if and(gt(requiredAmount, 0), lt(cumulativeRequired, prev)) {
-                        mstore(0x00, shr(224, ERR_VALIDATION))
-                        mstore(0x20, 0)
-                        revert(0x1c, 0x24)
+                        mstore(0x00, ERR_VALIDATION)
+                        mstore(0x04, 0)
+                        revert(0x00, 0x24)
                     }
                     if lt(callvalue(), cumulativeRequired) {
-                        mstore(0x00, shr(224, ERR_VALIDATION))
-                        mstore(0x20, 6)
-                        revert(0x1c, 0x24)
+                        mstore(0x00, ERR_VALIDATION)
+                        mstore(0x04, 6)
+                        revert(0x00, 0x24)
                     }
                     // Track cumulative ETH required (only in multicall)
                     tstore(ETH_SPENT_SLOT, cumulativeRequired)
                 }
             }
             // If non-ETH collateral but ETH sent, revert (unless in multicall)
-            if and(collateral, callvalue()) {
+            // Check: collateral != 0 && msg.value != 0
+            if and(iszero(iszero(collateral)), iszero(iszero(callvalue()))) {
                 if iszero(tload(MULTICALL_DEPTH_SLOT)) {
-                    mstore(0x00, shr(224, ERR_VALIDATION))
-                    mstore(0x20, 6)
-                    revert(0x1c, 0x24)
+                    mstore(0x00, ERR_VALIDATION)
+                    mstore(0x04, 6)
+                    revert(0x00, 0x24)
                 }
             }
         }
@@ -356,9 +361,9 @@ contract PMHookRouter {
                 // Not in multicall: transfer immediately
                 if iszero(inMulticall) {
                     if iszero(call(gas(), caller(), amount, codesize(), 0x00, codesize(), 0x00)) {
-                        mstore(0x00, shr(224, ERR_TRANSFER))
-                        mstore(0x20, 2)
-                        revert(0x1c, 0x24)
+                        mstore(0x00, ERR_TRANSFER)
+                        mstore(0x04, 2)
+                        revert(0x00, 0x24)
                     }
                 }
             }
@@ -391,7 +396,7 @@ contract PMHookRouter {
         (, uint256 imbalanceBps) = _calculateDynamicSpread(preYes, preNo, buyYes, close);
         uint256 lpSplitBps =
             imbalanceBps > 7500 ? LP_FEE_SPLIT_BPS_IMBALANCED : LP_FEE_SPLIT_BPS_BALANCED;
-        toLPs = mulDiv(feeAmount, lpSplitBps, 10_000);
+        toLPs = mulDiv(feeAmount, lpSplitBps, BPS_DENOM);
         unchecked {
             toRemaining = feeAmount - toLPs;
         }
@@ -452,7 +457,7 @@ contract PMHookRouter {
         assembly ("memory-safe") {
             // Fair principal: buyYes ? pYes : (10000 - pYes)
             let fairBps := xor(pYes, mul(xor(pYes, sub(10000, pYes)), iszero(buyYes)))
-            principal := div(add(mul(sharesOut, fairBps), 9999), 10000)
+            principal := div(add(mul(sharesOut, fairBps), 9999), BPS_DENOM)
         }
 
         if (collateralUsed < principal) _revert(ERR_VALIDATION, 0); // Underpayment (guards unchecked sub)
@@ -498,14 +503,14 @@ contract PMHookRouter {
             let tvsZero := iszero(totalVaultShares)
             let taZero := iszero(totalAssets)
             if xor(tvsZero, taZero) {
-                mstore(0x00, shr(224, ERR_STATE))
-                mstore(0x20, add(4, tvsZero)) // 4 if depleted, 5 if orphaned
-                revert(0x1c, 0x24)
+                mstore(0x00, ERR_STATE)
+                mstore(0x04, add(4, tvsZero)) // 4 if depleted, 5 if orphaned
+                revert(0x00, 0x24)
             }
             if gt(shares, MAX_UINT112) {
-                mstore(0x00, shr(224, ERR_SHARES))
-                mstore(0x20, 3)
-                revert(0x1c, 0x24)
+                mstore(0x00, ERR_SHARES)
+                mstore(0x04, 3)
+                revert(0x00, 0x24)
             }
         }
 
@@ -518,9 +523,9 @@ contract PMHookRouter {
         assembly ("memory-safe") {
             // ZeroVaultShares (1) or VaultSharesOverflow (4)
             if or(iszero(vaultSharesMinted), gt(vaultSharesMinted, MAX_UINT112)) {
-                mstore(0x00, shr(224, ERR_SHARES))
-                mstore(0x20, add(1, mul(3, gt(vaultSharesMinted, 0)))) // 1 if zero, 4 if overflow
-                revert(0x1c, 0x24)
+                mstore(0x00, ERR_SHARES)
+                mstore(0x04, add(1, mul(3, gt(vaultSharesMinted, 0)))) // 1 if zero, 4 if overflow
+                revert(0x00, 0x24)
             }
         }
 
@@ -567,29 +572,26 @@ contract PMHookRouter {
             }
         }
 
-        // Cooldown logic:
-        // - Self-deposits: always update (prevents bypass)
-        // - First deposit to any address: always set cooldown (prevents fresh-address sniping)
-        // - Third-party deposit to existing position: NO update (prevents griefing existing LPs)
-        // Note: Third parties CAN set cooldown on fresh addresses, but victim has no prior funds at risk
-        if (receiver == msg.sender || existingVaultShares == 0) {
-            if (existingVaultShares == 0) {
+        // Cooldown logic: Always update receiver's cooldown to prevent bypass
+        // - First deposit: set cooldown to current timestamp
+        // - Existing position: use weighted average (or reset in final window)
+        // Note: Third-party deposits will update receiver's cooldown (prevents cooldown bypass)
+        if (existingVaultShares == 0) {
+            position.lastDepositTime = uint32(block.timestamp);
+        } else {
+            uint64 close = _getClose(marketId);
+            bool inFinalWindow = block.timestamp > close || (close - block.timestamp) < 43200;
+
+            if (inFinalWindow) {
                 position.lastDepositTime = uint32(block.timestamp);
             } else {
-                uint64 close = _getClose(marketId);
-                bool inFinalWindow = block.timestamp > close || (close - block.timestamp) < 43200;
-
-                if (inFinalWindow) {
-                    position.lastDepositTime = uint32(block.timestamp);
-                } else {
-                    uint256 oldTime = position.lastDepositTime;
-                    unchecked {
-                        uint256 newTotal = existingVaultShares + vaultSharesMinted; // Safe: bounded by uint112 inputs
-                        uint256 weightedTime =
-                            (existingVaultShares * oldTime + vaultSharesMinted * block.timestamp)
-                                / newTotal;
-                        position.lastDepositTime = uint32(weightedTime);
-                    }
+                uint256 oldTime = position.lastDepositTime;
+                unchecked {
+                    uint256 newTotal = existingVaultShares + vaultSharesMinted; // Safe: bounded by uint112 inputs
+                    uint256 weightedTime =
+                        (existingVaultShares * oldTime + vaultSharesMinted * block.timestamp)
+                            / newTotal;
+                    position.lastDepositTime = uint32(weightedTime);
                 }
             }
         }
@@ -705,7 +707,8 @@ contract PMHookRouter {
     uint256 constant LP_FEE_SPLIT_BPS_IMBALANCED = 7000; // 70% to LPs when imbalanced
     uint256 constant BOOTSTRAP_WINDOW = 4 hours; // Mint path disabled within this window of close
 
-    uint256 constant MAX_COLLATERAL_IN = type(uint256).max / 10_000;
+    uint256 constant BPS_DENOM = 10_000;
+    uint256 constant MAX_COLLATERAL_IN = type(uint256).max / BPS_DENOM;
     uint256 constant MAX_ACC_PER_SHARE = type(uint256).max / type(uint112).max;
     uint256 constant MAX_UINT112 = 0xffffffffffffffffffffffffffff;
 
@@ -763,9 +766,9 @@ contract PMHookRouter {
                 let elapsed := sub(timestamp(), depositTime)
                 let required := mul(21600, add(1, mul(3, inFinalWindow)))
                 if lt(elapsed, required) {
-                    mstore(0x00, shr(224, ERR_WITHDRAWAL_TOO_SOON))
-                    mstore(0x20, sub(required, elapsed))
-                    revert(0x1c, 0x24)
+                    mstore(0x00, ERR_WITHDRAWAL_TOO_SOON)
+                    mstore(0x04, sub(required, elapsed))
+                    revert(0x00, 0x24)
                 }
             }
         }
@@ -808,12 +811,13 @@ contract PMHookRouter {
         if (amount == 0) _revert(ERR_VALIDATION, 1); // AmountZero
     }
 
-    /// @dev Check if market is in close window (uses hook's closeWindow if available)
+    /// @dev Check if market is in close window
+    /// @dev Uses hook's closeWindow if available and non-zero, otherwise defaults to 1 hour
     function _isInCloseWindow(uint256 marketId) internal view returns (bool inWindow) {
         uint64 close = _getClose(marketId);
         if (block.timestamp >= close) return false;
 
-        uint256 closeWindow = 3600; // Default 1 hour
+        uint256 closeWindow = 3600; // Default 1 hour (applied when hook returns 0 or unavailable)
         uint256 feeOrHook = canonicalFeeOrHook[marketId];
         if ((feeOrHook & (FLAG_BEFORE | FLAG_AFTER)) != 0) {
             (bool ok, uint256 hookWindow) =
@@ -847,8 +851,8 @@ contract PMHookRouter {
         assembly ("memory-safe") {
             // Prevent reentrant entry into multicall while a guarded function is executing
             if tload(REENTRANCY_SLOT) {
-                mstore(0x00, shr(224, ERR_REENTRANCY))
-                revert(0x1c, 0x04)
+                mstore(0x00, ERR_REENTRANCY)
+                revert(0x00, 0x04)
             }
 
             let depth := tload(MULTICALL_DEPTH_SLOT)
@@ -894,9 +898,9 @@ contract PMHookRouter {
                         ) {
                             // Clear lock before revert
                             tstore(REENTRANCY_SLOT, 0)
-                            mstore(0x00, shr(224, ERR_TRANSFER))
-                            mstore(0x20, 2)
-                            revert(0x1c, 0x24)
+                            mstore(0x00, ERR_TRANSFER)
+                            mstore(0x04, 2)
+                            revert(0x00, 0x24)
                         }
                         // Clear reentrancy lock after successful call
                         tstore(REENTRANCY_SLOT, 0)
@@ -1298,7 +1302,11 @@ contract PMHookRouter {
                 !buyYes ? totalYesVaultShares[marketId] : totalNoVaultShares[marketId];
             uint256 oppositeAssets = !buyYes ? vault.yesShares : vault.noShares;
 
-            if (oppositeVaultShares == 0 || oppositeAssets != 0) {
+            // Only proceed if invariant holds: both zero (first deposit) OR both non-zero (normal deposit)
+            // Prevents orphaned (shares=0, assets!=0) and depleted (shares!=0, assets=0) states
+            bool tvsZero = (oppositeVaultShares == 0);
+            bool taZero = (oppositeAssets == 0);
+            if (tvsZero == taZero) {
                 _splitShares(marketId, remainingCollateral, collateral);
 
                 PAMM.transfer(to, buyYes ? marketId : noId, remainingCollateral);
@@ -1374,14 +1382,29 @@ contract PMHookRouter {
                     unchecked {
                         cap = (sellYes ? vault.noShares : vault.yesShares) * 3 / 10;
                         filled = remaining < cap ? remaining : cap;
-                        collateralOut = filled * (p - s) / 10000;
+                        collateralOut = filled * (p - s) / BPS_DENOM;
                     }
                     if (collateralOut > budget) {
-                        collateralOut = budget;
                         unchecked {
-                            filled = (collateralOut * 10000) / (p - s);
+                            // Cap by budget, then recalc filled, then recalc collateralOut for fairness
+                            filled = (budget * BPS_DENOM) / (p - s);
+                            collateralOut = filled * (p - s) / BPS_DENOM;
                         }
                     }
+
+                    // Safety check: prevent 0-collateral fills (protects sellers from donating shares)
+                    if (collateralOut == 0) filled = 0;
+
+                    // Safety check: prevent OrphanedAssets - only allow OTC fill if LP shares exist on vault's buying side
+                    if (filled != 0) {
+                        uint256 vaultLPShares =
+                            sellYes ? totalYesVaultShares[marketId] : totalNoVaultShares[marketId];
+                        if (vaultLPShares == 0) {
+                            filled = 0;
+                            collateralOut = 0;
+                        }
+                    }
+
                     if (filled != 0) {
                         assembly ("memory-safe") {
                             // Update vault shares: sellYes ? yesShares : noShares
@@ -1392,9 +1415,9 @@ contract PMHookRouter {
                             let updated := add(current, filled)
                             // Check for uint112 overflow
                             if gt(updated, mask) {
-                                mstore(0x00, shr(224, ERR_SHARES))
-                                mstore(0x20, 3) // SharesOverflow
-                                revert(0x1c, 0x24)
+                                mstore(0x00, ERR_SHARES)
+                                mstore(0x04, 3) // SharesOverflow
+                                revert(0x00, 0x24)
                             }
                             let shift := mul(iszero(sellYes), 112)
                             let clearMask := not(shl(shift, mask))
@@ -1454,8 +1477,9 @@ contract PMHookRouter {
             uint256 swapAmount = _calcSwapAmountForMerge(remaining, rIn, rOut, feeBps);
 
             if (swapAmount != 0 && swapAmount < remaining) {
+                // Require minimum 1 output to prevent value-destroying swaps from rounding
                 uint256 swapOut =
-                    ZAMM.swapExactIn(key, swapAmount, 0, zeroForOne, address(this), deadline);
+                    ZAMM.swapExactIn(key, swapAmount, 1, zeroForOne, address(this), deadline);
                 uint256 keptShares = remaining - swapAmount;
 
                 // Merge the minimum of kept shares and received shares
@@ -1485,8 +1509,17 @@ contract PMHookRouter {
                         PAMM.transfer(to, sellYes ? noId : marketId, excessSwapped);
                     }
                     source = source != 0 ? bytes4("mult") : bytes4("amm");
-                    remaining = 0; // AMM processed all remaining shares
+                } else {
+                    // Edge case: swap succeeded but can't merge (keptShares or swapOut is 0)
+                    // Return both token types to user to prevent stuck funds
+                    if (keptShares != 0) {
+                        PAMM.transfer(to, sellYes ? marketId : noId, keptShares);
+                    }
+                    if (swapOut != 0) {
+                        PAMM.transfer(to, sellYes ? noId : marketId, swapOut);
+                    }
                 }
+                remaining = 0; // AMM path processed all shares (merged or returned)
             }
         }
 
@@ -1916,7 +1949,7 @@ contract PMHookRouter {
                 let vaultData := sload(vaultSlot)
                 let yes := and(vaultData, MAX_UINT112)
                 let no := and(shr(112, vaultData), MAX_UINT112)
-                vaultData := shr(224, shl(224, vaultData))
+                vaultData := shl(224, shr(224, vaultData))
                 vaultData := or(vaultData, sub(yes, sharesMerged))
                 vaultData := or(vaultData, shl(112, sub(no, sharesMerged)))
                 sstore(vaultSlot, vaultData)
@@ -2061,7 +2094,7 @@ contract PMHookRouter {
         uint256 spotPYesBps;
         unchecked {
             spotPYesBps =
-                (validation.noReserve * 10_000) / (validation.yesReserve + validation.noReserve);
+                (validation.noReserve * BPS_DENOM) / (validation.yesReserve + validation.noReserve);
         }
 
         assembly ("memory-safe") {
@@ -2093,9 +2126,9 @@ contract PMHookRouter {
         uint256 amountInWithFee;
         uint256 expectedSwapOut;
         unchecked {
-            amountInWithFee = collateralUsed * (10_000 - feeBps);
+            amountInWithFee = collateralUsed * (BPS_DENOM - feeBps);
             expectedSwapOut =
-                mulDiv(amountInWithFee, reserveOut, (reserveIn * 10_000) + amountInWithFee);
+                mulDiv(amountInWithFee, reserveOut, (reserveIn * BPS_DENOM) + amountInWithFee);
         }
 
         if (expectedSwapOut == 0) return 0;
@@ -2296,7 +2329,7 @@ contract PMHookRouter {
                 let vaultData := sload(vaultSlot)
                 let yes := and(vaultData, MAX_UINT112)
                 let no := and(shr(112, vaultData), MAX_UINT112)
-                vaultData := shr(224, shl(224, vaultData))
+                vaultData := shl(224, shr(224, vaultData))
                 vaultData := or(vaultData, sub(yes, mergeAmount))
                 vaultData := or(vaultData, shl(112, sub(no, mergeAmount)))
                 sstore(vaultSlot, vaultData)
@@ -2424,7 +2457,7 @@ contract PMHookRouter {
         vault.lastActivity = uint32(block.timestamp);
 
         unchecked {
-            uint256 effectivePriceBps = mulDiv(otcCollateralUsed, 10_000, otcShares);
+            uint256 effectivePriceBps = mulDiv(otcCollateralUsed, BPS_DENOM, otcShares);
             emit VaultOTCFill(
                 marketId,
                 msg.sender,
@@ -2755,9 +2788,9 @@ contract PMHookRouter {
             let newAcc := add(sload(slot), accPerShare)
             // MAX_ACC_PER_SHARE = type(uint256).max / type(uint112).max
             if gt(newAcc, maxAcc) {
-                mstore(0x00, shr(224, ERR_VALIDATION))
-                mstore(0x20, 0)
-                revert(0x1c, 0x24)
+                mstore(0x00, ERR_VALIDATION)
+                mstore(0x04, 0)
+                revert(0x00, 0x24)
             }
             sstore(slot, newAcc)
         }
@@ -3048,9 +3081,9 @@ function mulDiv(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {
     assembly ("memory-safe") {
         z := mul(x, y)
         if iszero(mul(or(iszero(x), eq(div(z, x), y)), d)) {
-            mstore(0x00, shr(224, ERR_COMPUTATION))
-            mstore(0x20, 0)
-            revert(0x1c, 0x24)
+            mstore(0x00, ERR_COMPUTATION)
+            mstore(0x04, 0)
+            revert(0x00, 0x24)
         }
         z := div(z, d)
     }
@@ -3066,9 +3099,9 @@ function fullMulDiv(uint256 x, uint256 y, uint256 d) pure returns (uint256 z) {
                 let r := mulmod(x, y, d)
                 let t := and(d, sub(0, d))
                 if iszero(gt(d, p1)) {
-                    mstore(0x00, shr(224, ERR_COMPUTATION))
-                    mstore(0x20, 1)
-                    revert(0x1c, 0x24)
+                    mstore(0x00, ERR_COMPUTATION)
+                    mstore(0x04, 1)
+                    revert(0x00, 0x24)
                 }
                 d := div(d, t)
                 let inv := xor(2, mul(3, d))
@@ -3111,8 +3144,8 @@ function ensureApproval(address token, address spender) {
             success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
             if iszero(and(eq(mload(0x00), 1), success)) {
                 if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
-                    mstore(0x00, shr(224, ERR_APPROVE_FAILED))
-                    revert(0x1c, 0x04)
+                    mstore(0x00, ERR_APPROVE_FAILED)
+                    revert(0x00, 0x04)
                 }
             }
         }
@@ -3123,9 +3156,9 @@ function ensureApproval(address token, address spender) {
 function safeTransferETH(address to, uint256 amount) {
     assembly ("memory-safe") {
         if iszero(call(gas(), to, amount, codesize(), 0x00, codesize(), 0x00)) {
-            mstore(0x00, shr(224, ERR_TRANSFER))
-            mstore(0x20, 2)
-            revert(0x1c, 0x24)
+            mstore(0x00, ERR_TRANSFER)
+            mstore(0x04, 2)
+            revert(0x00, 0x24)
         }
     }
 }
@@ -3138,9 +3171,9 @@ function safeTransfer(address token, address to, uint256 amount) {
         let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
         if iszero(and(eq(mload(0x00), 1), success)) {
             if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
-                mstore(0x00, shr(224, ERR_TRANSFER))
-                mstore(0x20, 0)
-                revert(0x1c, 0x24)
+                mstore(0x00, ERR_TRANSFER)
+                mstore(0x04, 0)
+                revert(0x00, 0x24)
             }
         }
         mstore(0x34, 0)
@@ -3157,9 +3190,9 @@ function safeTransferFrom(address token, address from, address to, uint256 amoun
         let success := call(gas(), token, 0, 0x1c, 0x64, 0x00, 0x20)
         if iszero(and(eq(mload(0x00), 1), success)) {
             if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
-                mstore(0x00, shr(224, ERR_TRANSFER))
-                mstore(0x20, 1)
-                revert(0x1c, 0x24)
+                mstore(0x00, ERR_TRANSFER)
+                mstore(0x04, 1)
+                revert(0x00, 0x24)
             }
         }
         mstore(0x60, 0)

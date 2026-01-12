@@ -99,6 +99,7 @@ interface IZAMMHook {
 /// @dev Hook design: Always uses FLAG_BEFORE | FLAG_AFTER for stable poolId. Config toggles features.
 /// @dev Close modes: 0=halt, 1=fixed fee, 2=min fee, 3=dynamic. Swaps respect close/resolution, LPs always allowed.
 /// @dev SECURITY: Requires registered pools only. Unregistered pools revert on swaps to prevent post-resolution trading.
+/// @dev REQUIRES: EIP-1153 (transient storage) - only deploy on chains with Cancun/Dencun support
 contract PMFeeHook is IZAMMHook {
     // ═══════════════════════════════════════════════════════════
     //                         CONSTANTS
@@ -194,7 +195,7 @@ contract PMFeeHook is IZAMMHook {
         uint16 feeCapBps; // Total fee ceiling
         uint16 skewRefBps; // Skew threshold (0, 5000]
         uint16 asymmetricFeeBps; // Linear imbalance fee
-        uint16 closeWindow; // Close window duration (seconds). 0 = router uses default (1 hour)
+        uint16 closeWindow; // Close window duration (seconds). 0 = no close window logic in hook (router may apply its own default)
         uint16 closeWindowFeeBps; // Mode 1 close fee
         uint16 maxPriceImpactBps; // Max impact (require flag bit 5)
         uint32 bootstrapWindow; // Decay duration (seconds)
@@ -236,7 +237,8 @@ contract PMFeeHook is IZAMMHook {
     // ═══════════════════════════════════════════════════════════
 
     constructor() payable {
-        // Note: tx.origin is used for CREATE2 determinism, setting owner to deploying EOA
+        // Note: tx.origin sets owner to deploying EOA (not factory address if deployed via factory)
+        // This preserves CREATE2 determinism but requires EOA deployment or factory-aware setup
         owner = tx.origin;
         emit OwnershipTransferred(address(0), tx.origin);
 
@@ -321,7 +323,9 @@ contract PMFeeHook is IZAMMHook {
         return defaultConfig;
     }
 
-    /// @notice Get close window for a market (0 = router uses 1-hour default)
+    /// @notice Get close window for a market
+    /// @dev Returns the hook's close window setting. 0 = no close window logic in hook.
+    ///      Router may read this value and apply its own default (typically 1 hour) when 0.
     function getCloseWindow(uint256 marketId) public view returns (uint256) {
         Config storage c = _cfg(marketId);
         return uint256(c.closeWindow);
