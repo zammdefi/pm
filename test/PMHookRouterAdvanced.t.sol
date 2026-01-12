@@ -711,7 +711,8 @@ contract PMHookRouterAdvancedTest is Test {
         vm.prank(hook.owner());
         hook.setMarketConfig(customMarketId, customConfig);
 
-        // Verify config was set by checking that market has custom config
-        assertTrue(hook.hasMarketConfig(customMarketId), "Should have custom config");
+        // Verify config was set by checking custom fee value
+        PMFeeHook.Config memory cfg = hook.getMarketConfig(customMarketId);
+        assertEq(cfg.minFeeBps, 5, "Should have custom config");
     }
 }

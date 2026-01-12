@@ -1,0 +1,34 @@
+[profile.default]
+solc_version = "0.8.31"
+evm_version = "prague"
+
+optimizer = true
+optimizer_runs = 20
+
+via_ir = true
+
+remappings = [
+  "@solady=lib/solady/",
+  "@soledge=lib/soledge/",
+  "@forge=lib/forge-std/src/",
+  "@zamm=lib/ZAMM/src/"
+]
+
+[profile.via-ir]
+via_ir = true
+
+[fmt]
+line_length = 100
+
+[rpc_endpoints]
+# Multiple mainnet RPCs to distribute load and avoid rate limiting
+# Each test file should use a different endpoint to spread load
+main = "https://eth-mainnet.public.blastapi.io"
+main2 = "https://rpc.mevblocker.io"
+main3 = "https://ethereum-rpc.publicnode.com"
+main4 = "https://rpc.flashbots.net"
+main5 = "https://eth.drpc.org"
+main6 = "https://rpc.ankr.com/eth"
+main7 = "https://cloudflare-eth.com"
+main8 = "https://eth-mainnet.g.alchemy.com/v2/demo"
+main9 = "https://1rpc.io/eth"

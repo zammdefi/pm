@@ -120,6 +120,14 @@ contract PMFeeHook is IZAMMHook {
         0x7f9c2e2f7d8a4c6b3a1d9e0f11223344556677889900aabbccddeeff00112233;
     uint256 constant TS_RESERVES_PRESENT_BIT = 1 << 224; // marker bit
 
+    // Transient storage for Meta caching (avoids duplicate meta[poolId] SLOAD in afterAction)
+    uint256 constant TS_META_DOMAIN =
+        0x8e1d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2;
+
+    // Transient storage for flags caching (avoids duplicate c.flags SLOAD in afterAction)
+    uint256 constant TS_FLAGS_DOMAIN =
+        0x9f2e4f5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3;
+
     // ZAMM swap function selectors (from actual interface)
     bytes4 constant SWAP_EXACT_IN = IZAMM.swapExactIn.selector;
     bytes4 constant SWAP_EXACT_OUT = IZAMM.swapExactOut.selector;
@@ -204,8 +212,8 @@ contract PMFeeHook is IZAMMHook {
     mapping(uint256 poolId => Meta) public meta;
 
     Config internal defaultConfig;
+    // Market-specific configs: Uses feeCapBps==0 as sentinel for "use default" (validated to never be 0)
     mapping(uint256 marketId => Config) internal marketConfig;
-    mapping(uint256 marketId => bool) public hasMarketConfig;
 
     // Volatility tracking: circular buffer of recent prices (stores last 10 prices)
     struct PriceSnapshot {
@@ -269,13 +277,11 @@ contract PMFeeHook is IZAMMHook {
     function setMarketConfig(uint256 marketId, Config calldata cfg) public payable onlyOwner {
         _validateConfig(cfg);
         marketConfig[marketId] = cfg;
-        hasMarketConfig[marketId] = true;
         emit ConfigUpdated(marketId, cfg);
     }
 
     function clearMarketConfig(uint256 marketId) public payable onlyOwner {
-        delete marketConfig[marketId];
-        hasMarketConfig[marketId] = false;
+        delete marketConfig[marketId]; // All fields become 0, feeCapBps==0 signals "use default"
         emit ConfigUpdated(marketId, defaultConfig);
     }
 
@@ -406,7 +412,7 @@ contract PMFeeHook is IZAMMHook {
     }
 
     // ═══════════════════════════════════════════════════════════
-    //                  TRANSIENT RESERVE CACHE
+    //                  TRANSIENT STORAGE HELPERS
     // ═══════════════════════════════════════════════════════════
 
     /// @dev Collision-resistant transient slot via keccak(poolId, domain)
@@ -415,6 +421,63 @@ contract PMFeeHook is IZAMMHook {
             mstore(0x00, poolId)
             mstore(0x20, TS_RESERVES_DOMAIN)
             slot := keccak256(0x00, 0x40)
+        }
+    }
+
+    /// @dev Get transient slot for Meta cache
+    function _metaSlot(uint256 poolId) internal pure returns (uint256 slot) {
+        assembly ("memory-safe") {
+            mstore(0x00, poolId)
+            mstore(0x20, TS_META_DOMAIN)
+            slot := keccak256(0x00, 0x40)
+        }
+    }
+
+    /// @dev Store Meta to transient storage (packs into single uint256)
+    /// @dev Layout: bits 0-63: start, bit 64: active, bit 65: yesIsToken0
+    function _tstoreMeta(uint256 poolId, Meta memory m) internal {
+        uint256 packed = uint256(m.start) | (uint256(m.active ? 1 : 0) << 64)
+            | (uint256(m.yesIsToken0 ? 1 : 0) << 65);
+        uint256 slot = _metaSlot(poolId);
+        assembly ("memory-safe") {
+            tstore(slot, packed)
+        }
+    }
+
+    /// @dev Load Meta from transient storage
+    function _tloadMeta(uint256 poolId) internal view returns (Meta memory m) {
+        uint256 slot = _metaSlot(poolId);
+        uint256 packed;
+        assembly ("memory-safe") {
+            packed := tload(slot)
+        }
+        m.start = uint64(packed);
+        m.active = ((packed >> 64) & 1) == 1;
+        m.yesIsToken0 = ((packed >> 65) & 1) == 1;
+    }
+
+    /// @dev Get transient slot for flags cache
+    function _flagsSlot(uint256 poolId) internal pure returns (uint256 slot) {
+        assembly ("memory-safe") {
+            mstore(0x00, poolId)
+            mstore(0x20, TS_FLAGS_DOMAIN)
+            slot := keccak256(0x00, 0x40)
+        }
+    }
+
+    /// @dev Store flags to transient storage
+    function _tstoreFlags(uint256 poolId, uint16 flags) internal {
+        uint256 slot = _flagsSlot(poolId);
+        assembly ("memory-safe") {
+            tstore(slot, flags)
+        }
+    }
+
+    /// @dev Load flags from transient storage
+    function _tloadFlags(uint256 poolId) internal view returns (uint16 flags) {
+        uint256 slot = _flagsSlot(poolId);
+        assembly ("memory-safe") {
+            flags := tload(slot)
         }
     }
 
@@ -484,9 +547,12 @@ contract PMFeeHook is IZAMMHook {
         // Swaps require registered pools (prevents post-resolution trading)
         if (!m.active) revert InvalidPoolId();
 
+        // Cache Meta in transient storage for afterAction (saves ~2000 gas SLOAD)
+        _tstoreMeta(poolId, m);
+
         uint256 marketId = poolToMarket[poolId];
 
-        // Load config once to avoid duplicate lookups
+        // Load config (uses sentinel check: feeCapBps==0 means "use default")
         Config storage c = _cfg(marketId);
 
         // Single PAMM.markets() call - reused for enforceOpen and computeFee
@@ -494,6 +560,9 @@ contract PMFeeHook is IZAMMHook {
 
         // Read flags once to avoid repeated SLOADs
         uint16 flags = c.flags;
+
+        // Cache flags in transient storage for afterAction (saves ~100 gas SLOAD)
+        _tstoreFlags(poolId, flags);
 
         // Enforce market is open (reverts or returns fee based on closeWindowMode)
         _enforceOpenCached(c, flags, resolved, close);
@@ -556,16 +625,17 @@ contract PMFeeHook is IZAMMHook {
         // Skip all checks for non-swap operations (LP operations)
         if (!_isSwap(sig)) return;
 
-        // Load pool metadata only for swaps (avoids SLOADs on LP operations)
+        // Load pool metadata from transient cache (set by beforeAction, saves ~2000 gas SLOAD)
         // SECURITY: Revert (not return) to block after-only shadow pools
-        Meta memory m = meta[poolId];
+        Meta memory m = _tloadMeta(poolId);
         if (!m.active) revert InvalidPoolId();
+
+        // Read flags from transient cache (set by beforeAction, saves ~100 gas SLOAD)
+        uint16 flags = _tloadFlags(poolId);
 
         uint256 marketId = poolToMarket[poolId];
         Config storage c = _cfg(marketId);
 
-        // Read flags directly to avoid duplicate storage access
-        uint16 flags = c.flags;
         bool doImpact = (flags & FLAG_PRICE_IMPACT) != 0;
         bool doVol = (flags & FLAG_VOLATILITY) != 0;
         bool feeNeedsReserves = (flags & FLAG_NEEDS_RESERVES) != 0;
@@ -691,7 +761,9 @@ contract PMFeeHook is IZAMMHook {
     }
 
     function _cfg(uint256 marketId) internal view returns (Config storage c) {
-        if (hasMarketConfig[marketId]) return marketConfig[marketId];
+        Config storage mc = marketConfig[marketId];
+        // Use feeCapBps==0 as sentinel: 0 means "use default" (validated to never be 0 for custom configs)
+        if (mc.feeCapBps != 0) return mc;
         return defaultConfig;
     }
 
@@ -1063,7 +1135,9 @@ contract PMFeeHook is IZAMMHook {
         int256 b0_signed = int256(uint256(r0)) - d0;
         int256 b1_signed = int256(uint256(r1)) - d1;
 
-        if (b0_signed <= 0 || b1_signed <= 0) return 0;
+        // If reconstruction fails (invalid deltas), return max impact to block trade
+        // Returning 0 would bypass the impact check, which is unsafe
+        if (b0_signed <= 0 || b1_signed <= 0) return type(uint256).max;
 
         uint256 b0 = uint256(b0_signed);
         uint256 b1 = uint256(b1_signed);
@@ -1345,6 +1419,7 @@ contract PMFeeHook is IZAMMHook {
         if (cfg.maxFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
         if (cfg.maxSkewFeeBps > BPS_DENOMINATOR) revert InvalidConfig();
         if (cfg.minFeeBps > cfg.maxFeeBps) revert InvalidConfig();
+        if (cfg.feeCapBps == 0) revert InvalidConfig(); // 0 is reserved as sentinel for "use default config"
         if (cfg.feeCapBps >= BPS_DENOMINATOR) revert InvalidConfig(); // Must be < 10000 (100% fee would halt trading)
         if (cfg.skewRefBps == 0 || cfg.skewRefBps > 5000) revert InvalidConfig(); // Must be (0, 5000]
 

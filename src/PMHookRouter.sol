@@ -1406,7 +1406,7 @@ contract PMHookRouter {
                             vaultData := or(
                                 and(
                                     vaultData,
-                                    0xffffffff0000000000000000ffffffffffffffffffffffffffffffff
+                                    0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
                                 ),
                                 shl(224, timestamp())
                             )

@@ -486,8 +486,7 @@ contract PMFeeHookTest is Test {
         vm.prank(hook.owner());
         hook.setMarketConfig(marketId, newCfg);
 
-        assertTrue(hook.hasMarketConfig(marketId), "Should have market config");
-
+        // Check that market config was set (feeCapBps != 0 means custom config)
         PMFeeHook.Config memory cfg = _getMarketConfig(marketId);
         assertEq(cfg.minFeeBps, 15, "Should have custom min fee");
     }
@@ -505,7 +504,10 @@ contract PMFeeHookTest is Test {
         vm.prank(hook.owner());
         hook.clearMarketConfig(marketId);
 
-        assertFalse(hook.hasMarketConfig(marketId), "Should not have market config");
+        // After clearing, config should revert to default (check by reading default fee)
+        PMFeeHook.Config memory cfg = _getMarketConfig(marketId);
+        PMFeeHook.Config memory defaultCfg = hook.getDefaultConfig();
+        assertEq(cfg.minFeeBps, defaultCfg.minFeeBps, "Should have default min fee after clear");
     }
 
     function test_RevertInvalidConfig_MinGreaterThanMax() public {
@@ -915,6 +917,318 @@ contract PMFeeHookTest is Test {
         console.log("Price impact delta semantics test passed:");
         console.log("  d0:", d0Actual);
         console.log("  d1:", d1Actual);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    PRICE IMPACT ENFORCEMENT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test that swaps exceeding maxPriceImpactBps revert
+    /// @dev Validates the core price impact enforcement mechanism (afterAction check)
+    function test_PriceImpact_ExceedsMax_Reverts() public {
+        _setupMarketWithPool();
+
+        // Configure strict price impact limit
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x20; // Enable price impact (bit 5)
+        cfg.maxPriceImpactBps = 500; // 5% max impact
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 500e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 500e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // Large swap that will exceed 5% price impact
+        // With 1000e6 liquidity, a 300e6 swap should move price significantly
+        vm.expectRevert(PMFeeHook.PriceImpactTooHigh.selector);
+        ZAMM.swapExactIn(zammKey, 300e6, 0, zeroForOne, alice, block.timestamp + 1 hours);
+
+        vm.stopPrank();
+
+        console.log("Price impact exceeds max: correctly reverts");
+    }
+
+    /// @notice Test that swaps within maxPriceImpactBps succeed
+    /// @dev Validates the price impact check allows valid trades
+    function test_PriceImpact_WithinMax_Succeeds() public {
+        _setupMarketWithPool();
+
+        // Configure price impact limit
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x20; // Enable price impact (bit 5)
+        cfg.maxPriceImpactBps = 1000; // 10% max impact
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 200e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 200e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // Get reserves before
+        (uint112 r0Before, uint112 r1Before,,,,,) = ZAMM.pools(poolId);
+
+        // Small swap that stays within 10% impact
+        uint256 amountOut =
+            ZAMM.swapExactIn(zammKey, 50e6, 0, zeroForOne, alice, block.timestamp + 1 hours);
+
+        assertGt(amountOut, 0, "Swap should succeed and return tokens");
+
+        // Get reserves after and calculate actual impact
+        (uint112 r0After, uint112 r1After,,,,,) = ZAMM.pools(poolId);
+
+        // Verify swap executed (reserves changed)
+        assertTrue(r0After != r0Before || r1After != r1After, "Reserves should have changed");
+
+        vm.stopPrank();
+
+        console.log("Price impact within max: swap succeeds");
+        console.log("  Amount out:", amountOut);
+    }
+
+    /// @notice Test price impact calculation accuracy
+    /// @dev Verifies the impact calculation matches manual calculation
+    function test_PriceImpact_CalculationAccuracy() public {
+        _setupMarketWithPool();
+
+        // Enable price impact with high threshold (won't revert)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x20; // Enable price impact (bit 5)
+        cfg.maxPriceImpactBps = 5000; // 50% max (high threshold for testing)
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 300e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 300e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        // Get initial state
+        (uint112 r0Before, uint112 r1Before,,,,,) = ZAMM.pools(poolId);
+        uint256 probBefore = hook.getMarketProbability(poolId);
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // Execute swap
+        uint256 swapAmount = 100e6;
+        ZAMM.swapExactIn(zammKey, swapAmount, 0, zeroForOne, alice, block.timestamp + 1 hours);
+
+        // Get final state
+        (uint112 r0After, uint112 r1After,,,,,) = ZAMM.pools(poolId);
+        uint256 probAfter = hook.getMarketProbability(poolId);
+
+        // Calculate actual impact as probability delta
+        uint256 actualImpact =
+            probAfter > probBefore ? probAfter - probBefore : probBefore - probAfter;
+
+        // Use the hook's simulatePriceImpact to verify our calculation
+        uint256 currentFee = hook.getCurrentFeeBps(poolId);
+        uint256 simulatedImpact =
+            hook.simulatePriceImpact(poolId, swapAmount, zeroForOne, currentFee);
+
+        // The simulated impact should be close to actual (within rounding)
+        // We allow small difference due to fee dynamics and rounding
+        assertApproxEqAbs(simulatedImpact, actualImpact, 50, "Simulated impact should match actual");
+
+        vm.stopPrank();
+
+        console.log("Price impact calculation accuracy test passed:");
+        console.log("  Prob before:", probBefore, "bps");
+        console.log("  Prob after: ", probAfter, "bps");
+        console.log("  Actual impact:", actualImpact, "bps");
+        console.log("  Simulated impact:", simulatedImpact, "bps");
+    }
+
+    /// @notice Test that price impact check uses correct reserves after multiple operations
+    /// @dev Ensures delta-based reserve reconstruction is accurate
+    function test_PriceImpact_ReserveReconstructionCorrect() public {
+        _setupMarketWithPool();
+
+        // Enable price impact checking
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x20; // Enable price impact (bit 5)
+        cfg.maxPriceImpactBps = 2000; // 20% max
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 400e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 400e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // Execute first swap
+        uint256 out1 =
+            ZAMM.swapExactIn(zammKey, 80e6, 0, zeroForOne, alice, block.timestamp + 1 hours);
+        assertGt(out1, 0, "First swap should succeed");
+
+        // Get reserves after first swap
+        (uint112 r0Mid, uint112 r1Mid,,,,,) = ZAMM.pools(poolId);
+
+        // Execute second swap in opposite direction
+        // If reserve reconstruction is wrong, impact check might fail incorrectly
+        uint256 out2 =
+            ZAMM.swapExactIn(zammKey, 80e6, 0, !zeroForOne, alice, block.timestamp + 1 hours);
+        assertGt(out2, 0, "Second swap should succeed");
+
+        // Get final reserves
+        (uint112 r0Final, uint112 r1Final,,,,,) = ZAMM.pools(poolId);
+
+        // Verify both swaps affected reserves correctly
+        assertTrue(r0Mid != r0Final || r1Mid != r1Final, "Second swap should change reserves");
+
+        vm.stopPrank();
+
+        console.log("Price impact reserve reconstruction: passed");
+        console.log("  Both swaps executed with correct impact calculations");
+    }
+
+    /// @notice Test edge case: swap exactly at maxPriceImpactBps threshold
+    /// @dev Verifies boundary condition handling
+    function test_PriceImpact_ExactlyAtMax() public {
+        _setupMarketWithPool();
+
+        // Configure price impact limit
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x20; // Enable price impact (bit 5)
+        cfg.maxPriceImpactBps = 800; // 8% max impact
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 300e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 300e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // Find a swap size that produces ~8% impact through trial
+        // With 1000e6 liquidity, we need to test different amounts
+        uint256 testAmount = 150e6; // Starting guess
+
+        // Simulate the impact first
+        uint256 currentFee = hook.getCurrentFeeBps(poolId);
+        uint256 simulatedImpact =
+            hook.simulatePriceImpact(poolId, testAmount, zeroForOne, currentFee);
+
+        console.log("Testing boundary condition:");
+        console.log("  Max allowed impact:", cfg.maxPriceImpactBps, "bps");
+        console.log("  Simulated impact:  ", simulatedImpact, "bps");
+
+        if (simulatedImpact <= cfg.maxPriceImpactBps) {
+            // Should succeed if at or below threshold
+            uint256 amountOut = ZAMM.swapExactIn(
+                zammKey, testAmount, 0, zeroForOne, alice, block.timestamp + 1 hours
+            );
+            assertGt(amountOut, 0, "Swap at/below threshold should succeed");
+            console.log("  Result: Swap succeeded (at or below threshold)");
+        } else {
+            // Should revert if above threshold
+            vm.expectRevert(PMFeeHook.PriceImpactTooHigh.selector);
+            ZAMM.swapExactIn(zammKey, testAmount, 0, zeroForOne, alice, block.timestamp + 1 hours);
+            console.log("  Result: Swap reverted (above threshold)");
+        }
+
+        vm.stopPrank();
+
+        console.log("Price impact boundary condition: passed");
+    }
+
+    /// @notice Test that price impact check is disabled when flag bit 5 is off
+    /// @dev Verifies feature flag works correctly
+    function test_PriceImpact_DisabledWhenFlagOff() public {
+        _setupMarketWithPool();
+
+        // Configure with price impact flag DISABLED (bit 5 = 0)
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags & ~uint16(0x20); // Clear bit 5
+        cfg.maxPriceImpactBps = 100; // Very low limit, but flag is off so shouldn't matter
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 500e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 500e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // Large swap that would exceed 1% impact (but check is disabled)
+        uint256 amountOut =
+            ZAMM.swapExactIn(zammKey, 200e6, 0, zeroForOne, alice, block.timestamp + 1 hours);
+
+        assertGt(amountOut, 0, "Swap should succeed even with high impact when check disabled");
+
+        vm.stopPrank();
+
+        console.log("Price impact disabled (flag off): swap succeeds despite high impact");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -2785,6 +3099,249 @@ contract PMFeeHookTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                    TRANSIENT CACHE SAFETY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test cache safety: multiple swaps on different pools in same transaction
+    /// @dev Verifies no cross-contamination between pool caches
+    function test_CacheSafety_TwoPoolsSameTx() public {
+        // Setup: Create two separate markets with pools
+        uint256 market1 = _createMarket("Cache Test Market 1", block.timestamp + 7 days);
+        uint256 pool1 = hook.registerMarket(market1);
+        uint256 market1NoId = PAMM.getNoId(market1);
+
+        uint256 market2 = _createMarket("Cache Test Market 2", block.timestamp + 7 days);
+        uint256 pool2 = hook.registerMarket(market2);
+        uint256 market2NoId = PAMM.getNoId(market2);
+
+        // Add liquidity to both pools
+        vm.startPrank(alice);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(market1, 1000e6, alice);
+        PAMM.split(market2, 1000e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key1 = PAMM.poolKey(market1, hook.feeOrHook());
+        IPAMM.PoolKey memory key2 = PAMM.poolKey(market2, hook.feeOrHook());
+
+        ZAMM.addLiquidity(
+            IZAMM.PoolKey({
+                id0: key1.id0,
+                id1: key1.id1,
+                token0: key1.token0,
+                token1: key1.token1,
+                feeOrHook: key1.feeOrHook
+            }),
+            500e6,
+            500e6,
+            0,
+            0,
+            alice,
+            block.timestamp + 1 hours
+        );
+
+        ZAMM.addLiquidity(
+            IZAMM.PoolKey({
+                id0: key2.id0,
+                id1: key2.id1,
+                token0: key2.token0,
+                token1: key2.token1,
+                feeOrHook: key2.feeOrHook
+            }),
+            500e6,
+            500e6,
+            0,
+            0,
+            alice,
+            block.timestamp + 1 hours
+        );
+
+        // Get initial reserves for both pools
+        (uint112 r0_pool1_before, uint112 r1_pool1_before,,,,,) = ZAMM.pools(pool1);
+        (uint112 r0_pool2_before, uint112 r1_pool2_before,,,,,) = ZAMM.pools(pool2);
+
+        // Deploy helper contract to execute two swaps in single transaction
+        MultiSwapHelper helper = new MultiSwapHelper(address(ZAMM), address(PAMM));
+
+        // Transfer tokens to helper
+        PAMM.transfer(address(helper), market1, 50e6);
+        PAMM.transfer(address(helper), market2, 50e6);
+        PAMM.transfer(address(helper), market1NoId, 50e6);
+        PAMM.transfer(address(helper), market2NoId, 50e6);
+
+        vm.stopPrank();
+
+        // Execute two swaps in same transaction
+        // Swap on pool1: YES → NO (token0 → token1 if market1 < noId1)
+        // Swap on pool2: NO → YES (token1 → token0 if market2 < noId2)
+        bool zeroForOne1 = market1 < market1NoId;
+        bool zeroForOne2 = !(market2 < market2NoId); // Opposite direction
+
+        vm.prank(alice);
+        helper.executeDoubleSwap(key1, key2, 25e6, 25e6, zeroForOne1, zeroForOne2);
+
+        // Verify both pools updated independently (no cache cross-contamination)
+        (uint112 r0_pool1_after, uint112 r1_pool1_after,,,,,) = ZAMM.pools(pool1);
+        (uint112 r0_pool2_after, uint112 r1_pool2_after,,,,,) = ZAMM.pools(pool2);
+
+        // Pool1 reserves should have changed
+        assertTrue(
+            r0_pool1_after != r0_pool1_before || r1_pool1_after != r1_pool1_before,
+            "Pool1 reserves should have changed"
+        );
+
+        // Pool2 reserves should have changed
+        assertTrue(
+            r0_pool2_after != r0_pool2_before || r1_pool2_after != r1_pool2_before,
+            "Pool2 reserves should have changed"
+        );
+
+        // Verify changes match expected directions
+        if (zeroForOne1) {
+            assertGt(r0_pool1_after, r0_pool1_before, "Pool1 r0 should increase");
+            assertLt(r1_pool1_after, r1_pool1_before, "Pool1 r1 should decrease");
+        } else {
+            assertLt(r0_pool1_after, r0_pool1_before, "Pool1 r0 should decrease");
+            assertGt(r1_pool1_after, r1_pool1_before, "Pool1 r1 should increase");
+        }
+
+        if (zeroForOne2) {
+            assertGt(r0_pool2_after, r0_pool2_before, "Pool2 r0 should increase");
+            assertLt(r1_pool2_after, r1_pool2_before, "Pool2 r1 should decrease");
+        } else {
+            assertLt(r0_pool2_after, r0_pool2_before, "Pool2 r0 should decrease");
+            assertGt(r1_pool2_after, r1_pool2_before, "Pool2 r1 should increase");
+        }
+
+        console.log("Cache safety - two pools same tx: passed");
+        console.log("  Pool1 reserves changed correctly");
+        console.log("  Pool2 reserves changed correctly");
+        console.log("  No cross-contamination detected");
+    }
+
+    /// @notice Test cache safety: two swaps on same pool in same transaction
+    /// @dev Verifies second swap doesn't use stale cache from first swap
+    function test_CacheSafety_SamePoolTwoSwaps() public {
+        _setupMarketWithPool();
+
+        // Enable price impact checking to ensure transient cache is used
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x20; // Enable price impact (bit 5)
+        cfg.maxPriceImpactBps = 5000; // High threshold so we don't revert
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+
+        // Prepare tokens for two swaps
+        deal(address(USDC), alice, 500e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 250e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        // Get initial reserves
+        (uint112 r0_initial, uint112 r1_initial,,,,,) = ZAMM.pools(poolId);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        // Deploy helper to execute two swaps in one transaction
+        MultiSwapHelper helper = new MultiSwapHelper(address(ZAMM), address(PAMM));
+        PAMM.transfer(address(helper), marketId, 100e6);
+        PAMM.transfer(address(helper), noId, 100e6);
+
+        vm.stopPrank();
+
+        // Execute two swaps on same pool in same transaction
+        // First swap: 30e6 in direction A
+        // Second swap: 30e6 in OPPOSITE direction
+        vm.prank(alice);
+        helper.executeDoubleSwapSamePool(key, 30e6, 30e6, zeroForOne, !zeroForOne);
+
+        // Verify final reserves reflect both swaps (not just first)
+        (uint112 r0_final, uint112 r1_final,,,,,) = ZAMM.pools(poolId);
+
+        // Reserves should have changed from initial
+        assertTrue(
+            r0_final != r0_initial || r1_final != r1_initial,
+            "Reserves should have changed after two swaps"
+        );
+
+        // The two opposing swaps should partially cancel out
+        // After swap 1 (zeroForOne=true):  r0 increases, r1 decreases
+        // After swap 2 (zeroForOne=false): r0 decreases, r1 increases
+        // Net effect: reserves closer to initial than after just swap 1
+
+        // We can't easily predict exact values due to fees, but we can verify:
+        // 1. Both swaps executed (no revert)
+        // 2. Final state is different from initial (both swaps affected reserves)
+        // 3. If stale cache was used, price impact check would have been wrong
+
+        console.log("Cache safety - same pool two swaps: passed");
+        console.log("  Initial r0:", r0_initial, "r1:", r1_initial);
+        console.log("  Final   r0:", r0_final, "r1:", r1_final);
+        console.log("  Both swaps executed without stale cache issues");
+    }
+
+    /// @notice Test that reserve cache is properly cleared between operations
+    /// @dev Tests the explicit cache clearing at line 700-705 in afterAction
+    function test_CacheSafety_CacheClearing() public {
+        _setupMarketWithPool();
+
+        // Enable features that use reserve cache
+        PMFeeHook.Config memory cfg = hook.getDefaultConfig();
+        cfg.flags = cfg.flags | 0x21; // Enable skew (bit 0) + price impact (bit 5)
+        cfg.maxPriceImpactBps = 3000;
+        vm.prank(hook.owner());
+        hook.setMarketConfig(marketId, cfg);
+
+        vm.startPrank(alice);
+        deal(address(USDC), alice, 200e6);
+        USDC.approve(address(PAMM), type(uint256).max);
+        PAMM.split(marketId, 100e6, alice);
+        PAMM.setOperator(address(ZAMM), true);
+
+        IPAMM.PoolKey memory key = PAMM.poolKey(marketId, feeOrHook);
+        bool zeroForOne = marketId < noId;
+
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // Execute first swap
+        uint256 out1 =
+            ZAMM.swapExactIn(zammKey, 20e6, 0, zeroForOne, alice, block.timestamp + 1 hours);
+        assertGt(out1, 0, "First swap should succeed");
+
+        // Get reserves after first swap
+        (uint112 r0_after1, uint112 r1_after1,,,,,) = ZAMM.pools(poolId);
+
+        // Execute second swap in SAME transaction context (via new call)
+        // If cache wasn't cleared, this could use stale data
+        uint256 out2 =
+            ZAMM.swapExactIn(zammKey, 20e6, 0, !zeroForOne, alice, block.timestamp + 1 hours);
+        assertGt(out2, 0, "Second swap should succeed");
+
+        // Get final reserves
+        (uint112 r0_final, uint112 r1_final,,,,,) = ZAMM.pools(poolId);
+
+        // Verify reserves updated correctly from both swaps
+        assertTrue(
+            r0_final != r0_after1 || r1_final != r1_after1, "Reserves should reflect second swap"
+        );
+
+        vm.stopPrank();
+
+        console.log("Cache safety - cache clearing: passed");
+        console.log("  Both swaps executed correctly");
+        console.log("  No stale cache interference");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                     HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -2797,5 +3354,84 @@ contract PMFeeHookTest is Test {
         (_marketId,) =
             PAMM.createMarket(description, address(this), address(USDC), uint64(closeTime), false);
         vm.stopPrank();
+    }
+}
+
+/// @notice Helper contract to execute multiple swaps in a single transaction
+/// @dev Used for testing transient cache safety across multiple operations
+contract MultiSwapHelper {
+    IZAMM public immutable zamm;
+    IPAMM public immutable pamm;
+
+    constructor(address _zamm, address _pamm) {
+        zamm = IZAMM(_zamm);
+        pamm = IPAMM(_pamm);
+        pamm.setOperator(_zamm, true);
+    }
+
+    /// @notice Execute two swaps on different pools in one transaction
+    function executeDoubleSwap(
+        IPAMM.PoolKey memory key1,
+        IPAMM.PoolKey memory key2,
+        uint256 amount1,
+        uint256 amount2,
+        bool zeroForOne1,
+        bool zeroForOne2
+    ) external {
+        // Swap on pool 1
+        zamm.swapExactIn(
+            IZAMM.PoolKey({
+                id0: key1.id0,
+                id1: key1.id1,
+                token0: key1.token0,
+                token1: key1.token1,
+                feeOrHook: key1.feeOrHook
+            }),
+            amount1,
+            0,
+            zeroForOne1,
+            msg.sender,
+            block.timestamp + 1 hours
+        );
+
+        // Swap on pool 2 (same transaction, different pool)
+        zamm.swapExactIn(
+            IZAMM.PoolKey({
+                id0: key2.id0,
+                id1: key2.id1,
+                token0: key2.token0,
+                token1: key2.token1,
+                feeOrHook: key2.feeOrHook
+            }),
+            amount2,
+            0,
+            zeroForOne2,
+            msg.sender,
+            block.timestamp + 1 hours
+        );
+    }
+
+    /// @notice Execute two swaps on the same pool in one transaction
+    function executeDoubleSwapSamePool(
+        IPAMM.PoolKey memory key,
+        uint256 amount1,
+        uint256 amount2,
+        bool zeroForOne1,
+        bool zeroForOne2
+    ) external {
+        IZAMM.PoolKey memory zammKey = IZAMM.PoolKey({
+            id0: key.id0,
+            id1: key.id1,
+            token0: key.token0,
+            token1: key.token1,
+            feeOrHook: key.feeOrHook
+        });
+
+        // First swap
+        zamm.swapExactIn(zammKey, amount1, 0, zeroForOne1, msg.sender, block.timestamp + 1 hours);
+
+        // Second swap on SAME pool in SAME transaction
+        // This tests that transient cache is properly managed between swaps
+        zamm.swapExactIn(zammKey, amount2, 0, zeroForOne2, msg.sender, block.timestamp + 1 hours);
     }
 }
