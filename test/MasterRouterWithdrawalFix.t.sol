@@ -1,0 +1,199 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.31;
+
+import "forge-std/Test.sol";
+import "../src/MasterRouterComplete.sol";
+
+interface IPAMMExtended is IPAMM {
+    function createMarket(
+        string calldata description,
+        address resolver,
+        address collateral,
+        uint64 close,
+        bool canClose
+    ) external returns (uint256 marketId, uint256 noId);
+
+    function balanceOf(address account, uint256 id) external view returns (uint256);
+}
+
+/// @notice Test to verify withdrawal accounting fix
+contract MasterRouterWithdrawalFixTest is Test {
+    MasterRouter public router;
+    IPAMMExtended public pamm = IPAMMExtended(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
+
+    address public alice = address(0x1);
+    address public bob = address(0x2);
+    address public taker = address(0x3);
+
+    uint256 public marketId;
+    uint256 public noId;
+
+    function setUp() public {
+        vm.createSelectFork(vm.rpcUrl("main"));
+
+        router = new MasterRouter();
+
+        (marketId, noId) = pamm.createMarket(
+            "Test Market", address(this), address(0), uint64(block.timestamp + 30 days), false
+        );
+
+        vm.deal(alice, 200 ether);
+        vm.deal(bob, 200 ether);
+        vm.deal(taker, 200 ether);
+    }
+
+    /// @notice Critical test: Verify withdrawal doesn't break other users' accounting
+    function test_withdrawalDoesNotBreakOtherUsersAccounting() public {
+        // Setup: Alice and Bob each pool 100 shares at 0.50
+        vm.prank(alice);
+        router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
+
+        vm.prank(bob);
+        router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, bob);
+
+        // Total pool: 200 shares at 0.50
+
+        // 50 shares get filled
+        vm.prank(taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+
+        // Check unfilled before Alice withdraws
+        (, uint112 aliceUnfilledBefore,,) = router.getUserPosition(marketId, false, 5000, alice);
+        (, uint112 bobUnfilledBefore,,) = router.getUserPosition(marketId, false, 5000, bob);
+
+        assertEq(aliceUnfilledBefore, 75 ether, "Alice should have 75 unfilled");
+        assertEq(bobUnfilledBefore, 75 ether, "Bob should have 75 unfilled");
+
+        // Alice withdraws her 75 unfilled shares
+        vm.prank(alice);
+        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 75 ether, alice);
+        assertEq(withdrawn, 75 ether, "Alice withdrew 75");
+
+        // CRITICAL: Bob's unfilled should STILL be 75, not affected by Alice's withdrawal
+        (, uint112 bobUnfilledAfter,,) = router.getUserPosition(marketId, false, 5000, bob);
+        assertEq(
+            bobUnfilledAfter, 75 ether, "Bob's unfilled should remain 75 after Alice withdraws"
+        );
+
+        // Alice should now have 0 unfilled
+        (, uint112 aliceUnfilledAfter,,) = router.getUserPosition(marketId, false, 5000, alice);
+        assertEq(aliceUnfilledAfter, 0, "Alice should have 0 unfilled after withdrawing all");
+    }
+
+    /// @notice Test: Proportional earnings remain correct after withdrawal
+    function test_proportionalEarningsAfterWithdrawal() public {
+        // Setup: Alice pools 100, Bob pools 200 (1:2 ratio)
+        vm.prank(alice);
+        router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
+
+        vm.prank(bob);
+        router.mintAndPool{value: 200 ether}(marketId, 200 ether, true, 5000, bob);
+
+        // 60 shares get filled (20% filled)
+        vm.prank(taker);
+        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, taker);
+
+        // Alice withdraws some unfilled shares
+        vm.prank(alice);
+        router.withdrawFromPool(marketId, false, 5000, 40 ether, alice);
+
+        // More shares get filled
+        vm.prank(taker);
+        router.fillFromPool{value: 20 ether}(marketId, false, 5000, 40 ether, taker);
+
+        // Check earnings: Should still be proportional to original deposits (1:2)
+        vm.prank(alice);
+        uint256 aliceEarned = router.claimProceeds(marketId, false, 5000, alice);
+
+        vm.prank(bob);
+        uint256 bobEarned = router.claimProceeds(marketId, false, 5000, bob);
+
+        // Total earnings: 50 ETH (30 + 20)
+        // Alice should get 1/3 = ~16.67 ETH
+        // Bob should get 2/3 = ~33.33 ETH
+        assertApproxEqAbs(aliceEarned, 16.666666666666666666 ether, 1e9, "Alice earns 1/3");
+        assertApproxEqAbs(bobEarned, 33.333333333333333333 ether, 1e9, "Bob earns 2/3");
+    }
+
+    /// @notice Test: Multiple users withdraw without affecting each other
+    function test_multipleUsersWithdrawIndependently() public {
+        address carol = address(0x4);
+        vm.deal(carol, 100 ether);
+
+        // Three users pool equal amounts
+        vm.prank(alice);
+        router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
+
+        vm.prank(bob);
+        router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, bob);
+
+        vm.prank(carol);
+        router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, carol);
+
+        // 30 shares filled
+        vm.prank(taker);
+        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, taker);
+
+        // Each should have 90 unfilled
+        (, uint112 aliceUnfilled1,,) = router.getUserPosition(marketId, false, 5000, alice);
+        (, uint112 bobUnfilled1,,) = router.getUserPosition(marketId, false, 5000, bob);
+        (, uint112 carolUnfilled1,,) = router.getUserPosition(marketId, false, 5000, carol);
+
+        assertEq(aliceUnfilled1, 90 ether);
+        assertEq(bobUnfilled1, 90 ether);
+        assertEq(carolUnfilled1, 90 ether);
+
+        // Alice withdraws 50
+        vm.prank(alice);
+        router.withdrawFromPool(marketId, false, 5000, 50 ether, alice);
+
+        // Bob and Carol should still have 90 unfilled
+        (, uint112 bobUnfilled2,,) = router.getUserPosition(marketId, false, 5000, bob);
+        (, uint112 carolUnfilled2,,) = router.getUserPosition(marketId, false, 5000, carol);
+
+        assertEq(bobUnfilled2, 90 ether, "Bob unaffected by Alice withdrawal");
+        assertEq(carolUnfilled2, 90 ether, "Carol unaffected by Alice withdrawal");
+
+        // Bob withdraws all 90
+        vm.prank(bob);
+        router.withdrawFromPool(marketId, false, 5000, 0, bob); // 0 = withdraw all
+
+        // Carol should still have 90 unfilled
+        (, uint112 carolUnfilled3,,) = router.getUserPosition(marketId, false, 5000, carol);
+        assertEq(carolUnfilled3, 90 ether, "Carol unaffected by Bob withdrawal");
+    }
+
+    /// @notice Test: Withdrawal updates sharesWithdrawn correctly
+    function test_sharesWithdrawnTracking() public {
+        vm.prank(alice);
+        bytes32 poolId =
+            router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
+
+        // Check initial state
+        (uint112 totalShares, uint112 sharesFilled, uint112 sharesWithdrawn,) = router.pools(poolId);
+        assertEq(totalShares, 100 ether);
+        assertEq(sharesFilled, 0);
+        assertEq(sharesWithdrawn, 0);
+
+        // 30 filled
+        vm.prank(taker);
+        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, taker);
+
+        (totalShares, sharesFilled, sharesWithdrawn,) = router.pools(poolId);
+        assertEq(sharesFilled, 30 ether);
+        assertEq(sharesWithdrawn, 0);
+
+        // Alice withdraws 40
+        vm.prank(alice);
+        router.withdrawFromPool(marketId, false, 5000, 40 ether, alice);
+
+        (totalShares, sharesFilled, sharesWithdrawn,) = router.pools(poolId);
+        assertEq(totalShares, 100 ether, "totalShares unchanged");
+        assertEq(sharesFilled, 30 ether, "sharesFilled unchanged");
+        assertEq(sharesWithdrawn, 40 ether, "sharesWithdrawn updated");
+
+        // Unfilled should be: 100 - 30 - 40 = 30
+        (, uint112 aliceUnfilled,,) = router.getUserPosition(marketId, false, 5000, alice);
+        assertEq(aliceUnfilled, 30 ether);
+    }
+}
