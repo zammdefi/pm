@@ -587,6 +587,9 @@ contract PMHookRouter {
                 }
             }
         }
+
+        // Update vault lastActivity (consolidated here from all call sites)
+        vault.lastActivity = uint32(block.timestamp);
     }
 
     // ============ Bootstrap Vault Storage ============
@@ -1366,7 +1369,6 @@ contract PMHookRouter {
                     uint256 vaultSharesCreated =
                         _depositToVaultSide(marketId, !buyYes, remainingCollateral, to);
                     vaultSharesMinted += vaultSharesCreated;
-                    vault.lastActivity = uint32(block.timestamp);
                     emit VaultDeposit(
                         marketId, to, !buyYes, remainingCollateral, vaultSharesCreated
                     );
@@ -1764,8 +1766,6 @@ contract PMHookRouter {
 
         vaultSharesMinted = _depositToVaultSide(marketId, isYes, shares, receiver);
 
-        bootstrapVaults[marketId].lastActivity = uint32(block.timestamp);
-
         emit VaultDeposit(marketId, receiver, isYes, shares, vaultSharesMinted);
         _guardExit();
     }
@@ -1956,10 +1956,6 @@ contract PMHookRouter {
         if (vaultNoShares != 0) {
             noVaultSharesMinted = _depositToVaultSide(marketId, false, vaultNoShares, receiver);
             emit VaultDeposit(marketId, receiver, false, vaultNoShares, noVaultSharesMinted);
-        }
-
-        if ((vaultYesShares | vaultNoShares) != 0) {
-            bootstrapVaults[marketId].lastActivity = uint32(block.timestamp);
         }
 
         // Add AMM liquidity

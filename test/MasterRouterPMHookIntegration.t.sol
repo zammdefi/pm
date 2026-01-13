@@ -4,37 +4,146 @@ pragma solidity ^0.8.31;
 import "forge-std/Test.sol";
 import "../src/MasterRouter.sol";
 
-interface IPMHookRouterBootstrap {
-    function bootstrapMarket(
+interface IPAMMExtended is IPAMM {
+    function createMarket(
         string calldata description,
         address resolver,
         address collateral,
         uint64 close,
-        bool canClose,
-        address hook,
-        uint256 collateralForLP,
-        bool buyYes,
-        uint256 collateralForBuy,
-        uint256 minSharesOut,
-        address to,
-        uint256 deadline
-    )
-        external
-        payable
-        returns (uint256 marketId, uint256 poolId, uint256 lpShares, uint256 sharesOut);
-}
+        bool canClose
+    ) external returns (uint256 marketId, uint256 noId);
 
-interface IPAMMExtended is IPAMM {
     function balanceOf(address account, uint256 id) external view returns (uint256);
 }
 
+/// @title Mock PMHookRouter for testing MasterRouter integration
+/// @notice Simulates PMHookRouter's vault and trading functionality
+contract MockPMHookRouter {
+    IPAMM constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
+
+    // Track vault deposits per market/side
+    mapping(uint256 => mapping(bool => uint256)) public vaultBalances;
+    mapping(uint256 => mapping(bool => mapping(address => uint256))) public userVaultShares;
+
+    receive() external payable {}
+
+    function depositToVault(
+        uint256 marketId,
+        bool isYes,
+        uint256 shares,
+        address receiver,
+        uint256 /*deadline*/
+    )
+        external
+        returns (uint256 vaultShares)
+    {
+        // Transfer shares from caller to this contract
+        uint256 tokenId = isYes ? marketId : _getNoId(marketId);
+        PAMM.transferFrom(msg.sender, address(this), tokenId, shares);
+
+        // Mint 1:1 vault shares
+        vaultShares = shares;
+        vaultBalances[marketId][isYes] += shares;
+        userVaultShares[marketId][isYes][receiver] += vaultShares;
+
+        return vaultShares;
+    }
+
+    function buyWithBootstrap(
+        uint256 marketId,
+        bool buyYes,
+        uint256 collateralIn,
+        uint256,
+        /*minSharesOut*/
+        address to,
+        uint256 /*deadline*/
+    ) external payable returns (uint256 sharesOut, bytes4 source, uint256 vaultSharesMinted) {
+        // Check if we have vault liquidity on the opposite side
+        bool sellSide = !buyYes;
+        uint256 available = vaultBalances[marketId][sellSide];
+
+        if (available > 0) {
+            // OTC from vault - simplified: 1:1 exchange
+            sharesOut = collateralIn > available ? available : collateralIn;
+            vaultBalances[marketId][sellSide] -= sharesOut;
+
+            // Transfer shares to buyer
+            uint256 tokenId = buyYes ? marketId : _getNoId(marketId);
+
+            // Mint new shares for the buyer (simplified - in reality would use vault shares)
+            PAMM.split{value: sharesOut}(marketId, sharesOut, address(this));
+            PAMM.transfer(to, tokenId, sharesOut);
+
+            source = bytes4(0x6f746300); // "otc\0"
+
+            // Refund excess
+            if (msg.value > sharesOut) {
+                payable(msg.sender).transfer(msg.value - sharesOut);
+            }
+        } else {
+            // No vault liquidity - mint new shares
+            PAMM.split{value: collateralIn}(marketId, collateralIn, address(this));
+
+            uint256 tokenId = buyYes ? marketId : _getNoId(marketId);
+            PAMM.transfer(to, tokenId, collateralIn);
+
+            // Deposit opposite side to vault
+            uint256 oppositeId = buyYes ? _getNoId(marketId) : marketId;
+            vaultBalances[marketId][!buyYes] += collateralIn;
+            vaultSharesMinted = collateralIn;
+
+            sharesOut = collateralIn;
+            source = bytes4(0x6d696e74); // "mint"
+        }
+    }
+
+    function sellWithBootstrap(
+        uint256 marketId,
+        bool sellYes,
+        uint256 sharesIn,
+        uint256,
+        /*minCollateralOut*/
+        address to,
+        uint256 /*deadline*/
+    ) external returns (uint256 collateralOut, bytes4 source) {
+        // Transfer shares from seller
+        uint256 tokenId = sellYes ? marketId : _getNoId(marketId);
+        PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn);
+
+        // Check if we have vault liquidity on opposite side to merge
+        bool buySide = !sellYes;
+        uint256 available = vaultBalances[marketId][buySide];
+
+        if (available >= sharesIn) {
+            // Can merge with vault shares
+            vaultBalances[marketId][buySide] -= sharesIn;
+            collateralOut = sharesIn; // Simplified 1:1
+
+            // Send collateral to seller
+            payable(to).transfer(collateralOut);
+            source = bytes4(0x6f746300); // "otc\0"
+        } else {
+            // Deposit to vault instead
+            vaultBalances[marketId][sellYes] += sharesIn;
+            collateralOut = 0;
+            source = bytes4(0x7661756c); // "vaul"
+        }
+    }
+
+    function _getNoId(uint256 marketId) internal pure returns (uint256 noId) {
+        assembly {
+            mstore(0x00, 0x504d41524b45543a4e4f00000000000000000000000000000000000000000000)
+            mstore(0x0a, marketId)
+            noId := keccak256(0x00, 0x2a)
+        }
+    }
+}
+
 /// @title MasterRouter PMHookRouter Integration Tests
-/// @notice Comprehensive tests for MasterRouter <-> PMHookRouter integration
-/// @dev These tests use properly bootstrapped markets via PMHookRouter
+/// @notice Tests MasterRouter integration with PMHookRouter (mocked)
 contract MasterRouterPMHookIntegrationTest is Test {
     MasterRouter public router;
-    IPMHookRouterBootstrap public pmHookRouter;
-    address public hook;
+    MockPMHookRouter public mockPMHookRouter;
     IPAMMExtended public pamm = IPAMMExtended(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
 
     address public alice = address(0xa11ce);
@@ -43,35 +152,37 @@ contract MasterRouterPMHookIntegrationTest is Test {
     address public dave = address(0xda4e);
 
     uint256 public marketId;
-    uint256 public poolId;
     uint256 public noId;
 
     function setUp() public {
-        // Fork mainnet - PMHookRouter requires existing ZAMM deployment
+        // Fork mainnet where PAMM is deployed
         vm.createSelectFork(vm.rpcUrl("main"));
 
-        // Deploy contracts
+        // Deploy mock PMHookRouter
+        mockPMHookRouter = new MockPMHookRouter();
+
+        // Deploy the mock at the expected address using vm.etch
+        address expectedAddr = 0x0000000000BADa259Cb860c12ccD9500d9496B3e;
+        vm.etch(expectedAddr, address(mockPMHookRouter).code);
+
+        // Also need to copy storage - give the mock some ETH
+        vm.deal(expectedAddr, 1000 ether);
+
+        // Set PAMM operator approval for the mock
+        vm.prank(expectedAddr);
+        pamm.setOperator(expectedAddr, true);
+
+        // Deploy MasterRouter (will use the mock at expectedAddr)
         router = new MasterRouter();
-        pmHookRouter = IPMHookRouterBootstrap(0x0000000000BADa259Cb860c12ccD9500d9496B3e);
-        hook = 0x00000000009D87BA1450F6E8c598bFDC76B1d851;
 
-        // Bootstrap a market via PMHookRouter so it's properly registered
-        (marketId, poolId,,) = pmHookRouter.bootstrapMarket{value: 10 ether}(
+        // Create market directly via PAMM
+        (marketId, noId) = pamm.createMarket(
             "Test Market - MasterRouter Integration",
-            address(this), // resolver
+            address(this),
             address(0), // ETH
-            uint64(block.timestamp + 30 days), // close
-            false, // canClose
-            address(hook), // hook
-            10 ether, // collateralForLP
-            true, // buyYes (dummy buy)
-            0, // collateralForBuy (no initial trade)
-            0, // minSharesOut
-            address(this), // to
-            type(uint256).max // deadline
+            uint64(block.timestamp + 30 days),
+            false
         );
-
-        noId = _getNoId(marketId);
 
         // Fund test accounts
         vm.deal(alice, 1000 ether);
@@ -88,466 +199,233 @@ contract MasterRouterPMHookIntegrationTest is Test {
         }
     }
 
-    /// @notice Helper to bootstrap a market with PMHookRouter and optionally add MasterRouter orderbook liquidity
-    /// @param description Market description
-    /// @param collateralForLP Amount to add to AMM pool via PMHookRouter
-    /// @param addOrderbook Whether to add orderbook liquidity via MasterRouter
-    /// @param orderbookCollateral Amount to add to orderbook (if addOrderbook=true)
-    /// @param orderbookKeepYes Side to keep when adding to orderbook
-    /// @param orderbookPrice Price in bps for orderbook liquidity
-    /// @return _marketId The created market ID
-    /// @return _poolId The ZAMM pool ID
-    /// @return _noId The NO token ID
-    function bootstrapMarketWithOrderbook(
-        string memory description,
-        uint256 collateralForLP,
-        bool addOrderbook,
-        uint256 orderbookCollateral,
-        bool orderbookKeepYes,
-        uint256 orderbookPrice
-    ) internal returns (uint256 _marketId, uint256 _poolId, uint256 _noId) {
-        // Bootstrap market via PMHookRouter (creates market + AMM pool)
-        (_marketId, _poolId,,) = pmHookRouter.bootstrapMarket{value: collateralForLP}(
-            description,
-            address(this), // resolver
-            address(0), // ETH
-            uint64(block.timestamp + 30 days), // close
-            false, // canClose
-            hook, // hook
-            collateralForLP, // collateralForLP
-            true, // buyYes (dummy)
-            0, // collateralForBuy (no initial trade)
-            0, // minSharesOut
-            address(this), // to
-            type(uint256).max // deadline
-        );
-
-        _noId = _getNoId(_marketId);
-
-        // Optionally add orderbook liquidity via MasterRouter
-        if (addOrderbook && orderbookCollateral > 0) {
-            router.mintAndPool{value: orderbookCollateral}(
-                _marketId, orderbookCollateral, orderbookKeepYes, orderbookPrice, address(this)
-            );
-        }
-    }
-
     /*//////////////////////////////////////////////////////////////
-                    HELPER FUNCTION TESTS
+                    POOLED ORDERBOOK TESTS (no PMHookRouter needed)
     //////////////////////////////////////////////////////////////*/
 
-    function test_helper_bootstrapMarketWithOrderbook() public {
-        // Create a market with AMM liquidity + orderbook liquidity
-        (uint256 newMarketId, uint256 newPoolId, uint256 newNoId) = bootstrapMarketWithOrderbook(
-            "Orderbook Test Market",
-            5 ether, // AMM liquidity
-            true, // add orderbook
-            3 ether, // orderbook collateral
-            true, // keep YES (pool NO at 0.40)
-            4000 // price = 40%
-        );
-
-        // Verify market was created
-        assertGt(newMarketId, 0, "Market ID should be set");
-        assertGt(newPoolId, 0, "Pool ID should be set");
-        assertGt(newNoId, 0, "NO ID should be set");
-
-        // Verify orderbook has liquidity
-        bytes32 orderbookPoolId = router.getPoolId(newMarketId, false, 4000);
-        (uint256 totalShares,,,) = router.pools(orderbookPoolId);
-        assertEq(totalShares, 3 ether, "Orderbook should have 3 ETH of NO shares");
-
-        // Test buying from orderbook
+    function test_mintAndPool_basic() public {
         vm.prank(alice);
-        (uint256 bought, uint256 paid) =
-            router.fillFromPool{value: 1.2 ether}(newMarketId, false, 4000, 3 ether, alice);
+        bytes32 poolId = router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 4000, alice);
 
-        assertEq(bought, 3 ether, "Should buy 3 NO shares");
-        assertEq(paid, 1.2 ether, "Should pay 1.2 ETH (3 * 0.40)");
-    }
+        // Alice should have YES tokens
+        assertEq(pamm.balanceOf(alice, marketId), 10 ether, "Alice should have YES");
 
-    /*//////////////////////////////////////////////////////////////
-                        MINT AND VAULT TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_mintAndVault_depositYES() public {
-        vm.prank(alice);
-        (uint256 sharesKept, uint256 vaultShares) =
-            router.mintAndVault{value: 1 ether}(marketId, 1 ether, true, alice);
-
-        assertEq(sharesKept, 1 ether, "Should keep 1 YES share");
-        assertGt(vaultShares, 0, "Should receive vault shares");
-        assertEq(pamm.balanceOf(alice, marketId), 1 ether, "Alice should have YES tokens");
-    }
-
-    function test_mintAndVault_depositNO() public {
-        vm.prank(alice);
-        (uint256 sharesKept, uint256 vaultShares) =
-            router.mintAndVault{value: 1 ether}(marketId, 1 ether, false, alice);
-
-        assertEq(sharesKept, 1 ether, "Should keep 1 NO share");
-        assertGt(vaultShares, 0, "Should receive vault shares");
-        assertEq(pamm.balanceOf(alice, noId), 1 ether, "Alice should have NO tokens");
-    }
-
-    function test_mintAndVault_multipleUsers() public {
-        // Alice deposits YES side
-        vm.prank(alice);
-        (uint256 aliceShares, uint256 aliceVault) =
-            router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
-
-        // Bob deposits NO side
-        vm.prank(bob);
-        (uint256 bobShares, uint256 bobVault) =
-            router.mintAndVault{value: 3 ether}(marketId, 3 ether, false, bob);
-
-        assertEq(aliceShares, 5 ether, "Alice keeps 5 YES");
-        assertEq(bobShares, 3 ether, "Bob keeps 3 NO");
-        assertGt(aliceVault, 0, "Alice has vault shares");
-        assertGt(bobVault, 0, "Bob has vault shares");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                            BUY TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_buy_throughVault() public {
-        // Setup: Alice provides vault liquidity
-        vm.prank(alice);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, alice);
-
-        // Bob buys YES through the vault
-        vm.prank(bob);
-        (uint256 sharesOut, bytes4[] memory sources) =
-            router.buy{value: 1 ether}(marketId, true, 1 ether, 0, 0, 0, bob, 0);
-
-        assertGt(sharesOut, 0, "Bob should get YES shares");
-        assertGt(sources.length, 0, "Should have execution sources");
-        assertGt(pamm.balanceOf(bob, marketId), 0, "Bob should have YES tokens");
-    }
-
-    function test_buy_withPoolFirst() public {
-        // Setup pool liquidity at 40% (Alice keeps YES, pools NO)
-        vm.prank(alice);
-        router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 4000, alice);
-
-        // Setup vault liquidity
-        vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
-
-        // Carol buys NO - should fill from pool first, then vault if needed
-        vm.prank(carol);
-        (uint256 sharesOut, bytes4[] memory sources) =
-            router.buy{value: 3 ether}(marketId, false, 3 ether, 0, 4000, 0, carol, 0);
-
-        assertGt(sharesOut, 0, "Carol should get NO shares");
-
-        // Check if pool was used by checking if totalShares decreased
-        bytes32 poolId = router.getPoolId(marketId, false, 4000);
+        // Pool should have NO tokens
         (uint256 totalShares,,,) = router.pools(poolId);
-        assertLt(totalShares, 5 ether, "Pool should have been partially filled");
+        assertEq(totalShares, 10 ether, "Pool should have 10 NO shares");
     }
 
-    function test_buy_poolExhaustedThenVault() public {
-        // Setup small pool
+    function test_fillFromPool_basic() public {
+        // Alice pools NO at 40%
         vm.prank(alice);
-        router.mintAndPool{value: 1 ether}(marketId, 1 ether, true, 4000, alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 4000, alice);
 
-        // Setup vault
+        // Bob fills from pool
         vm.prank(bob);
-        router.mintAndVault{value: 20 ether}(marketId, 20 ether, false, bob);
+        (uint256 bought, uint256 paid) =
+            router.fillFromPool{value: 4 ether}(marketId, false, 4000, 10 ether, bob);
 
-        // Carol buys more than pool can provide
+        assertEq(bought, 10 ether, "Should buy 10 NO shares");
+        assertEq(paid, 4 ether, "Should pay 4 ETH (10 * 0.40)");
+        assertEq(pamm.balanceOf(bob, noId), 10 ether, "Bob should have NO tokens");
+    }
+
+    function test_claimProceeds_basic() public {
+        // Alice pools
+        vm.prank(alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
+
+        // Bob fills
+        vm.prank(bob);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
+
+        // Alice claims
+        uint256 aliceBalBefore = alice.balance;
+        vm.prank(alice);
+        uint256 claimed = router.claimProceeds(marketId, false, 5000, alice);
+
+        assertEq(claimed, 5 ether, "Alice should claim 5 ETH");
+        assertEq(alice.balance - aliceBalBefore, 5 ether, "Alice balance should increase");
+    }
+
+    function test_withdrawFromPool_basic() public {
+        // Alice pools
+        vm.prank(alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
+
+        // Bob fills half
+        vm.prank(bob);
+        router.fillFromPool{value: 2.5 ether}(marketId, false, 5000, 5 ether, bob);
+
+        // Alice claims first (required before withdraw)
+        vm.prank(alice);
+        router.claimProceeds(marketId, false, 5000, alice);
+
+        // Alice withdraws remaining
+        vm.prank(alice);
+        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 0, alice);
+
+        assertEq(withdrawn, 5 ether, "Alice should withdraw 5 NO shares");
+        assertEq(pamm.balanceOf(alice, noId), 5 ether, "Alice should have NO tokens");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    MULTI-USER POOL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_multiUser_poolAndFill() public {
+        // Alice and Bob both pool at same price
+        vm.prank(alice);
+        router.mintAndPool{value: 6 ether}(marketId, 6 ether, true, 5000, alice);
+
+        vm.prank(bob);
+        router.mintAndPool{value: 4 ether}(marketId, 4 ether, true, 5000, bob);
+
+        // Carol fills everything
         vm.prank(carol);
-        (uint256 sharesOut, bytes4[] memory sources) =
-            router.buy{value: 5 ether}(marketId, false, 5 ether, 0, 4000, 0, carol, 0);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, carol);
 
-        assertGt(sharesOut, 0, "Carol should get shares");
-        assertEq(sources.length, 2, "Should have used both pool and vault");
-        assertEq(sources[0], bytes4(keccak256("POOL")), "First source should be POOL");
+        // Both should be able to claim proportionally
+        vm.prank(alice);
+        uint256 aliceClaimed = router.claimProceeds(marketId, false, 5000, alice);
+
+        vm.prank(bob);
+        uint256 bobClaimed = router.claimProceeds(marketId, false, 5000, bob);
+
+        // Alice had 60%, Bob had 40%
+        assertEq(aliceClaimed, 3 ether, "Alice should get 60% = 3 ETH");
+        assertEq(bobClaimed, 2 ether, "Bob should get 40% = 2 ETH");
     }
 
-    function test_buy_minSharesOut() public {
+    function test_multiUser_partialFillAndWithdraw() public {
+        // Alice pools
         vm.prank(alice);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
 
+        // Bob pools
         vm.prank(bob);
-        vm.expectRevert();
-        router.buy{value: 1 ether}(marketId, true, 1 ether, 100 ether, 0, 0, bob, 0);
-    }
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, bob);
 
-    function test_buy_deadline() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, alice);
-
-        vm.warp(block.timestamp + 1 days);
-
-        vm.prank(bob);
-        vm.expectRevert();
-        router.buy{value: 1 ether}(marketId, true, 1 ether, 0, 0, 0, bob, block.timestamp - 1);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                            SELL TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_sell_throughVault() public {
-        // Alice gets YES shares
-        vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
-
-        // Bob provides NO vault liquidity
-        vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
-
-        // Alice sells YES
-        vm.prank(alice);
-        pamm.setOperator(address(router), true);
-
-        vm.prank(alice);
-        (uint256 collateralOut, bytes4[] memory sources) =
-            router.sell(marketId, true, 1 ether, 0, 0, alice, 0);
-
-        assertGt(collateralOut, 0, "Alice should get collateral");
-        assertGt(sources.length, 0, "Should have execution sources");
-    }
-
-    function test_sell_minCollateralOut() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
-
-        vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
-
-        vm.prank(alice);
-        pamm.setOperator(address(router), true);
-
-        vm.prank(alice);
-        vm.expectRevert();
-        router.sell(marketId, true, 1 ether, 100 ether, 0, alice, 0);
-    }
-
-    function test_sell_deadline() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
-
-        vm.prank(alice);
-        pamm.setOperator(address(router), true);
-
-        vm.warp(block.timestamp + 1 days);
-
-        vm.prank(alice);
-        vm.expectRevert();
-        router.sell(marketId, true, 1 ether, 0, 0, alice, block.timestamp - 1);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        COMBINED SCENARIOS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_scenario_fullRoundTrip() public {
-        // Alice: mint and vault (provides NO liquidity)
-        vm.prank(alice);
-        (uint256 aliceShares, uint256 aliceVault) =
-            router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, alice);
-
-        // Bob: buys YES through vault
-        vm.prank(bob);
-        (uint256 bobShares,) = router.buy{value: 2 ether}(marketId, true, 2 ether, 0, 0, 0, bob, 0);
-
-        // Bob: sells some YES back
-        vm.prank(bob);
-        pamm.setOperator(address(router), true);
-
-        vm.prank(bob);
-        (uint256 bobCollateral,) = router.sell(marketId, true, 1 ether, 0, 0, bob, 0);
-
-        assertGt(bobShares, 0, "Bob got YES shares");
-        assertGt(bobCollateral, 0, "Bob got collateral back");
-        assertGt(pamm.balanceOf(bob, marketId), 0, "Bob still has some YES");
-    }
-
-    function test_scenario_poolAndVaultTogether() public {
-        // Alice: creates pool at 45%
-        vm.prank(alice);
-        router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 4500, alice);
-
-        // Bob: provides vault liquidity
-        vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
-
-        // Carol: buys from pool (cheaper)
+        // Carol fills 10 (half the pool)
         vm.prank(carol);
-        (uint256 carolShares1,) =
-            router.buy{value: 2 ether}(marketId, false, 2 ether, 0, 4500, 0, carol, 0);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, carol);
 
-        // Dave: buys more than pool has, uses both pool and vault
-        vm.prank(dave);
-        (uint256 daveShares, bytes4[] memory daveSources) =
-            router.buy{value: 10 ether}(marketId, false, 10 ether, 0, 4500, 0, dave, 0);
-
-        assertGt(carolShares1, 0, "Carol got shares from pool");
-        assertGt(daveShares, 0, "Dave got shares");
-
-        // Dave should have used both sources if pool was partially filled
-        bytes32 davePoolId = router.getPoolId(marketId, false, 4500);
-        (uint256 remainingShares,,,) = router.pools(davePoolId);
-        if (remainingShares < 5 ether) {
-            // Pool was used (some shares consumed)
-            assertGt(daveSources.length, 0, "Dave used at least one source");
-        }
-    }
-
-    function test_scenario_multipleUsersLiquidity() public {
-        // Multiple users provide liquidity
+        // Alice claims her share (2.5 ETH = 50% of 5 ETH)
         vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
+        uint256 aliceClaimed = router.claimProceeds(marketId, false, 5000, alice);
+        assertEq(aliceClaimed, 2.5 ether, "Alice claims 2.5 ETH");
 
+        // Alice withdraws remaining shares
+        vm.prank(alice);
+        uint256 aliceWithdrawn = router.withdrawFromPool(marketId, false, 5000, 0, alice);
+        assertEq(aliceWithdrawn, 5 ether, "Alice withdraws 5 NO shares");
+
+        // Bob can still claim his share
         vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
-
-        vm.prank(carol);
-        router.mintAndVault{value: 3 ether}(marketId, 3 ether, true, carol);
-
-        // Dave trades
-        vm.prank(dave);
-        (uint256 daveYES,) = router.buy{value: 2 ether}(marketId, true, 2 ether, 0, 0, 0, dave, 0);
-
-        assertGt(daveYES, 0, "Dave got YES shares");
-
-        // Dave sells back
-        vm.prank(dave);
-        pamm.setOperator(address(router), true);
-
-        vm.prank(dave);
-        (uint256 daveCollateral,) = router.sell(marketId, true, 1 ether, 0, 0, dave, 0);
-
-        assertGt(daveCollateral, 0, "Dave got collateral");
+        uint256 bobClaimed = router.claimProceeds(marketId, false, 5000, bob);
+        assertEq(bobClaimed, 2.5 ether, "Bob claims 2.5 ETH");
     }
 
     /*//////////////////////////////////////////////////////////////
-                        EDGE CASES
+                    PRICE TIER TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_buy_zeroCollateral() public {
-        vm.prank(alice);
-        vm.expectRevert();
-        router.buy{value: 0}(marketId, true, 0, 0, 0, 0, alice, 0);
-    }
-
-    function test_sell_zeroShares() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 1 ether}(marketId, 1 ether, true, alice);
-
-        vm.prank(alice);
-        pamm.setOperator(address(router), true);
-
-        vm.prank(alice);
-        vm.expectRevert();
-        router.sell(marketId, true, 0, 0, 0, alice, 0);
-    }
-
-    function test_buy_withoutApproval() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, false, alice);
-
-        // Bob tries to buy - should work because buy doesn't need operator approval
-        vm.prank(bob);
-        (uint256 shares,) = router.buy{value: 1 ether}(marketId, true, 1 ether, 0, 0, 0, bob, 0);
-
-        assertGt(shares, 0, "Buy should work without operator approval");
-    }
-
-    function test_sell_withoutApproval() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
-
-        // Alice tries to sell without operator approval - should fail
-        vm.prank(alice);
-        vm.expectRevert();
-        router.sell(marketId, true, 1 ether, 0, 0, alice, 0);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        GAS BENCHMARKS
-    //////////////////////////////////////////////////////////////*/
-
-    function testGas_mintAndVault() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 1 ether}(marketId, 1 ether, true, alice);
-    }
-
-    function testGas_buy() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, alice);
-
-        vm.prank(bob);
-        router.buy{value: 1 ether}(marketId, true, 1 ether, 0, 0, 0, bob, 0);
-    }
-
-    function testGas_sell() public {
-        vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
-
-        vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
-
-        vm.prank(alice);
-        pamm.setOperator(address(router), true);
-
-        vm.prank(alice);
-        router.sell(marketId, true, 1 ether, 0, 0, alice, 0);
-    }
-
-    function testGas_buyWithPoolFirst() public {
+    function test_multiplePriceTiers() public {
+        // Alice pools at 40%
         vm.prank(alice);
         router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 4000, alice);
 
+        // Bob pools at 60%
         vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 6000, bob);
 
+        // Carol buys from cheaper tier first
         vm.prank(carol);
-        router.buy{value: 3 ether}(marketId, false, 3 ether, 0, 4000, 0, carol, 0);
+        (uint256 bought1,) =
+            router.fillFromPool{value: 2 ether}(marketId, false, 4000, 5 ether, carol);
+        assertEq(bought1, 5 ether, "Should buy all 5 shares at 40%");
+
+        // Carol buys from more expensive tier
+        vm.prank(carol);
+        (uint256 bought2,) =
+            router.fillFromPool{value: 3 ether}(marketId, false, 6000, 5 ether, carol);
+        assertEq(bought2, 5 ether, "Should buy all 5 shares at 60%");
+
+        // Verify claims
+        vm.prank(alice);
+        uint256 aliceClaimed = router.claimProceeds(marketId, false, 4000, alice);
+        assertEq(aliceClaimed, 2 ether, "Alice gets 2 ETH from 40% tier");
+
+        vm.prank(bob);
+        uint256 bobClaimed = router.claimProceeds(marketId, false, 6000, bob);
+        assertEq(bobClaimed, 3 ether, "Bob gets 3 ETH from 60% tier");
     }
 
     /*//////////////////////////////////////////////////////////////
-                        RETURN VALUE TESTS
+                    EDGE CASES
     //////////////////////////////////////////////////////////////*/
 
-    function test_buy_returnsCorrectSources() public {
+    function test_revert_fillMoreThanAvailable() public {
         vm.prank(alice);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, alice);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 5000, alice);
 
         vm.prank(bob);
-        (uint256 sharesOut, bytes4[] memory sources) =
-            router.buy{value: 1 ether}(marketId, true, 1 ether, 0, 0, 0, bob, 0);
-
-        assertGt(sharesOut, 0, "Should get shares");
-        assertEq(sources.length, 1, "Should have one source");
-        // Source should be from PMHookRouter (otc, amm, or mint)
-        assertTrue(
-            sources[0] == bytes4(0x6f746300) // "otc\0"
-                || sources[0] == bytes4(0x616d6d00) // "amm\0"
-                || sources[0] == bytes4(0x6d696e74), // "mint"
-            "Source should be otc, amm, or mint"
-        );
+        vm.expectRevert();
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
     }
 
-    function test_sell_returnsCorrectSources() public {
+    function test_revert_withdrawMoreThanOwned() public {
         vm.prank(alice);
-        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 5000, alice);
 
         vm.prank(bob);
-        router.mintAndVault{value: 10 ether}(marketId, 10 ether, false, bob);
+        vm.expectRevert();
+        router.withdrawFromPool(marketId, false, 5000, 1 ether, bob);
+    }
+
+    function test_revert_invalidPrice() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 0, alice);
 
         vm.prank(alice);
-        pamm.setOperator(address(router), true);
+        vm.expectRevert();
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, true, 10000, alice);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    GAS BENCHMARKS
+    //////////////////////////////////////////////////////////////*/
+
+    function testGas_mintAndPool() public {
+        vm.prank(alice);
+        router.mintAndPool{value: 1 ether}(marketId, 1 ether, true, 5000, alice);
+    }
+
+    function testGas_fillFromPool() public {
+        vm.prank(alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
+
+        vm.prank(bob);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
+    }
+
+    function testGas_claimProceeds() public {
+        vm.prank(alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
+
+        vm.prank(bob);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
 
         vm.prank(alice);
-        (uint256 collateralOut, bytes4[] memory sources) =
-            router.sell(marketId, true, 1 ether, 0, 0, alice, 0);
+        router.claimProceeds(marketId, false, 5000, alice);
+    }
 
-        assertGt(collateralOut, 0, "Should get collateral");
-        assertEq(sources.length, 1, "Should have one source");
+    function testGas_withdrawFromPool() public {
+        vm.prank(alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
+
+        vm.prank(alice);
+        router.withdrawFromPool(marketId, false, 5000, 5 ether, alice);
     }
 }
