@@ -866,11 +866,6 @@ contract PMHookRouter {
         if (!resolved) _revert(ERR_STATE, 1); // MarketNotResolved
     }
 
-    /// @dev Revert if amount is zero
-    function _requireNonZero(uint256 amount) internal pure {
-        if (amount == 0) _revert(ERR_VALIDATION, 1); // AmountZero
-    }
-
     /// @dev Check if market is in close window
     /// @dev Uses hook's closeWindow if available and non-zero, otherwise defaults to 1 hour
     function _isInCloseWindow(uint256 marketId) internal view returns (bool inWindow) {
@@ -1131,7 +1126,7 @@ contract PMHookRouter {
         _guardEnter();
         _checkDeadline(deadline);
         if (block.timestamp >= close) _revert(ERR_VALIDATION, 7); // InvalidCloseTime
-        _requireNonZero(collateralForLP);
+        if (collateralForLP == 0) _revert(ERR_VALIDATION, 1); // AmountZero
 
         assembly { if iszero(to) { to := caller() } }
 
@@ -1241,7 +1236,7 @@ contract PMHookRouter {
         _guardEnter();
         (, address collateral) = _requireMarketOpen(marketId);
         _checkDeadline(deadline);
-        _requireNonZero(collateralIn);
+        if (collateralIn == 0) _revert(ERR_VALIDATION, 1); // AmountZero
         if (collateralIn > MAX_COLLATERAL_IN) _revert(ERR_VALIDATION, 0); // Overflow
         assembly { if iszero(to) { to := caller() } }
 
@@ -1917,7 +1912,7 @@ contract PMHookRouter {
         (, address collateral) = _requireMarketOpen(marketId);
         _checkDeadline(deadline);
         _requireRegistered(marketId);
-        _requireNonZero(collateralAmount);
+        if (collateralAmount == 0) _revert(ERR_VALIDATION, 1); // AmountZero
         assembly { if iszero(receiver) { receiver := caller() } }
 
         // Load canonical feeOrHook for this market

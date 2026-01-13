@@ -153,7 +153,7 @@ contract MasterRouterTest is Test {
 
         vm.prank(alice);
         (uint256 collateralOut, bytes4[] memory sources) =
-            router.sell(marketId, true, 1 ether, 0, 0, alice, 0);
+            router.sell(marketId, true, 1 ether, 0, 0, 0, alice, 0);
 
         assertGt(collateralOut, 0, "Alice should get collateral");
     }

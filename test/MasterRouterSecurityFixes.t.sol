@@ -180,30 +180,32 @@ contract MasterRouterSecurityFixesTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Test getUserPosition returns correct values after withdrawals
+    /// @dev In accumulator model: returns (userScaled, userWithdrawableShares, userPendingCollateral, userCollateralDebt)
     function test_getUserPosition_afterWithdrawal() public {
         vm.prank(alice);
         bytes32 poolId =
             router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
 
-        // Withdraw 40
+        // Withdraw 40 - reduces Alice's scaled LP units to 60
         vm.prank(alice);
         router.withdrawFromPool(marketId, false, 5000, 40 ether, alice);
 
-        // Fill 30
+        // Fill 30 from remaining 60 shares - Alice earns 15 ETH
         vm.prank(taker);
         router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, taker);
 
         (
-            uint112 userShares,
-            uint112 userUnfilledShares,
-            uint256 userEarnedCollateral,
-            uint256 userClaimed
+            uint256 userScaled,
+            uint256 userWithdrawableShares,
+            uint256 userPendingCollateral,
+            uint256 userCollateralDebt
         ) = router.getUserPosition(marketId, false, 5000, alice);
 
-        assertEq(userShares, 100 ether, "User shares unchanged");
-        assertEq(userUnfilledShares, 30 ether, "30 unfilled shares (60 total - 30 filled)");
-        assertEq(userEarnedCollateral, 15 ether, "Earned 15 ETH from 60 effective shares");
-        assertEq(userClaimed, 0, "Nothing claimed yet");
+        // In accumulator model: scaled reduced after withdrawal
+        assertEq(userScaled, 60 ether, "User scaled is 60 after withdrawing 40");
+        assertEq(userWithdrawableShares, 30 ether, "30 withdrawable shares (60 - 30 filled)");
+        assertEq(userPendingCollateral, 15 ether, "Earned 15 ETH from fills");
+        assertEq(userCollateralDebt, 0, "Debt is 0 (checkpoint resets on withdraw)");
     }
 
     /// @notice Test multiple claims work correctly

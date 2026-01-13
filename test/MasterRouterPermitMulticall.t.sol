@@ -273,7 +273,7 @@ contract MasterRouterPermitMulticallTest is Test {
 
         // Verify pool was created
         bytes32 poolId = router.getPoolId(tokenMarketId, false, 5000);
-        (uint112 totalShares,,,) = router.pools(poolId);
+        (uint256 totalShares,,,) = router.pools(poolId);
         assertEq(totalShares, amount, "Pool should have shares");
     }
 
@@ -306,9 +306,9 @@ contract MasterRouterPermitMulticallTest is Test {
         // Verify bob got NO shares
         assertEq(pamm.balanceOf(bob, tokenNoId), amount, "Bob should have NO shares");
 
-        // Verify pool was filled
-        (, uint112 sharesFilled,,) = router.pools(poolId);
-        assertEq(sharesFilled, amount, "Pool should be partially filled");
+        // Verify pool was filled (totalShares shows remaining, not filled)
+        (uint256 totalShares,,,) = router.pools(poolId);
+        assertEq(totalShares, 5 ether, "Pool should have 5 shares remaining");
     }
 
     function test_erc2612Permit_multipleActions() public {
@@ -337,8 +337,8 @@ contract MasterRouterPermitMulticallTest is Test {
         bytes32 poolId1 = router.getPoolId(tokenMarketId, false, 4000);
         bytes32 poolId2 = router.getPoolId(tokenMarketId, false, 6000);
 
-        (uint112 shares1,,,) = router.pools(poolId1);
-        (uint112 shares2,,,) = router.pools(poolId2);
+        (uint256 shares1,,,) = router.pools(poolId1);
+        (uint256 shares2,,,) = router.pools(poolId2);
 
         assertEq(shares1, 10 ether, "Pool 1 should have shares");
         assertEq(shares2, 10 ether, "Pool 2 should have shares");
