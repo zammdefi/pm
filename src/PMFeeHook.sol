@@ -239,6 +239,7 @@ contract PMFeeHook is IZAMMHook {
     constructor() payable {
         // Note: tx.origin sets owner to deploying EOA (not factory address if deployed via factory)
         // This preserves CREATE2 determinism but requires EOA deployment or factory-aware setup
+        // IMPORTANT: Must deploy via EOA directly, NOT via factory contract, or owner will be the factory
         owner = tx.origin;
         emit OwnershipTransferred(address(0), tx.origin);
 
@@ -787,6 +788,7 @@ contract PMFeeHook is IZAMMHook {
         // Mode 0: halt (revert)
         // Mode 1: charge closeWindowFeeBps (don't revert, handled in fee computation)
         // Mode 2: charge minFeeBps (don't revert, handled in fee computation)
+        // Mode 3: dynamic (continue to normal fee calculation)
         uint8 closeWindowMode = _getCloseWindowMode(flags);
         if (
             closeWindowMode == 0 && c.closeWindow != 0 && close > 0
@@ -1071,6 +1073,10 @@ contract PMFeeHook is IZAMMHook {
 
         // Algebraic variance formula:
         // Σ(p-mean)² = sumSq - 2*mean*sum + count*mean²
+        // Note: Integer division in mean may cause intermediate underflow in unchecked block,
+        // but modular arithmetic (mod 2^256) produces correct variance result. Mathematically,
+        // variance ≥ 0 always holds, and even if wraparound occurs, the final fee is safely
+        // capped by volatilityFeeBps (line 1087-1091).
         uint256 varianceSum;
         unchecked {
             varianceSum = sumSq - (2 * mean * sum) + (count * mean * mean);
@@ -1243,6 +1249,7 @@ contract PMFeeHook is IZAMMHook {
         meanPriceBps = sum / snapshotCount;
         if (meanPriceBps == 0) return (0, snapshotCount, 0);
 
+        // Algebraic variance formula (same as _volatilityFee): safe despite potential underflow
         uint256 varianceSum;
         unchecked {
             varianceSum =

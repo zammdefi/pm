@@ -2,7 +2,7 @@
 pragma solidity ^0.8.31;
 
 import "forge-std/Test.sol";
-import "../src/MasterRouterComplete.sol";
+import "../src/MasterRouter.sol";
 
 interface IPAMMExtended is IPAMM {
     function createMarket(
@@ -101,7 +101,7 @@ contract MasterRouterWithdrawalFixTest is Test {
         vm.prank(taker);
         router.fillFromPool{value: 20 ether}(marketId, false, 5000, 40 ether, taker);
 
-        // Check earnings: Should still be proportional to original deposits (1:2)
+        // Check earnings: Should be proportional to EFFECTIVE shares (after withdrawal)
         vm.prank(alice);
         uint256 aliceEarned = router.claimProceeds(marketId, false, 5000, alice);
 
@@ -109,10 +109,13 @@ contract MasterRouterWithdrawalFixTest is Test {
         uint256 bobEarned = router.claimProceeds(marketId, false, 5000, bob);
 
         // Total earnings: 50 ETH (30 + 20)
-        // Alice should get 1/3 = ~16.67 ETH
-        // Bob should get 2/3 = ~33.33 ETH
-        assertApproxEqAbs(aliceEarned, 16.666666666666666666 ether, 1e9, "Alice earns 1/3");
-        assertApproxEqAbs(bobEarned, 33.333333333333333333 ether, 1e9, "Bob earns 2/3");
+        // Alice effective: 60 shares (100 - 40 withdrawn)
+        // Bob effective: 200 shares
+        // Total effective: 260 shares
+        // Alice should get (60/260) * 50 = 11.538 ETH
+        // Bob should get (200/260) * 50 = 38.462 ETH
+        assertApproxEqAbs(aliceEarned, 11.538461538461538461 ether, 1e9, "Alice earns (60/260)*50");
+        assertApproxEqAbs(bobEarned, 38.461538461538461538 ether, 1e9, "Bob earns (200/260)*50");
     }
 
     /// @notice Test: Multiple users withdraw without affecting each other

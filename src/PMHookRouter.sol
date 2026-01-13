@@ -571,10 +571,13 @@ contract PMHookRouter {
             uint64 close = _getClose(marketId);
             bool inFinalWindow = block.timestamp > close || (close - block.timestamp) < 43200;
 
-            if (inFinalWindow) {
+            if (inFinalWindow && msg.sender == receiver) {
                 position.lastDepositTime = uint32(block.timestamp);
             } else {
                 uint256 oldTime = position.lastDepositTime;
+                // HARDENING: Prevent cooldown bypass via zero timestamp in corrupted state
+                // If existingShares > 0 but timestamp == 0, set to current time
+                if (oldTime == 0) oldTime = block.timestamp;
                 unchecked {
                     uint256 newTotal = existingVaultShares + vaultSharesMinted; // Safe: bounded by uint112 inputs
                     uint256 weightedTime =
@@ -699,6 +702,7 @@ contract PMHookRouter {
     uint256 constant BPS_DENOM = 10_000;
     uint256 constant MAX_COLLATERAL_IN = type(uint256).max / BPS_DENOM;
     uint256 constant MAX_ACC_PER_SHARE = type(uint256).max / type(uint112).max;
+    // 28 hex digits (112/4=28): verified equal to type(uint112).max
     uint256 constant MAX_UINT112 = 0xffffffffffffffffffffffffffff;
     uint256 constant MASK_LOWER_224 =
         0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
@@ -817,6 +821,12 @@ contract PMHookRouter {
             let vaultSlot := vault.slot
             let vaultData := sload(vaultSlot)
             let current := and(shr(shift, vaultData), MAX_UINT112)
+            // Guard against underflow
+            if gt(amount, current) {
+                mstore(0x00, ERR_STATE)
+                mstore(0x04, 5) // VaultUnderflow
+                revert(0x00, 0x24)
+            }
             vaultData := or(and(vaultData, not(mask)), shl(shift, sub(current, amount)))
             sstore(vaultSlot, vaultData)
         }
@@ -829,6 +839,12 @@ contract PMHookRouter {
             let vaultData := sload(vaultSlot)
             let yes := and(vaultData, MAX_UINT112)
             let no := and(shr(112, vaultData), MAX_UINT112)
+            // Guard against underflow on both sides
+            if or(gt(amount, yes), gt(amount, no)) {
+                mstore(0x00, ERR_STATE)
+                mstore(0x04, 5) // VaultUnderflow
+                revert(0x00, 0x24)
+            }
             vaultData := shl(224, shr(224, vaultData))
             vaultData := or(vaultData, sub(yes, amount))
             vaultData := or(vaultData, shl(112, sub(no, amount)))
@@ -1390,7 +1406,7 @@ contract PMHookRouter {
         _guardEnter();
         (, address collateral) = _requireMarketOpen(marketId);
         _checkDeadline(deadline);
-        if (sharesIn == 0 || _isInCloseWindow(marketId)) _revert(ERR_VALIDATION, 1);
+        if (sharesIn == 0) _revert(ERR_VALIDATION, 1);
         assembly ("memory-safe") { if iszero(to) { to := caller() } }
 
         uint256 noId = _getNoId(marketId);
@@ -1400,9 +1416,18 @@ contract PMHookRouter {
         uint256 remaining = sharesIn;
 
         // Try vault OTC first if we're on scarce side AND budget has collateral
-        if (sellYes == (vault.yesShares < vault.noShares)) {
+        // Block vault OTC in close window (protects TWAP-based pricing near close)
+        if (sellYes == (vault.yesShares < vault.noShares) && !_isInCloseWindow(marketId)) {
             uint256 budget = rebalanceCollateralBudget[marketId];
             uint256 pYes = budget != 0 ? _getTWAPPrice(marketId) : 0;
+            // Block vault OTC if market halted (feeBps >= 10000 signals halt, consistent with buy-side)
+            if (
+                pYes != 0
+                    && _getPoolFeeBps(canonicalFeeOrHook[marketId], canonicalPoolId[marketId])
+                        >= 10000
+            ) {
+                pYes = 0;
+            }
             if (pYes != 0) {
                 uint256 p;
                 uint256 s;
@@ -1577,15 +1602,26 @@ contract PMHookRouter {
         if (feeBps >= 10000) return 0; // Market halted
         uint256 noId = _getNoId(marketId);
 
-        assembly ("memory-safe") {
-            let zeroForOne := xor(lt(marketId, noId), buyYes)
-            let amountInWithFee := mul(collateralIn, sub(10000, feeBps))
-            let rIn := xor(r1, mul(xor(r1, r0), zeroForOne))
-            let rOut := xor(r0, mul(xor(r0, r1), zeroForOne))
-            let swapped := div(mul(amountInWithFee, rOut), add(mul(rIn, 10000), amountInWithFee))
-            if lt(swapped, rOut) {
-                totalShares := add(collateralIn, swapped)
-            }
+        bool zeroForOne = (marketId < noId) != buyYes;
+        uint256 rIn = zeroForOne ? r0 : r1;
+        uint256 rOut = zeroForOne ? r1 : r0;
+
+        uint256 amountInWithFee = collateralIn * (10000 - feeBps);
+
+        // Guard against denominator overflow: rIn * 10000 + amountInWithFee
+        // rIn <= 2^112, so rIn * 10000 <= 2^125 (safe)
+        uint256 rInScaled = rIn * 10000;
+        // But amountInWithFee can be up to ~2^256, so addition could overflow
+        if (amountInWithFee > type(uint256).max - rInScaled) {
+            return 0; // Would overflow - indicates impossibly large trade
+        }
+        uint256 denominator = rInScaled + amountInWithFee;
+
+        // Use fullMulDiv to prevent overflow: amountInWithFee * rOut can overflow uint256
+        uint256 swapped = fullMulDiv(amountInWithFee, rOut, denominator);
+
+        if (swapped < rOut) {
+            totalShares = collateralIn + swapped;
         }
     }
 
@@ -1624,7 +1660,20 @@ contract PMHookRouter {
                     let rIn := xor(nR, mul(xor(nR, yR), iszero(bY)))
                     let rOut := xor(yR, mul(xor(yR, nR), iszero(bY)))
                     let amtWithFee := mul(coll, fM)
-                    let swapOut := div(mul(amtWithFee, rOut), add(mul(rIn, 10000), amtWithFee))
+                    // Check overflow before multiplying: if amtWithFee > (2^256-1)/rOut, flag as drain
+                    let swapOut := 0
+                    if or(iszero(rOut), gt(amtWithFee, div(not(0), rOut))) {
+                        // Would overflow or drain - signal max impact
+                        imp := 10001
+                        leave
+                    }
+                    // Guard denominator overflow: rIn*10000 + amtWithFee
+                    let rInScaled := mul(rIn, 10000)
+                    if gt(amtWithFee, sub(not(0), rInScaled)) {
+                        imp := 10001
+                        leave
+                    }
+                    swapOut := div(mul(amtWithFee, rOut), add(rInScaled, amtWithFee))
                     switch lt(swapOut, rOut)
                     case 0 { imp := 10001 }
                     default {
@@ -1995,6 +2044,20 @@ contract PMHookRouter {
         _guardExit();
     }
 
+    /// @dev Helper to clear vault winning shares - called by redeem and finalize
+    function _clearVaultWinningShares(uint256 marketId, bool outcome)
+        internal
+        returns (uint256 payout, uint256 winningShares)
+    {
+        BootstrapVault storage vault = bootstrapVaults[marketId];
+        winningShares = PAMM.balanceOf(address(this), outcome ? marketId : _getNoId(marketId));
+        if (winningShares != 0) (, payout) = PAMM.claim(marketId, DAO);
+        vault.yesShares = 0;
+        vault.noShares = 0;
+        totalYesVaultShares[marketId] = 0;
+        totalNoVaultShares[marketId] = 0;
+    }
+
     /// @notice Redeem vault winning shares and send to DAO
     /// @dev Requires no user LPs exist
     /// @param marketId Market ID
@@ -2004,22 +2067,13 @@ contract PMHookRouter {
         _requireRegistered(marketId);
         (bool outcome,) = _requireResolved(marketId);
 
-        uint256 totalYes = totalYesVaultShares[marketId];
-        uint256 totalNo = totalNoVaultShares[marketId];
-
         // Only allow cleanup if no user LPs remain
-        if ((totalYes | totalNo) != 0) _revert(ERR_STATE, 6); // CirculatingLPsExist
+        if ((totalYesVaultShares[marketId] | totalNoVaultShares[marketId]) != 0) {
+            _revert(ERR_STATE, 6); // CirculatingLPsExist
+        }
 
-        BootstrapVault storage vault = bootstrapVaults[marketId];
-
-        uint256 winningShares =
-            PAMM.balanceOf(address(this), outcome ? marketId : _getNoId(marketId));
-        if (winningShares != 0) (, payout) = PAMM.claim(marketId, DAO);
-
-        vault.yesShares = 0;
-        vault.noShares = 0;
-        totalYesVaultShares[marketId] = 0;
-        totalNoVaultShares[marketId] = 0;
+        uint256 winningShares;
+        (payout, winningShares) = _clearVaultWinningShares(marketId, outcome);
 
         emit VaultWinningSharesRedeemed(marketId, outcome, winningShares, payout);
         _guardExit();
@@ -2040,28 +2094,11 @@ contract PMHookRouter {
         _requireRegistered(marketId);
         (bool outcome, address collateral) = _requireResolved(marketId);
 
-        // Cache vault share totals
-        uint256 totalYes = totalYesVaultShares[marketId];
-        uint256 totalNo = totalNoVaultShares[marketId];
-
         // Only finalize if no user LPs remain
-        if ((totalYes | totalNo) != 0) return 0;
+        if ((totalYesVaultShares[marketId] | totalNoVaultShares[marketId]) != 0) return 0;
 
-        BootstrapVault storage vault = bootstrapVaults[marketId];
-
-        uint256 winningShares =
-            PAMM.balanceOf(address(this), outcome ? marketId : _getNoId(marketId));
-        if (winningShares != 0) {
-            (, uint256 payout) = PAMM.claim(marketId, DAO);
-            unchecked {
-                totalToDAO += payout;
-            }
-        }
-
-        vault.yesShares = 0;
-        vault.noShares = 0;
-        totalYesVaultShares[marketId] = 0;
-        totalNoVaultShares[marketId] = 0;
+        uint256 winningShares;
+        (totalToDAO, winningShares) = _clearVaultWinningShares(marketId, outcome);
 
         // Step 2: Distribute budget to LPs or send to DAO
         uint256 budget = rebalanceCollateralBudget[marketId];
@@ -2191,7 +2228,7 @@ contract PMHookRouter {
         pure
         returns (uint256 swapAmount)
     {
-        if (sharesIn == 0 || rIn * rOut == 0 || feeBps >= 10000) return 0;
+        if (sharesIn == 0 || rIn == 0 || rOut == 0 || feeBps >= BPS_DENOM) return 0;
 
         // fm = 10000 - feeBps (fee multiplier in basis points)
         // Quadratic: a*X^2 + b*X + c = 0
@@ -2202,76 +2239,118 @@ contract PMHookRouter {
         // Since c < 0, discriminant = b^2 + 4*a*|c| is always positive
 
         assembly ("memory-safe") {
-            let fm := sub(10000, feeBps)
-            let rIn10k := mul(rIn, 10000)
+            function calc(sIn, rI, rO, fBps) -> result {
+                let fm := sub(10000, fBps)
+                // Guard rI*10000 overflow
+                if gt(rI, div(not(0), 10000)) {
+                    result := 0
+                    leave
+                }
+                let rIn10k := mul(rI, 10000)
 
-            // b = rIn * 10000 + fm * (rOut - sharesIn)
-            // Handle potential negative (rOut - sharesIn) carefully
-            let bPositive := 1
-            let b
-            switch gt(rOut, sharesIn)
-            case 1 {
-                // rOut > sharesIn: b = rIn10k + fm * (rOut - sharesIn)
-                b := add(rIn10k, mul(fm, sub(rOut, sharesIn)))
-            }
-            default {
-                // rOut <= sharesIn: need to check if fm*(sharesIn-rOut) > rIn10k
-                let fmDiff := mul(fm, sub(sharesIn, rOut))
-                switch gt(fmDiff, rIn10k)
+                // b = rIn * 10000 + fm * (rOut - sharesIn)
+                // Handle potential negative (rOut - sharesIn) carefully
+                let bPositive := 1
+                let b
+                switch gt(rO, sIn)
                 case 1 {
-                    // b is negative
-                    b := sub(fmDiff, rIn10k)
-                    bPositive := 0
+                    // rOut > sharesIn: b = rIn10k + fm * (rOut - sharesIn)
+                    b := add(rIn10k, mul(fm, sub(rO, sIn)))
                 }
                 default {
-                    // b is positive or zero
-                    b := sub(rIn10k, fmDiff)
+                    // rOut <= sharesIn: need to check if fm*(sharesIn-rOut) > rIn10k
+                    let diff := sub(sIn, rO)
+                    // Guard against overflow in fm*diff
+                    if and(iszero(iszero(diff)), gt(fm, div(not(0), diff))) {
+                        result := 0
+                        leave
+                    }
+                    let fmDiff := mul(fm, diff)
+                    switch gt(fmDiff, rIn10k)
+                    case 1 {
+                        // b is negative
+                        b := sub(fmDiff, rIn10k)
+                        bPositive := 0
+                    }
+                    default {
+                        // b is positive or zero
+                        b := sub(rIn10k, fmDiff)
+                    }
+                }
+
+                // |c| = sharesIn * rIn * 10000
+                // Guard against overflow: if sharesIn > (2^256-1)/rIn10k, abort
+                // rIn10k is always nonzero here (rIn == 0 guarded above), so no need for iszero(iszero())
+                if gt(sIn, div(not(0), rIn10k)) {
+                    result := 0
+                    leave
+                }
+                let absC := mul(sIn, rIn10k)
+
+                // discriminant = b^2 + 4*fm*|c| (since c is negative, -4ac = +4a|c|)
+                // Guard against overflow in b^2
+                if and(iszero(iszero(b)), gt(b, div(not(0), b))) {
+                    result := 0
+                    leave
+                }
+                let bSquared := mul(b, b)
+                // Guard against overflow in fm*absC
+                if and(iszero(iszero(absC)), gt(fm, div(not(0), absC))) {
+                    result := 0
+                    leave
+                }
+                let fmAbsC := mul(fm, absC)
+                // Guard against overflow in shl(2, fmAbsC): check if fmAbsC > max/4
+                if gt(fmAbsC, shr(2, not(0))) {
+                    result := 0
+                    leave
+                }
+                let fourAC := shl(2, fmAbsC)
+                // Guard against overflow in final addition
+                if lt(add(bSquared, fourAC), bSquared) {
+                    result := 0
+                    leave
+                }
+                let discriminant := add(bSquared, fourAC)
+
+                // sqrt via Newton's method
+                let sqrtD := discriminant
+                if gt(sqrtD, 0) {
+                    let x := add(shr(1, sqrtD), 1)
+                    for {} gt(x, 0) {} {
+                        let xNew := shr(1, add(x, div(sqrtD, x)))
+                        if iszero(lt(xNew, x)) { break }
+                        x := xNew
+                    }
+                    sqrtD := x
+                }
+
+                // X = (-b + sqrt(discriminant)) / (2*fm)
+                // If b is positive: X = (sqrtD - b) / (2*fm)
+                // If b is negative: X = (sqrtD + |b|) / (2*fm)
+                let numerator
+                switch bPositive
+                case 1 {
+                    // Only valid if sqrtD >= b
+                    switch gt(sqrtD, b)
+                    case 1 { numerator := sub(sqrtD, b) }
+                    default { numerator := 0 }
+                }
+                default {
+                    numerator := add(sqrtD, b)
+                }
+
+                let denominator := shl(1, fm)
+                switch denominator
+                case 0 { result := 0 }
+                default {
+                    result := div(numerator, denominator)
+                    // Ensure we don't swap more than we have
+                    if gt(result, sIn) { result := sIn }
                 }
             }
 
-            // |c| = sharesIn * rIn * 10000
-            let absC := mul(sharesIn, rIn10k)
-
-            // discriminant = b^2 + 4*fm*|c| (since c is negative, -4ac = +4a|c|)
-            let bSquared := mul(b, b)
-            let fourAC := shl(2, mul(fm, absC))
-            let discriminant := add(bSquared, fourAC)
-
-            // sqrt via Newton's method
-            let sqrtD := discriminant
-            if gt(sqrtD, 0) {
-                let x := add(shr(1, sqrtD), 1)
-                for {} gt(x, 0) {} {
-                    let xNew := shr(1, add(x, div(sqrtD, x)))
-                    if iszero(lt(xNew, x)) { break }
-                    x := xNew
-                }
-                sqrtD := x
-            }
-
-            // X = (-b + sqrt(discriminant)) / (2*fm)
-            // If b is positive: X = (sqrtD - b) / (2*fm)
-            // If b is negative: X = (sqrtD + |b|) / (2*fm)
-            let numerator
-            switch bPositive
-            case 1 {
-                // Only valid if sqrtD >= b
-                switch gt(sqrtD, b)
-                case 1 { numerator := sub(sqrtD, b) }
-                default { numerator := 0 }
-            }
-            default {
-                numerator := add(sqrtD, b)
-            }
-
-            let denominator := shl(1, fm)
-            switch denominator
-            case 0 { swapAmount := 0 }
-            default {
-                swapAmount := div(numerator, denominator)
-                // Ensure we don't swap more than we have
-                if gt(swapAmount, sharesIn) { swapAmount := sharesIn }
-            }
+            swapAmount := calc(sharesIn, rIn, rOut, feeBps)
         }
     }
 
@@ -2488,12 +2567,9 @@ contract PMHookRouter {
         (IZAMM.PoolKey memory k, bool yesIsId0) = _buildKey(marketId, noId, feeOrHook);
         bool zeroForOne = buyYes ? !yesIsId0 : yesIsId0;
 
-        uint256 minSwapOut;
-        unchecked {
-            uint256 minRemainingOut =
-                minSharesOut > totalSharesOut ? minSharesOut - totalSharesOut : 0;
-            minSwapOut = minRemainingOut > collateralToSwap ? minRemainingOut - collateralToSwap : 0;
-        }
+        // Allow AMM to contribute whatever it can; final check at caller enforces global minimum
+        // This enables multi-venue routing: vault OTC + AMM + mint fallback can combine to meet minSharesOut
+        uint256 minSwapOut = 0;
 
         uint256 swappedShares =
             ZAMM.swapExactIn(k, collateralToSwap, minSwapOut, zeroForOne, address(this), deadline);
@@ -3046,7 +3122,11 @@ contract PMHookRouter {
 
             let maxSharesFromVault := div(mul(availableShares, 3000), 10000) // 30% max vault depletion
             // Ensure at least 1 share when vault has inventory and raw fill is nonzero
-            if and(mul(availableShares, rawShares), iszero(maxSharesFromVault)) {
+            // Use iszero(iszero(x)) for boolean AND - bitwise and(x,y) can be 0 even when both nonzero
+            if and(
+                iszero(iszero(availableShares)),
+                and(iszero(iszero(rawShares)), iszero(maxSharesFromVault))
+            ) {
                 maxSharesFromVault := 1
             }
 

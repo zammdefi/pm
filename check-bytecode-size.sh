@@ -20,9 +20,10 @@ NC='\033[0m' # No Color
 # Maximum bytecode size (24KB as per EIP-170)
 MAX_SIZE=24576
 
-# Build the contract
-echo -e "${BLUE}Compiling contract...${NC}"
-forge build --sizes 2>/dev/null || forge build
+# Build just the target contract for speed
+echo -e "${BLUE}Compiling PMHookRouter...${NC}"
+forge build --force src/PMHookRouter.sol --sizes 2>&1 | tail -5 || true
+echo ""
 
 # Get the bytecode size from the compiled artifact
 ARTIFACT_PATH="out/PMHookRouter.sol/PMHookRouter.json"
@@ -35,10 +36,14 @@ fi
 
 # Extract deployed bytecode size (the actual deployed code)
 DEPLOYED_BYTECODE=$(jq -r '.deployedBytecode.object' "$ARTIFACT_PATH")
+# Strip 0x prefix if present for accurate size calculation
+DEPLOYED_BYTECODE=${DEPLOYED_BYTECODE#0x}
 DEPLOYED_SIZE=$((${#DEPLOYED_BYTECODE} / 2))
 
 # Extract creation bytecode size (includes constructor)
 CREATION_BYTECODE=$(jq -r '.bytecode.object' "$ARTIFACT_PATH")
+# Strip 0x prefix if present for accurate size calculation
+CREATION_BYTECODE=${CREATION_BYTECODE#0x}
 CREATION_SIZE=$((${#CREATION_BYTECODE} / 2))
 
 echo ""

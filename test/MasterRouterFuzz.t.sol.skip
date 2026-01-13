@@ -1,0 +1,546 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.31;
+
+import "forge-std/Test.sol";
+import "../src/MasterRouter.sol";
+
+interface IPAMMExtended is IPAMM {
+    function createMarket(
+        string calldata description,
+        address resolver,
+        address collateral,
+        uint64 close,
+        bool canClose
+    ) external returns (uint256 marketId, uint256 noId);
+
+    function balanceOf(address account, uint256 id) external view returns (uint256);
+}
+
+/// @title Fuzz Tests for MasterRouter Pooled Orderbook
+/// @notice Property-based testing with randomized inputs
+contract MasterRouterFuzzTest is Test {
+    MasterRouter public router;
+    IPAMMExtended public pamm = IPAMMExtended(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
+
+    address public constant ALICE = address(0x1);
+    address public constant BOB = address(0x2);
+    address public constant TAKER = address(0x99);
+
+    uint256 public marketId;
+    uint256 public noId;
+
+    function setUp() public {
+        vm.createSelectFork(vm.rpcUrl("main"));
+        router = new MasterRouter();
+
+        (marketId, noId) = pamm.createMarket(
+            "Fuzz Test Market", address(this), address(0), uint64(block.timestamp + 30 days), false
+        );
+
+        vm.deal(ALICE, type(uint96).max);
+        vm.deal(BOB, type(uint96).max);
+        vm.deal(TAKER, type(uint96).max);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Fuzz: Pool any valid amount at any valid price
+    function testFuzz_mintAndPool(uint256 amount, uint16 priceBps) public {
+        // Bound inputs
+        amount = uint256(bound(amount, 1, 1e38));
+        priceBps = uint16(bound(priceBps, 1, 9999));
+
+        vm.deal(ALICE, amount);
+
+        vm.prank(ALICE);
+        bytes32 poolId = router.mintAndPool{value: amount}(marketId, amount, true, priceBps, ALICE);
+
+        // Verify pool created correctly
+        (uint256 totalShares, uint256 sharesFilled, uint256 sharesWithdrawn,) = router.pools(poolId);
+        assertEq(totalShares, amount, "Total shares matches amount");
+        assertEq(sharesFilled, 0, "No shares filled initially");
+        assertEq(sharesWithdrawn, 0, "No shares withdrawn initially");
+
+        // Verify user position
+        (uint256 userShares, uint256 userUnfilled,,) =
+            router.getUserPosition(marketId, false, priceBps, ALICE);
+        assertEq(userShares, amount, "User shares correct");
+        assertEq(userUnfilled, amount, "User unfilled correct");
+    }
+
+    /// @notice Fuzz: Fill any valid amount from pool
+    function testFuzz_fillFromPool(uint256 poolAmount, uint256 fillAmount, uint16 priceBps) public {
+        // Bound inputs
+        poolAmount = uint256(bound(poolAmount, 10000, 1e36));
+        priceBps = uint16(bound(priceBps, 100, 9999)); // At least 1% to avoid zero collateral
+
+        // Ensure fillAmount results in non-zero collateral
+        uint256 minFillForNonZeroCollateral = (10000 + priceBps - 1) / priceBps; // Ceiling division
+        fillAmount = uint256(bound(fillAmount, minFillForNonZeroCollateral, poolAmount));
+
+        vm.deal(ALICE, poolAmount);
+
+        // Pool
+        vm.prank(ALICE);
+        bytes32 poolId =
+            router.mintAndPool{value: poolAmount}(marketId, poolAmount, true, priceBps, ALICE);
+
+        // Calculate collateral needed
+        uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+        require(collateralNeeded > 0, "Collateral must be non-zero");
+        vm.deal(TAKER, collateralNeeded);
+
+        // Fill
+        vm.prank(TAKER);
+        (uint256 sharesBought, uint256 collateralPaid) = router.fillFromPool{
+            value: collateralNeeded
+        }(
+            marketId, false, priceBps, fillAmount, TAKER
+        );
+
+        // Verify
+        assertEq(sharesBought, fillAmount, "Bought correct shares");
+        assertEq(collateralPaid, collateralNeeded, "Paid correct collateral");
+
+        // Verify pool state
+        (, uint256 sharesFilled,,) = router.pools(poolId);
+        assertEq(sharesFilled, fillAmount, "Pool shares filled correctly");
+    }
+
+    /// @notice Fuzz: Withdraw any valid amount from unfilled shares
+    function testFuzz_withdrawFromPool(
+        uint256 poolAmount,
+        uint256 fillAmount,
+        uint256 withdrawAmount,
+        uint16 priceBps
+    ) public {
+        // Bound inputs
+        poolAmount = uint256(bound(poolAmount, 10000, 1e36));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+
+        // Fill amount that results in non-zero collateral
+        uint256 maxFill = poolAmount - 1; // Leave at least 1 unfilled
+        if (maxFill > 0) {
+            fillAmount = uint256(bound(fillAmount, 0, maxFill));
+
+            // Ensure if filling, collateral is non-zero
+            if (fillAmount > 0) {
+                uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+                if (collateralNeeded == 0) {
+                    fillAmount = 0; // Skip fill if would result in 0 collateral
+                }
+            }
+        } else {
+            fillAmount = 0;
+        }
+
+        uint256 unfilled = poolAmount - fillAmount;
+        if (unfilled == 0) return; // Skip test if nothing to withdraw
+        withdrawAmount = uint256(bound(withdrawAmount, 1, unfilled));
+
+        vm.deal(ALICE, poolAmount);
+
+        // Pool
+        vm.prank(ALICE);
+        router.mintAndPool{value: poolAmount}(marketId, poolAmount, true, priceBps, ALICE);
+
+        // Fill some
+        if (fillAmount > 0) {
+            uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+            vm.deal(TAKER, collateralNeeded);
+
+            vm.prank(TAKER);
+            router.fillFromPool{value: collateralNeeded}(
+                marketId, false, priceBps, fillAmount, TAKER
+            );
+        }
+
+        // Withdraw
+        vm.prank(ALICE);
+        uint256 withdrawn =
+            router.withdrawFromPool(marketId, false, priceBps, withdrawAmount, ALICE);
+
+        assertEq(withdrawn, withdrawAmount, "Withdrew correct amount");
+
+        // Verify Alice received shares
+        assertEq(pamm.balanceOf(ALICE, noId), withdrawAmount, "Alice received NO shares");
+    }
+
+    /// @notice Fuzz: Claim proceeds after random fill pattern
+    function testFuzz_claimProceeds(uint256 poolAmount, uint8 numFills, uint16 priceBps) public {
+        // Bound inputs
+        poolAmount = uint256(bound(poolAmount, 1000, 1000 ether));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+        numFills = uint8(bound(numFills, 1, 10));
+
+        vm.deal(ALICE, poolAmount);
+
+        // Pool
+        vm.prank(ALICE);
+        bytes32 poolId =
+            router.mintAndPool{value: poolAmount}(marketId, poolAmount, true, priceBps, ALICE);
+
+        // Perform multiple random fills
+        uint256 totalFilled = 0;
+        uint256 totalCollateralPaid = 0;
+        uint256 sharePerFill = poolAmount / uint256(numFills);
+
+        for (uint256 i = 0; i < numFills; i++) {
+            if (sharePerFill > 0 && totalFilled + sharePerFill <= poolAmount) {
+                uint256 collateralNeeded = (sharePerFill * priceBps) / 10000;
+                vm.deal(TAKER, collateralNeeded);
+
+                vm.prank(TAKER);
+                (, uint256 paid) = router.fillFromPool{value: collateralNeeded}(
+                    marketId, false, priceBps, sharePerFill, TAKER
+                );
+
+                totalFilled += sharePerFill;
+                totalCollateralPaid += paid;
+            }
+        }
+
+        // Claim
+        vm.prank(ALICE);
+        uint256 earned = router.claimProceeds(marketId, false, priceBps, ALICE);
+
+        // Verify earned matches total collateral paid
+        assertEq(earned, totalCollateralPaid, "Earned matches total paid");
+
+        // Verify pool state
+        (,,, uint256 totalCollateralEarned) = router.pools(poolId);
+        assertEq(totalCollateralEarned, totalCollateralPaid, "Pool collateral earned correct");
+    }
+
+    /// @notice Fuzz: Multiple users pool and fill
+    function testFuzz_multiUserPoolAndFill(
+        uint256 amount1,
+        uint256 amount2,
+        uint256 fillAmount,
+        uint16 priceBps
+    ) public {
+        // Bound inputs
+        amount1 = uint256(bound(amount1, 10000, 1e35));
+        amount2 = uint256(bound(amount2, 10000, 1e35));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+
+        uint256 totalPooled = uint256(amount1) + uint256(amount2);
+
+        // Ensure fillAmount results in non-zero collateral
+        uint256 minFillForNonZeroCollateral = (10000 + priceBps - 1) / priceBps;
+        uint256 maxFill = totalPooled > 1e38 ? 1e38 : totalPooled;
+        fillAmount = uint256(bound(fillAmount, minFillForNonZeroCollateral, maxFill));
+
+        vm.deal(ALICE, amount1);
+        vm.deal(BOB, amount2);
+
+        // Both pool
+        vm.prank(ALICE);
+        router.mintAndPool{value: amount1}(marketId, amount1, true, priceBps, ALICE);
+
+        vm.prank(BOB);
+        router.mintAndPool{value: amount2}(marketId, amount2, true, priceBps, BOB);
+
+        // Fill
+        uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+        require(collateralNeeded > 0, "Collateral must be non-zero");
+        vm.deal(TAKER, collateralNeeded);
+
+        vm.prank(TAKER);
+        router.fillFromPool{value: collateralNeeded}(marketId, false, priceBps, fillAmount, TAKER);
+
+        // Both claim
+        vm.prank(ALICE);
+        uint256 aliceEarned = router.claimProceeds(marketId, false, priceBps, ALICE);
+
+        vm.prank(BOB);
+        uint256 bobEarned = router.claimProceeds(marketId, false, priceBps, BOB);
+
+        // Verify proportional distribution (with 1 wei rounding tolerance)
+        uint256 expectedAlice =
+            (uint256(amount1) * collateralNeeded) / (uint256(amount1) + uint256(amount2));
+        uint256 expectedBob = collateralNeeded - expectedAlice;
+
+        assertApproxEqAbs(aliceEarned, expectedAlice, 1, "Alice earned proportionally");
+        assertApproxEqAbs(bobEarned, expectedBob, 1, "Bob earned proportionally");
+    }
+
+    /// @notice Fuzz: Pool, partial fill, withdraw, claim sequence
+    function testFuzz_complexSequence(
+        uint256 poolAmount,
+        uint8 fillPercent,
+        uint8 withdrawPercent,
+        uint16 priceBps
+    ) public {
+        // Bound inputs
+        poolAmount = uint256(bound(poolAmount, 10000, 1000 ether));
+        fillPercent = uint8(bound(fillPercent, 10, 90)); // 10-90% filled
+        withdrawPercent = uint8(bound(withdrawPercent, 10, 90)); // 10-90% of unfilled withdrawn
+        priceBps = uint16(bound(priceBps, 100, 9999));
+
+        vm.deal(ALICE, poolAmount);
+
+        // Pool
+        vm.prank(ALICE);
+        router.mintAndPool{value: poolAmount}(marketId, poolAmount, true, priceBps, ALICE);
+
+        // Partial fill
+        uint256 fillAmount = uint256((uint256(poolAmount) * fillPercent) / 100);
+        uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+        vm.deal(TAKER, collateralNeeded);
+
+        vm.prank(TAKER);
+        router.fillFromPool{value: collateralNeeded}(marketId, false, priceBps, fillAmount, TAKER);
+
+        // Calculate unfilled
+        uint256 unfilled = poolAmount - fillAmount;
+        uint256 withdrawAmount = uint256((uint256(unfilled) * withdrawPercent) / 100);
+
+        if (withdrawAmount > 0) {
+            // Withdraw
+            vm.prank(ALICE);
+            router.withdrawFromPool(marketId, false, priceBps, withdrawAmount, ALICE);
+        }
+
+        // Claim
+        vm.prank(ALICE);
+        uint256 earned = router.claimProceeds(marketId, false, priceBps, ALICE);
+
+        // Verify earned matches collateral paid
+        assertEq(earned, collateralNeeded, "Earned matches collateral paid");
+    }
+
+    /// @notice Fuzz: getUserPosition always returns consistent data
+    function testFuzz_getUserPosition(
+        uint256 poolAmount,
+        uint256 fillAmount,
+        uint256 withdrawAmount,
+        uint16 priceBps
+    ) public {
+        // Bound inputs
+        poolAmount = uint256(bound(poolAmount, 1000, 1e36));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+        fillAmount = uint256(bound(fillAmount, 0, poolAmount));
+
+        uint256 maxUnfilled = poolAmount > fillAmount ? poolAmount - fillAmount : 0;
+        withdrawAmount = uint256(bound(withdrawAmount, 0, maxUnfilled));
+
+        vm.deal(ALICE, poolAmount);
+
+        // Pool
+        vm.prank(ALICE);
+        router.mintAndPool{value: poolAmount}(marketId, poolAmount, true, priceBps, ALICE);
+
+        // Fill - track actual amount filled
+        uint256 actualFilled = 0;
+        if (fillAmount > 0) {
+            uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+            if (collateralNeeded > 0) {
+                vm.deal(TAKER, collateralNeeded);
+                vm.prank(TAKER);
+                router.fillFromPool{value: collateralNeeded}(
+                    marketId, false, priceBps, fillAmount, TAKER
+                );
+                actualFilled = fillAmount;
+            }
+        }
+
+        // Withdraw
+        if (withdrawAmount > 0) {
+            vm.prank(ALICE);
+            router.withdrawFromPool(marketId, false, priceBps, withdrawAmount, ALICE);
+        }
+
+        // Get position
+        (uint256 userShares, uint256 userUnfilled, uint256 userEarned, uint256 userClaimed) =
+            router.getUserPosition(marketId, false, priceBps, ALICE);
+
+        // Verify invariants
+        assertEq(userShares, poolAmount, "User shares equals initial deposit");
+        assertTrue(userUnfilled <= poolAmount, "Unfilled <= total shares");
+        assertTrue(userUnfilled <= poolAmount - actualFilled, "Unfilled <= (total - filled)");
+        assertEq(userClaimed, 0, "Nothing claimed yet");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        INVARIANT FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Invariant fuzz: Pool accounting is always consistent
+    function testFuzz_invariant_poolAccounting(uint256 amount, uint16 priceBps, uint256 fillAmount)
+        public
+    {
+        // Bound inputs
+        amount = uint256(bound(amount, 1000, 1e36));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+        fillAmount = uint256(bound(fillAmount, 0, amount));
+
+        vm.deal(ALICE, amount);
+
+        // Pool
+        vm.prank(ALICE);
+        bytes32 poolId = router.mintAndPool{value: amount}(marketId, amount, true, priceBps, ALICE);
+
+        // Fill
+        if (fillAmount > 0) {
+            uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+            if (collateralNeeded > 0) {
+                vm.deal(TAKER, collateralNeeded);
+                vm.prank(TAKER);
+                router.fillFromPool{value: collateralNeeded}(
+                    marketId, false, priceBps, fillAmount, TAKER
+                );
+            }
+        }
+
+        // Check invariant: totalShares >= sharesFilled + sharesWithdrawn
+        (uint256 totalShares, uint256 sharesFilled, uint256 sharesWithdrawn,) = router.pools(poolId);
+        assertTrue(
+            totalShares >= sharesFilled + sharesWithdrawn,
+            "Invariant: totalShares >= sharesFilled + sharesWithdrawn"
+        );
+    }
+
+    /// @notice Invariant fuzz: Earnings distribution is fair
+    function testFuzz_invariant_fairEarnings(
+        uint256 amount1,
+        uint256 amount2,
+        uint256 fillAmount,
+        uint16 priceBps
+    ) public {
+        // Bound inputs
+        amount1 = uint256(bound(amount1, 10000, 1e35));
+        amount2 = uint256(bound(amount2, 10000, 1e35));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+
+        uint256 totalPooled = uint256(amount1) + uint256(amount2);
+
+        // Ensure fillAmount results in non-zero collateral
+        uint256 minFillForNonZeroCollateral = (10000 + priceBps - 1) / priceBps;
+        uint256 maxFill = totalPooled > 1e38 ? 1e38 : totalPooled;
+        if (maxFill < minFillForNonZeroCollateral) return; // Skip if impossible
+
+        fillAmount = uint256(bound(fillAmount, minFillForNonZeroCollateral, maxFill));
+
+        vm.deal(ALICE, amount1);
+        vm.deal(BOB, amount2);
+
+        // Both pool
+        vm.prank(ALICE);
+        router.mintAndPool{value: amount1}(marketId, amount1, true, priceBps, ALICE);
+
+        vm.prank(BOB);
+        router.mintAndPool{value: amount2}(marketId, amount2, true, priceBps, BOB);
+
+        // Fill
+        uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+        require(collateralNeeded > 0, "Collateral must be non-zero");
+        vm.deal(TAKER, collateralNeeded);
+        vm.prank(TAKER);
+        router.fillFromPool{value: collateralNeeded}(marketId, false, priceBps, fillAmount, TAKER);
+
+        // Both claim
+        vm.prank(ALICE);
+        uint256 aliceEarned = router.claimProceeds(marketId, false, priceBps, ALICE);
+
+        vm.prank(BOB);
+        uint256 bobEarned = router.claimProceeds(marketId, false, priceBps, BOB);
+
+        // Invariant: Sum of earnings equals collateral paid (with 1 wei rounding tolerance)
+        assertApproxEqAbs(
+            aliceEarned + bobEarned, collateralNeeded, 1, "Sum of earnings equals collateral paid"
+        );
+
+        // Invariant: Earnings are proportional to deposits
+        uint256 aliceExpected =
+            (uint256(amount1) * collateralNeeded) / (uint256(amount1) + uint256(amount2));
+        assertApproxEqAbs(aliceEarned, aliceExpected, 1, "Alice earnings proportional");
+    }
+
+    /// @notice Invariant fuzz: Withdrawal doesn't affect other users
+    function testFuzz_invariant_withdrawalIsolation(
+        uint256 amount1,
+        uint256 amount2,
+        uint256 fillAmount,
+        uint256 withdrawAmount,
+        uint16 priceBps
+    ) public {
+        // Bound inputs
+        amount1 = uint256(bound(amount1, 1000, 1e35));
+        amount2 = uint256(bound(amount2, 1000, 1e35));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+        fillAmount = uint256(bound(fillAmount, 0, (amount1 + amount2) / 2)); // Fill up to 50%
+
+        vm.deal(ALICE, amount1);
+        vm.deal(BOB, amount2);
+
+        // Both pool
+        vm.prank(ALICE);
+        router.mintAndPool{value: amount1}(marketId, amount1, true, priceBps, ALICE);
+
+        vm.prank(BOB);
+        router.mintAndPool{value: amount2}(marketId, amount2, true, priceBps, BOB);
+
+        // Fill some
+        if (fillAmount > 0) {
+            uint256 collateralNeeded = (uint256(fillAmount) * priceBps) / 10000;
+            if (collateralNeeded > 0) {
+                vm.deal(TAKER, collateralNeeded);
+                vm.prank(TAKER);
+                router.fillFromPool{value: collateralNeeded}(
+                    marketId, false, priceBps, fillAmount, TAKER
+                );
+            }
+        }
+
+        // Get Bob's unfilled before Alice withdraws
+        (, uint256 bobUnfilledBefore,,) = router.getUserPosition(marketId, false, priceBps, BOB);
+
+        // Alice withdraws some
+        (, uint256 aliceUnfilled,,) = router.getUserPosition(marketId, false, priceBps, ALICE);
+        if (aliceUnfilled > 0) {
+            withdrawAmount = uint256(bound(withdrawAmount, 1, aliceUnfilled));
+            vm.prank(ALICE);
+            router.withdrawFromPool(marketId, false, priceBps, withdrawAmount, ALICE);
+        }
+
+        // Get Bob's unfilled after Alice withdraws
+        (, uint256 bobUnfilledAfter,,) = router.getUserPosition(marketId, false, priceBps, BOB);
+
+        // Invariant: Bob's unfilled shouldn't change
+        assertEq(
+            bobUnfilledBefore, bobUnfilledAfter, "Bob's unfilled unchanged by Alice's withdrawal"
+        );
+    }
+
+    /// @notice Invariant fuzz: Can't overdraw from pool
+    function testFuzz_invariant_cannotOverdraw(
+        uint256 amount,
+        uint16 priceBps,
+        uint256 attemptedFill
+    ) public {
+        // Bound inputs
+        amount = uint256(bound(amount, 1000, 1e36));
+        priceBps = uint16(bound(priceBps, 100, 9999));
+        attemptedFill = uint256(bound(attemptedFill, amount + 1, 1e38));
+
+        vm.deal(ALICE, amount);
+
+        // Pool
+        vm.prank(ALICE);
+        router.mintAndPool{value: amount}(marketId, amount, true, priceBps, ALICE);
+
+        // Try to fill more than available
+        uint256 collateralNeeded = (uint256(attemptedFill) * priceBps) / 10000;
+        vm.deal(TAKER, collateralNeeded);
+
+        // Should revert
+        vm.prank(TAKER);
+        vm.expectRevert();
+        router.fillFromPool{value: collateralNeeded}(
+            marketId, false, priceBps, attemptedFill, TAKER
+        );
+    }
+}

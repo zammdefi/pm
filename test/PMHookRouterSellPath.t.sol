@@ -389,10 +389,10 @@ contract PMHookRouterSellPathTest is BaseTest {
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
-    // TEST: Validation - close window reverts
+    // TEST: Validation - close window blocks vault OTC but allows AMM
     // ══════════════════════════════════════════════════════════════════════════════
 
-    function test_Sell_RevertsInCloseWindow() public {
+    function test_Sell_CloseWindowBlocksVaultOTCAllowsAMM() public {
         _bootstrapMarket(100 ether);
         _setupTWAP();
 
@@ -403,8 +403,14 @@ contract PMHookRouterSellPathTest is BaseTest {
         PAMM.split{value: 10 ether}(marketId, 10 ether, ALICE);
         PAMM.setOperator(address(router), true);
 
-        vm.expectRevert();
-        router.sellWithBootstrap(marketId, true, 5 ether, 0, ALICE, closeTime);
+        // Selling in close window should succeed via AMM path (vault OTC blocked but AMM works)
+        // Since vault is balanced and we don't have rebalance budget, it will use AMM
+        (uint256 collateralOut, bytes4 source) =
+            router.sellWithBootstrap(marketId, true, 5 ether, 0, ALICE, closeTime);
+
+        // Should get some collateral back and use AMM source
+        assertGt(collateralOut, 0, "Should receive collateral via AMM");
+        assertTrue(source == bytes4("amm") || source == bytes4("mult"), "Should use AMM path");
         vm.stopPrank();
     }
 
