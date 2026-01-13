@@ -1733,6 +1733,146 @@ contract MasterRouter {
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                          QUOTE / SIMULATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Simulate buying shares from ASK pools (sellers)
+    /// @param marketId Market to buy in
+    /// @param isYes True for YES shares, false for NO shares
+    /// @param collateralIn Amount of collateral to spend
+    /// @return sharesOut Total shares that would be received
+    /// @return avgPrice Weighted average fill price in bps
+    /// @return levelsFilled Number of price levels touched
+    function quoteBuyFromPools(uint256 marketId, bool isYes, uint256 collateralIn)
+        external
+        view
+        returns (uint256 sharesOut, uint256 avgPrice, uint256 levelsFilled)
+    {
+        if (collateralIn == 0) return (0, 0, 0);
+
+        bytes32 bitmapKey = _getBitmapKey(marketId, isYes, true);
+        uint256 remaining = collateralIn;
+        uint256 totalCollateralSpent;
+
+        // Scan from lowest ask price upward
+        for (uint256 bucket; bucket < 40 && remaining > 0; ++bucket) {
+            uint256 word = priceBitmap[bitmapKey][bucket];
+            while (word != 0 && remaining > 0) {
+                uint256 bit = _lowestSetBit(word);
+                uint256 price = (bucket << 8) | bit;
+                word &= ~(1 << bit);
+
+                if (price == 0 || price >= BPS_DENOM) continue;
+
+                bytes32 poolId = getPoolId(marketId, isYes, price);
+                Pool storage pool = pools[poolId];
+                uint256 depth = pool.totalShares;
+                if (depth == 0) continue;
+
+                // Cost to fill entire pool at this price
+                uint256 costToFill = mulDiv(depth, price, BPS_DENOM);
+
+                if (remaining >= costToFill) {
+                    // Fill entire pool
+                    sharesOut += depth;
+                    totalCollateralSpent += costToFill;
+                    remaining -= costToFill;
+                    ++levelsFilled;
+                } else {
+                    // Partial fill
+                    uint256 sharesBought = mulDiv(remaining, BPS_DENOM, price);
+                    sharesOut += sharesBought;
+                    totalCollateralSpent += remaining;
+                    remaining = 0;
+                    ++levelsFilled;
+                }
+            }
+        }
+
+        if (sharesOut > 0) {
+            avgPrice = mulDiv(totalCollateralSpent, BPS_DENOM, sharesOut);
+        }
+    }
+
+    /// @notice Simulate selling shares to BID pools (buyers)
+    /// @param marketId Market to sell in
+    /// @param isYes True for YES shares, false for NO shares
+    /// @param sharesIn Amount of shares to sell
+    /// @return collateralOut Total collateral that would be received
+    /// @return avgPrice Weighted average fill price in bps
+    /// @return levelsFilled Number of price levels touched
+    function quoteSellToPools(uint256 marketId, bool isYes, uint256 sharesIn)
+        external
+        view
+        returns (uint256 collateralOut, uint256 avgPrice, uint256 levelsFilled)
+    {
+        if (sharesIn == 0) return (0, 0, 0);
+
+        bytes32 bitmapKey = _getBitmapKey(marketId, isYes, false); // false = BID
+        uint256 remaining = sharesIn;
+        uint256 totalSharesSold;
+
+        // Scan from highest bid price downward
+        for (uint256 b; b < 40 && remaining > 0; ++b) {
+            uint256 bucket = 39 - b;
+            uint256 word = priceBitmap[bitmapKey][bucket];
+            while (word != 0 && remaining > 0) {
+                uint256 bit = _highestSetBit(word);
+                uint256 price = (bucket << 8) | bit;
+                word &= ~(1 << bit);
+
+                if (price == 0 || price >= BPS_DENOM) continue;
+
+                bytes32 bidPoolId = getBidPoolId(marketId, isYes, price);
+                BidPool storage bidPool = bidPools[bidPoolId];
+                uint256 collateralDepth = bidPool.totalCollateral;
+                if (collateralDepth == 0) continue;
+
+                // Max shares this pool can buy at its price
+                uint256 maxShares = mulDiv(collateralDepth, BPS_DENOM, price);
+
+                if (remaining >= maxShares) {
+                    // Fill entire pool
+                    collateralOut += collateralDepth;
+                    totalSharesSold += maxShares;
+                    remaining -= maxShares;
+                    ++levelsFilled;
+                } else {
+                    // Partial fill
+                    uint256 collateralReceived = mulDiv(remaining, price, BPS_DENOM);
+                    collateralOut += collateralReceived;
+                    totalSharesSold += remaining;
+                    remaining = 0;
+                    ++levelsFilled;
+                }
+            }
+        }
+
+        if (totalSharesSold > 0) {
+            avgPrice = mulDiv(collateralOut, BPS_DENOM, totalSharesSold);
+        }
+    }
+
+    /// @notice Get basic market information for display
+    /// @param marketId Market to query
+    /// @return collateral Token address (address(0) for ETH)
+    /// @return closeTime Unix timestamp when market closes
+    /// @return tradingOpen Whether trading is currently allowed
+    /// @return resolved Whether market has been resolved
+    function getMarketInfo(uint256 marketId)
+        external
+        view
+        returns (address collateral, uint64 closeTime, bool tradingOpen, bool resolved)
+    {
+        (, resolved,,,closeTime, collateral,) = PAMM.markets(marketId);
+        tradingOpen = PAMM.tradingOpen(marketId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
     /// @dev Compute bitmap key for a market/side/type
     function _getBitmapKey(uint256 marketId, bool isYes, bool isAsk)
         internal

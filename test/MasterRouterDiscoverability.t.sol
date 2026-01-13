@@ -440,4 +440,131 @@ contract MasterRouterDiscoverabilityTest is Test {
         assertEq(bidPrices.length, 0);
         assertEq(bidDepths.length, 0);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        QUOTE FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_quoteBuyFromPools_empty() public view {
+        (uint256 sharesOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteBuyFromPools(marketId, true, 1 ether);
+        assertEq(sharesOut, 0);
+        assertEq(avgPrice, 0);
+        assertEq(levelsFilled, 0);
+    }
+
+    function test_quoteBuyFromPools_singlePool() public {
+        // Create ASK at 60% (selling NO for 60 cents)
+        vm.prank(ALICE);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 6000, ALICE);
+
+        // Quote buying 3 ether worth
+        (uint256 sharesOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteBuyFromPools(marketId, false, 3 ether);
+
+        // At 60%, 3 ether should buy 5 ether worth of shares
+        assertEq(sharesOut, 5 ether, "should get 5 shares for 3 collateral at 60%");
+        assertEq(avgPrice, 6000, "avg price should be 60%");
+        assertEq(levelsFilled, 1, "should fill 1 level");
+    }
+
+    function test_quoteBuyFromPools_multipleLevels() public {
+        // Create ASKs at different prices
+        vm.prank(ALICE);
+        router.mintAndPool{value: 2 ether}(marketId, 2 ether, true, 4000, ALICE); // 2 shares at 40%
+
+        vm.prank(BOB);
+        router.mintAndPool{value: 3 ether}(marketId, 3 ether, true, 5000, BOB); // 3 shares at 50%
+
+        // Quote buying enough to sweep both levels
+        // Level 1: 2 shares * 0.4 = 0.8 ether
+        // Level 2: 3 shares * 0.5 = 1.5 ether
+        // Total: 2.3 ether for 5 shares
+        (uint256 sharesOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteBuyFromPools(marketId, false, 2.3 ether);
+
+        assertEq(sharesOut, 5 ether, "should fill both pools");
+        assertEq(levelsFilled, 2, "should touch 2 levels");
+        // Avg price = 2.3 / 5 = 0.46 = 4600 bps
+        assertEq(avgPrice, 4600, "weighted avg should be 46%");
+    }
+
+    function test_quoteBuyFromPools_partialFill() public {
+        // Create ASK at 50%
+        vm.prank(ALICE);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, ALICE);
+
+        // Quote buying only 2.5 ether (half the pool)
+        (uint256 sharesOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteBuyFromPools(marketId, false, 2.5 ether);
+
+        assertEq(sharesOut, 5 ether, "should get 5 shares for 2.5 collateral at 50%");
+        assertEq(avgPrice, 5000);
+        assertEq(levelsFilled, 1);
+    }
+
+    function test_quoteSellToPools_empty() public view {
+        (uint256 collateralOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteSellToPools(marketId, true, 1 ether);
+        assertEq(collateralOut, 0);
+        assertEq(avgPrice, 0);
+        assertEq(levelsFilled, 0);
+    }
+
+    function test_quoteSellToPools_singlePool() public {
+        // Create BID at 40% with 4 ether (can buy 10 shares)
+        vm.prank(ALICE);
+        router.createBidPool{value: 4 ether}(marketId, 4 ether, true, 4000, ALICE);
+
+        // Quote selling 5 shares
+        (uint256 collateralOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteSellToPools(marketId, true, 5 ether);
+
+        assertEq(collateralOut, 2 ether, "5 shares at 40% = 2 ether");
+        assertEq(avgPrice, 4000);
+        assertEq(levelsFilled, 1);
+    }
+
+    function test_quoteSellToPools_multipleLevels() public {
+        // Create BIDs at different prices (higher price first in execution)
+        vm.prank(ALICE);
+        router.createBidPool{value: 2 ether}(marketId, 2 ether, true, 5000, ALICE); // 4 shares capacity
+
+        vm.prank(BOB);
+        router.createBidPool{value: 1.5 ether}(marketId, 1.5 ether, true, 3000, BOB); // 5 shares capacity
+
+        // Sell 7 shares (fills 50% pool completely + 3 from 30% pool)
+        (uint256 collateralOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteSellToPools(marketId, true, 7 ether);
+
+        // 4 shares at 50% = 2 ether
+        // 3 shares at 30% = 0.9 ether
+        // Total = 2.9 ether
+        assertEq(collateralOut, 2.9 ether, "should receive 2.9 ether");
+        assertEq(levelsFilled, 2, "should touch 2 levels");
+        // Avg = 2.9 / 7 ≈ 0.4142... = ~4142 bps
+        assertApproxEqAbs(avgPrice, 4142, 1, "weighted avg ~41.4%");
+    }
+
+    function test_quoteSellToPools_zeroInput() public view {
+        (uint256 collateralOut, uint256 avgPrice, uint256 levelsFilled) =
+            router.quoteSellToPools(marketId, true, 0);
+        assertEq(collateralOut, 0);
+        assertEq(avgPrice, 0);
+        assertEq(levelsFilled, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        MARKET INFO TEST
+    //////////////////////////////////////////////////////////////*/
+
+    function test_getMarketInfo() public view {
+        (address collateral, uint64 closeTime, bool tradingOpen, bool resolved) =
+            router.getMarketInfo(marketId);
+
+        assertEq(collateral, address(0), "should be ETH market");
+        assertGt(closeTime, block.timestamp, "close should be in future");
+        assertTrue(tradingOpen, "trading should be open");
+        assertFalse(resolved, "market not resolved");
+    }
 }
