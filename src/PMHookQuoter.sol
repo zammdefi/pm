@@ -579,7 +579,8 @@ contract PMHookQuoter {
         uint256 rIn = zeroForOne ? r1 : r0;
         uint256 rOut = zeroForOne ? r0 : r1;
         uint256 swapped = (amountInWithFee * rOut) / (rIn * 10000 + amountInWithFee);
-        if (swapped < rOut) {
+        // Only return non-zero if swap actually produces output
+        if (swapped != 0 && swapped < rOut) {
             totalShares = collateralIn + swapped;
         }
     }

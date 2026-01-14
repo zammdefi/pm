@@ -97,7 +97,7 @@ interface IPMHookRouter {
     function accNoCollateralPerShare(uint256 marketId) external view returns (uint256);
 }
 
-/// @title MasterRouter - Complete Abstraction Layer (FIXED)
+/// @title MasterRouter - Complete Abstraction Layer
 /// @notice Pooled orderbook + vault integration for prediction markets
 /// @dev Fixed accumulator-based accounting to prevent late joiner theft
 contract MasterRouter {
@@ -116,7 +116,6 @@ contract MasterRouter {
     bytes4 constant ERR_REENTRANCY = 0xab143c06;
     bytes4 constant ERR_LIQUIDITY = 0x4dae90b0;
     bytes4 constant ERR_TIMING = 0x3703bac9;
-    bytes4 constant ERR_OVERFLOW = 0xc4c2c1b0;
     bytes4 constant ERR_COMPUTATION = 0x05832717;
 
     /*//////////////////////////////////////////////////////////////
@@ -157,9 +156,7 @@ contract MasterRouter {
         uint256 collateralPaid
     );
 
-    event BidCollateralClaimed(
-        bytes32 indexed bidPoolId, address indexed user, uint256 sharesClaimed
-    );
+    event BidSharesClaimed(bytes32 indexed bidPoolId, address indexed user, uint256 sharesClaimed);
 
     event BidCollateralWithdrawn(
         bytes32 indexed bidPoolId, address indexed user, uint256 collateralWithdrawn
@@ -421,7 +418,7 @@ contract MasterRouter {
 
         sharesBought = sharesWanted;
         // Use CEILING division to protect sellers
-        collateralPaid = ceilDiv(sharesWanted * priceInBps, BPS_DENOM);
+        collateralPaid = mulDivUp(sharesWanted, priceInBps, BPS_DENOM);
         if (collateralPaid == 0) _revert(ERR_VALIDATION, 5);
 
         address collateral;
@@ -538,7 +535,7 @@ contract MasterRouter {
         if (sharesOut > userMax) _revert(ERR_VALIDATION, 8);
 
         // Burn corresponding LP units (round UP for safety)
-        uint256 burnScaled = ceilDiv(sharesOut * p.totalScaled, p.totalShares);
+        uint256 burnScaled = mulDivUp(sharesOut, p.totalScaled, p.totalShares);
         if (burnScaled > u.scaled) burnScaled = u.scaled; // Safety cap
 
         // Update pool
@@ -639,7 +636,7 @@ contract MasterRouter {
                     maxSharesAtPrice < pool.totalShares ? maxSharesAtPrice : pool.totalShares;
 
                 if (sharesToBuy > 0) {
-                    uint256 collateralNeeded = ceilDiv(sharesToBuy * poolPriceInBps, BPS_DENOM);
+                    uint256 collateralNeeded = mulDivUp(sharesToBuy, poolPriceInBps, BPS_DENOM);
 
                     // Fill from pool
                     _fill(pool, sharesToBuy, collateralNeeded);
@@ -754,7 +751,7 @@ contract MasterRouter {
                     maxSharesAtPrice < remainingShares ? maxSharesAtPrice : remainingShares;
 
                 if (sharesToSell > 0) {
-                    uint256 collateralToSpend = ceilDiv(sharesToSell * bidPoolPriceInBps, BPS_DENOM);
+                    uint256 collateralToSpend = mulDivUp(sharesToSell, bidPoolPriceInBps, BPS_DENOM);
                     if (collateralToSpend > bidPool.totalCollateral) {
                         collateralToSpend = bidPool.totalCollateral;
                         sharesToSell = mulDiv(collateralToSpend, BPS_DENOM, bidPoolPriceInBps);
@@ -796,11 +793,8 @@ contract MasterRouter {
         }
 
         // Step 2: Route remaining through PMHookRouter
+        // PMHookRouter is set as PAMM operator in constructor, so it pulls shares directly
         if (remainingShares > 0) {
-            // Transfer remaining shares to PMHookRouter
-            success = PAMM.transfer(address(PM_HOOK_ROUTER), tokenId, remainingShares);
-            if (!success) _revert(ERR_TRANSFER, 0);
-
             bytes4 pmSource;
             uint256 pmCollateral;
             (pmCollateral, pmSource) = PM_HOOK_ROUTER.sellWithBootstrap(
@@ -957,7 +951,7 @@ contract MasterRouter {
         if (sharesWanted > maxShares) _revert(ERR_LIQUIDITY, 0);
 
         sharesSold = sharesWanted;
-        collateralReceived = ceilDiv(sharesWanted * priceInBps, BPS_DENOM);
+        collateralReceived = mulDivUp(sharesWanted, priceInBps, BPS_DENOM);
         if (collateralReceived > bidPool.totalCollateral) {
             collateralReceived = bidPool.totalCollateral;
             sharesSold = mulDiv(collateralReceived, BPS_DENOM, priceInBps);
@@ -1017,7 +1011,7 @@ contract MasterRouter {
             bool success = PAMM.transfer(to, tokenId, sharesClaimed);
             if (!success) _revert(ERR_TRANSFER, 0);
 
-            emit BidCollateralClaimed(bidPoolId, msg.sender, sharesClaimed);
+            emit BidSharesClaimed(bidPoolId, msg.sender, sharesClaimed);
         }
     }
 
@@ -1078,7 +1072,7 @@ contract MasterRouter {
         collateralOut = (collateralWanted == 0) ? userMax : collateralWanted;
         if (collateralOut > userMax) _revert(ERR_VALIDATION, 8);
 
-        uint256 burnScaled = ceilDiv(collateralOut * p.totalScaled, p.totalCollateral);
+        uint256 burnScaled = mulDivUp(collateralOut, p.totalScaled, p.totalCollateral);
         if (burnScaled > u.scaled) burnScaled = u.scaled;
 
         p.totalCollateral -= collateralOut;
@@ -1171,7 +1165,7 @@ contract MasterRouter {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public {
+    ) public nonReentrant {
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0xd505accf00000000000000000000000000000000000000000000000000000000)
@@ -1211,7 +1205,7 @@ contract MasterRouter {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public {
+    ) public nonReentrant {
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x8fcbaf0c00000000000000000000000000000000000000000000000000000000)
@@ -1707,6 +1701,7 @@ contract MasterRouter {
     /// @return sharesOut Total shares that would be received
     /// @return avgPrice Weighted average fill price in bps
     /// @return levelsFilled Number of price levels touched
+    /// @dev Uses ceiling division for cost (matches actual fillFromPool behavior)
     function quoteBuyFromPools(uint256 marketId, bool isYes, uint256 collateralIn)
         external
         view
@@ -1733,8 +1728,8 @@ contract MasterRouter {
                 uint256 depth = pool.totalShares;
                 if (depth == 0) continue;
 
-                // Cost to fill entire pool at this price
-                uint256 costToFill = mulDiv(depth, price, BPS_DENOM);
+                // Cost to fill entire pool at this price (ceiling to match actual fills)
+                uint256 costToFill = mulDivUp(depth, price, BPS_DENOM);
 
                 if (remaining >= costToFill) {
                     // Fill entire pool
@@ -1743,7 +1738,7 @@ contract MasterRouter {
                     remaining -= costToFill;
                     ++levelsFilled;
                 } else {
-                    // Partial fill
+                    // Partial fill - floor division for shares (buyer gets fewer)
                     uint256 sharesBought = mulDiv(remaining, BPS_DENOM, price);
                     sharesOut += sharesBought;
                     totalCollateralSpent += remaining;
@@ -1754,7 +1749,7 @@ contract MasterRouter {
         }
 
         if (sharesOut > 0) {
-            avgPrice = mulDiv(totalCollateralSpent, BPS_DENOM, sharesOut);
+            avgPrice = mulDivUp(totalCollateralSpent, BPS_DENOM, sharesOut);
         }
     }
 
@@ -1765,6 +1760,7 @@ contract MasterRouter {
     /// @return collateralOut Total collateral that would be received
     /// @return avgPrice Weighted average fill price in bps
     /// @return levelsFilled Number of price levels touched
+    /// @dev Uses ceiling division for collateral received (matches actual sellToPool behavior)
     function quoteSellToPools(uint256 marketId, bool isYes, uint256 sharesIn)
         external
         view
@@ -1792,7 +1788,7 @@ contract MasterRouter {
                 uint256 collateralDepth = bidPool.totalCollateral;
                 if (collateralDepth == 0) continue;
 
-                // Max shares this pool can buy at its price
+                // Max shares this pool can buy at its price (floor - pool can afford fewer)
                 uint256 maxShares = mulDiv(collateralDepth, BPS_DENOM, price);
 
                 if (remaining >= maxShares) {
@@ -1802,8 +1798,8 @@ contract MasterRouter {
                     remaining -= maxShares;
                     ++levelsFilled;
                 } else {
-                    // Partial fill
-                    uint256 collateralReceived = mulDiv(remaining, price, BPS_DENOM);
+                    // Partial fill (ceiling to match actual sellToPool)
+                    uint256 collateralReceived = mulDivUp(remaining, price, BPS_DENOM);
                     collateralOut += collateralReceived;
                     totalSharesSold += remaining;
                     remaining = 0;
@@ -1813,7 +1809,7 @@ contract MasterRouter {
         }
 
         if (totalSharesSold > 0) {
-            avgPrice = mulDiv(collateralOut, BPS_DENOM, totalSharesSold);
+            avgPrice = mulDivUp(collateralOut, BPS_DENOM, totalSharesSold);
         }
     }
 
@@ -1918,15 +1914,16 @@ contract MasterRouter {
         }
     }
 
-    /// @dev Ceiling division: ceil(x/y) = (x + y - 1) / y
-    function ceilDiv(uint256 x, uint256 y) internal pure returns (uint256 z) {
+    /// @dev Returns `ceil(x * y / d)`. Reverts if `x * y` overflows, or `d` is zero.
+    /// @dev From Solady (https://github.com/Vectorized/solady)
+    function mulDivUp(uint256 x, uint256 y, uint256 d) internal pure returns (uint256 z) {
         assembly ("memory-safe") {
-            if iszero(y) {
-                mstore(0x00, ERR_COMPUTATION)
-                mstore(0x04, 2)
-                revert(0x00, 0x24)
+            z := mul(x, y)
+            if iszero(mul(or(iszero(x), eq(div(z, x), y)), d)) {
+                mstore(0x00, 0xad251c27) // `MulDivFailed()`.
+                revert(0x1c, 0x04)
             }
-            z := div(add(x, sub(y, 1)), y)
+            z := add(iszero(iszero(mod(z, d))), div(z, d))
         }
     }
 

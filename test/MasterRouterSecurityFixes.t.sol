@@ -254,4 +254,72 @@ contract MasterRouterSecurityFixesTest is Test {
         vm.expectRevert();
         router.withdrawFromPool(marketId, false, 5000, 1 ether, alice);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    PERMIT REENTRANCY PROTECTION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test that permit() has reentrancy protection
+    /// @dev Malicious token could attempt reentry during permit call
+    function test_permit_hasReentrancyGuard() public {
+        // Deploy a malicious token that tries to reenter
+        MaliciousPermitToken malToken = new MaliciousPermitToken(address(router));
+
+        // Call permit - if reentrancy guard works, the reentry attempt will revert
+        // and we catch it gracefully
+        vm.expectRevert(); // Either from reentrancy guard or from malicious token logic
+        router.permit(
+            address(malToken),
+            alice,
+            100 ether,
+            block.timestamp + 1 hours,
+            27,
+            bytes32(uint256(1)),
+            bytes32(uint256(2))
+        );
+    }
+
+    /// @notice Test that permitDAI() has reentrancy protection
+    function test_permitDAI_hasReentrancyGuard() public {
+        MaliciousPermitToken malToken = new MaliciousPermitToken(address(router));
+
+        vm.expectRevert();
+        router.permitDAI(
+            address(malToken),
+            alice,
+            0,
+            block.timestamp + 1 hours,
+            true,
+            27,
+            bytes32(uint256(1)),
+            bytes32(uint256(2))
+        );
+    }
+}
+
+/// @notice Malicious token that attempts reentrancy during permit
+contract MaliciousPermitToken {
+    MasterRouter public router;
+    bool public attacked;
+
+    constructor(address _router) {
+        router = MasterRouter(payable(_router));
+    }
+
+    // This gets called when router.permit() calls token.permit()
+    fallback() external {
+        if (!attacked) {
+            attacked = true;
+            // Attempt to reenter - should fail due to nonReentrant
+            router.permit(
+                address(this),
+                address(0x1),
+                1 ether,
+                block.timestamp + 1 hours,
+                27,
+                bytes32(uint256(1)),
+                bytes32(uint256(2))
+            );
+        }
+    }
 }

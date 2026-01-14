@@ -428,4 +428,163 @@ contract MasterRouterPMHookIntegrationTest is Test {
         vm.prank(alice);
         router.withdrawFromPool(marketId, false, 5000, 5 ether, alice);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    PMHOOKROUTER ROUTING INTEGRATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test buy() routes correctly through PMHookRouter
+    /// @dev This tests the PMHookRouter integration path (not just pool fills)
+    function test_buy_routesThroughPMHookRouter() public {
+        // Buy YES shares via PMHookRouter (no pool price specified)
+        vm.prank(alice);
+        (uint256 sharesOut, bytes4[] memory sources) = router.buy{value: 5 ether}(
+            marketId,
+            true, // buyYes
+            5 ether, // collateralIn
+            0, // minSharesOut
+            0, // poolPriceInBps (0 = skip pool)
+            0, // feeOrHook (deprecated)
+            alice,
+            0 // deadline
+        );
+
+        assertGt(sharesOut, 0, "Should receive shares");
+        assertEq(sources.length, 1, "Should have one source");
+        assertEq(pamm.balanceOf(alice, marketId), sharesOut, "Alice should have YES tokens");
+    }
+
+    /// @notice Test sell() routes correctly through PMHookRouter
+    /// @dev This is the critical test that would have caught the pre-transfer bug
+    function test_sell_routesThroughPMHookRouter() public {
+        // First, alice gets some YES shares
+        vm.prank(alice);
+        router.buy{value: 10 ether}(marketId, true, 10 ether, 0, 0, 0, alice, 0);
+
+        uint256 aliceYesBefore = pamm.balanceOf(alice, marketId);
+        assertGt(aliceYesBefore, 0, "Alice should have YES shares");
+
+        // Approve MasterRouter to transfer shares
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Sell YES shares via PMHookRouter (no bid pool price specified)
+        vm.prank(alice);
+        (uint256 collateralOut, bytes4[] memory sources) = router.sell(
+            marketId,
+            true, // sellYes
+            aliceYesBefore, // sharesIn
+            0, // minCollateralOut
+            0, // bidPoolPriceInBps (0 = skip bid pool)
+            0, // feeOrHook (deprecated)
+            alice,
+            0 // deadline
+        );
+
+        // Should complete without reverting - this would have failed with the bug
+        assertEq(pamm.balanceOf(alice, marketId), 0, "Alice should have sold all YES");
+        assertEq(sources.length, 1, "Should have one source");
+    }
+
+    /// @notice Test sell() with bid pool partial fill + PMHookRouter routing
+    function test_sell_bidPoolThenPMHookRouter() public {
+        // Setup: Carol creates a bid pool for YES at 60%
+        vm.prank(carol);
+        router.createBidPool{value: 3 ether}(marketId, 3 ether, true, 6000, carol);
+
+        // Alice gets YES shares
+        vm.prank(alice);
+        router.buy{value: 10 ether}(marketId, true, 10 ether, 0, 0, 0, alice, 0);
+
+        uint256 aliceYes = pamm.balanceOf(alice, marketId);
+
+        // Approve
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Sell with bid pool routing (should fill some from pool, rest from PMHookRouter)
+        vm.prank(alice);
+        (uint256 collateralOut, bytes4[] memory sources) = router.sell(
+            marketId,
+            true, // sellYes
+            aliceYes, // sharesIn
+            0, // minCollateralOut
+            6000, // bidPoolPriceInBps (try Carol's bid pool)
+            0,
+            alice,
+            0
+        );
+
+        // Should have filled from bid pool + PMHookRouter
+        assertEq(pamm.balanceOf(alice, marketId), 0, "Alice sold all shares");
+        // Sources could be 1 (just bid pool or just PMHookRouter) or 2 (both)
+        assertGt(sources.length, 0, "Should have sources");
+    }
+
+    /// @notice Test buy() with pool fill + PMHookRouter routing
+    function test_buy_poolThenPMHookRouter() public {
+        // Setup: Alice creates a pool selling NO at 40%
+        vm.prank(alice);
+        router.mintAndPool{value: 3 ether}(marketId, 3 ether, true, 4000, alice);
+
+        // Bob buys with pool routing (should fill some from pool, rest from PMHookRouter)
+        vm.prank(bob);
+        (uint256 sharesOut, bytes4[] memory sources) = router.buy{value: 10 ether}(
+            marketId,
+            false, // buyNo
+            10 ether, // collateralIn
+            0, // minSharesOut
+            4000, // poolPriceInBps (try Alice's pool)
+            0,
+            bob,
+            0
+        );
+
+        assertGt(sharesOut, 0, "Bob should receive NO shares");
+        // Could be 1 source (pool filled everything) or 2 (pool + PMHookRouter)
+        assertGt(sources.length, 0, "Should have sources");
+    }
+
+    /// @notice Test mintAndVault routes correctly through PMHookRouter
+    function test_mintAndVault_integration() public {
+        vm.prank(alice);
+        (uint256 sharesKept, uint256 vaultShares) = router.mintAndVault{value: 5 ether}(
+            marketId,
+            5 ether, // collateralIn
+            true, // keepYes
+            alice
+        );
+
+        assertEq(sharesKept, 5 ether, "Should keep 5 YES shares");
+        assertEq(pamm.balanceOf(alice, marketId), 5 ether, "Alice has YES");
+        assertGt(vaultShares, 0, "Should receive vault shares");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    REGRESSION TESTS FOR BUG FIXES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Regression test: sell() must not pre-transfer shares before PMHookRouter call
+    /// @dev PMHookRouter.sellWithBootstrap pulls shares via transferFrom(msg.sender, ...)
+    ///      If MasterRouter pre-transfers, the transferFrom fails because shares are gone
+    function test_regression_sellDoesNotPreTransfer() public {
+        // Get shares
+        vm.prank(alice);
+        router.buy{value: 5 ether}(marketId, true, 5 ether, 0, 0, 0, alice, 0);
+
+        uint256 shares = pamm.balanceOf(alice, marketId);
+
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // This call would revert with the old buggy code that pre-transferred shares
+        // because PMHookRouter.sellWithBootstrap does:
+        //   PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn)
+        // which expects shares to still be in MasterRouter
+        vm.prank(alice);
+        router.sell(marketId, true, shares, 0, 0, 0, alice, 0);
+
+        // If we get here, the fix is working
+        assertEq(pamm.balanceOf(alice, marketId), 0, "Shares sold successfully");
+    }
 }

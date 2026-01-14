@@ -239,7 +239,7 @@ contract PMFeeHook is IZAMMHook {
     constructor() payable {
         // Note: tx.origin sets owner to deploying EOA (not factory address if deployed via factory)
         // This preserves CREATE2 determinism but requires EOA deployment or factory-aware setup
-        // IMPORTANT: Must deploy via EOA directly, NOT via factory contract, or owner will be the factory
+        // IMPORTANT: Factory deployment still sets owner to origin EOA, not the factory contract
         owner = tx.origin;
         emit OwnershipTransferred(address(0), tx.origin);
 
