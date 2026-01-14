@@ -77,6 +77,24 @@ interface IPMHookRouter {
         address to,
         uint256 deadline
     ) external returns (uint256 collateralOut, bytes4 source);
+
+    // View functions
+    function totalYesVaultShares(uint256 marketId) external view returns (uint256);
+    function totalNoVaultShares(uint256 marketId) external view returns (uint256);
+    function vaultPositions(uint256 marketId, address user)
+        external
+        view
+        returns (
+            uint112 yesVaultShares,
+            uint112 noVaultShares,
+            uint256 yesDebt,
+            uint256 noDebt,
+            uint64 lastDepositTime
+        );
+    function canonicalPoolId(uint256 marketId) external view returns (uint256);
+    function canonicalFeeOrHook(uint256 marketId) external view returns (uint256);
+    function accYesCollateralPerShare(uint256 marketId) external view returns (uint256);
+    function accNoCollateralPerShare(uint256 marketId) external view returns (uint256);
 }
 
 /// @title MasterRouter - Complete Abstraction Layer (FIXED)
@@ -150,19 +168,6 @@ contract MasterRouter {
     /*//////////////////////////////////////////////////////////////
                         VAULT INTEGRATION EVENTS
     //////////////////////////////////////////////////////////////*/
-
-    event VaultWithdraw(
-        uint256 indexed marketId,
-        address indexed user,
-        bool isYes,
-        uint256 vaultSharesRedeemed,
-        uint256 sharesReturned,
-        uint256 feesEarned
-    );
-
-    event VaultFeesHarvested(
-        uint256 indexed marketId, address indexed user, bool isYes, uint256 feesEarned
-    );
 
     event LiquidityProvided(
         uint256 indexed marketId,
@@ -375,13 +380,13 @@ contract MasterRouter {
 
     /// @notice Internal: Deposit shares into pool (accumulator model)
     function _deposit(Pool storage p, UserPosition storage u, uint256 sharesIn) internal {
-        // Checkpoint user first
-        _checkpoint(p, u);
-
         uint256 mintScaled;
         if (p.totalScaled == 0) {
             // First depositor: 1:1 ratio
             mintScaled = sharesIn;
+        } else if (p.totalShares == 0) {
+            // Pool exhausted but LPs haven't withdrawn - no valid exchange rate
+            _revert(ERR_STATE, 2);
         } else {
             // Buy in at current exchange rate
             // Round DOWN to favor existing LPs (safe direction)
@@ -393,8 +398,8 @@ contract MasterRouter {
         p.totalScaled += mintScaled;
 
         u.scaled += mintScaled;
-        // Set debt to current accumulator (no past rewards)
-        u.collDebt = mulDiv(u.scaled, p.accCollPerScaled, ACC);
+        // Add debt only for NEW units - preserves pending rewards from existing units
+        u.collDebt += mulDiv(mintScaled, p.accCollPerScaled, ACC);
     }
 
     /// @notice Fill shares from a pool
@@ -525,8 +530,6 @@ contract MasterRouter {
         internal
         returns (uint256 sharesOut)
     {
-        _checkpoint(p, u);
-
         // User's maximum withdrawable shares
         uint256 userMax = p.totalScaled > 0 ? mulDiv(u.scaled, p.totalShares, p.totalScaled) : 0;
         if (userMax == 0) _revert(ERR_VALIDATION, 6);
@@ -542,16 +545,10 @@ contract MasterRouter {
         p.totalShares -= sharesOut;
         p.totalScaled -= burnScaled;
 
-        // Update user
+        // Update user - subtract proportional debt to preserve pending
+        uint256 debtToRemove = mulDiv(burnScaled, p.accCollPerScaled, ACC);
         u.scaled -= burnScaled;
-        u.collDebt = mulDiv(u.scaled, p.accCollPerScaled, ACC);
-    }
-
-    /// @notice Internal: Checkpoint user (update debt before balance changes)
-    function _checkpoint(Pool storage p, UserPosition storage u) internal {
-        // Update collDebt to current accumulator value
-        // This ensures pending rewards are "locked in" before balance changes
-        u.collDebt = mulDiv(u.scaled, p.accCollPerScaled, ACC);
+        u.collDebt = u.collDebt > debtToRemove ? u.collDebt - debtToRemove : 0;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -921,11 +918,12 @@ contract MasterRouter {
     function _depositToBidPool(BidPool storage p, BidPosition storage u, uint256 collateralIn)
         internal
     {
-        _checkpointBid(p, u);
-
         uint256 mintScaled;
         if (p.totalScaled == 0) {
             mintScaled = collateralIn;
+        } else if (p.totalCollateral == 0) {
+            // Pool exhausted but LPs haven't withdrawn - no valid exchange rate
+            _revert(ERR_STATE, 2);
         } else {
             mintScaled = mulDiv(collateralIn, p.totalScaled, p.totalCollateral);
             if (mintScaled == 0) _revert(ERR_VALIDATION, 10);
@@ -935,7 +933,8 @@ contract MasterRouter {
         p.totalScaled += mintScaled;
 
         u.scaled += mintScaled;
-        u.sharesDebt = mulDiv(u.scaled, p.accSharesPerScaled, ACC);
+        // Add debt only for NEW units - preserves pending shares from existing units
+        u.sharesDebt += mulDiv(mintScaled, p.accSharesPerScaled, ACC);
     }
 
     /// @notice Sell shares directly to a bid pool at the pool's price
@@ -1073,8 +1072,6 @@ contract MasterRouter {
         BidPosition storage u,
         uint256 collateralWanted
     ) internal returns (uint256 collateralOut) {
-        _checkpointBid(p, u);
-
         uint256 userMax = p.totalScaled > 0 ? mulDiv(u.scaled, p.totalCollateral, p.totalScaled) : 0;
         if (userMax == 0) _revert(ERR_VALIDATION, 6);
 
@@ -1087,49 +1084,15 @@ contract MasterRouter {
         p.totalCollateral -= collateralOut;
         p.totalScaled -= burnScaled;
 
+        // Update user - subtract proportional debt to preserve pending
+        uint256 debtToRemove = mulDiv(burnScaled, p.accSharesPerScaled, ACC);
         u.scaled -= burnScaled;
-        u.sharesDebt = mulDiv(u.scaled, p.accSharesPerScaled, ACC);
-    }
-
-    /// @notice Internal: Checkpoint bid position
-    function _checkpointBid(BidPool storage p, BidPosition storage u) internal {
-        u.sharesDebt = mulDiv(u.scaled, p.accSharesPerScaled, ACC);
+        u.sharesDebt = u.sharesDebt > debtToRemove ? u.sharesDebt - debtToRemove : 0;
     }
 
     /*//////////////////////////////////////////////////////////////
                     VAULT LIFECYCLE WRAPPERS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Withdraw vault shares and claim fees
-    function withdrawFromVault(
-        uint256 marketId,
-        bool isYes,
-        uint256 vaultSharesToRedeem,
-        address to,
-        uint256 deadline
-    ) public nonReentrant returns (uint256 sharesReturned, uint256 feesEarned) {
-        if (to == address(0)) to = msg.sender;
-
-        (sharesReturned, feesEarned) =
-            PM_HOOK_ROUTER.withdrawFromVault(marketId, isYes, vaultSharesToRedeem, to, deadline);
-
-        emit VaultWithdraw(
-            marketId, msg.sender, isYes, vaultSharesToRedeem, sharesReturned, feesEarned
-        );
-    }
-
-    /// @notice Claim vault fees without withdrawing shares
-    function harvestVaultFees(uint256 marketId, bool isYes)
-        public
-        nonReentrant
-        returns (uint256 feesEarned)
-    {
-        feesEarned = PM_HOOK_ROUTER.harvestVaultFees(marketId, isYes);
-
-        if (feesEarned > 0) {
-            emit VaultFeesHarvested(marketId, msg.sender, isYes, feesEarned);
-        }
-    }
 
     /// @notice Provide liquidity to vault and/or AMM in one transaction
     /// @dev Splits collateral, deposits to vaults and AMM as specified
@@ -1865,7 +1828,7 @@ contract MasterRouter {
         view
         returns (address collateral, uint64 closeTime, bool tradingOpen, bool resolved)
     {
-        (, resolved,,,closeTime, collateral,) = PAMM.markets(marketId);
+        (, resolved,,, closeTime, collateral,) = PAMM.markets(marketId);
         tradingOpen = PAMM.tradingOpen(marketId);
     }
 
@@ -1942,7 +1905,7 @@ contract MasterRouter {
                         MATH HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Multiply then divide with overflow check (from PMHookRouter pattern)
+    /// @dev Multiply then divide with overflow check
     function mulDiv(uint256 x, uint256 y, uint256 d) internal pure returns (uint256 z) {
         assembly ("memory-safe") {
             z := mul(x, y)

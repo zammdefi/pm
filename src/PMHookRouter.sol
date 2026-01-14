@@ -1207,8 +1207,9 @@ contract PMHookRouter {
             _buildKey(yesId, noId, uint256(uint160(hook)) | FLAG_BEFORE | FLAG_AFTER);
         bool zeroForOne = buyYes ? !yesIsId0 : yesIsId0;
 
+        // Require minimum 1 output to prevent value-destroying swaps where split shares are donated
         uint256 swappedShares =
-            ZAMM.swapExactIn(k, collateralForBuy, 0, zeroForOne, address(this), deadline);
+            ZAMM.swapExactIn(k, collateralForBuy, 1, zeroForOne, address(this), deadline);
 
         sharesOut = collateralForBuy + swappedShares;
         if (sharesOut < minSharesOut) _revert(ERR_VALIDATION, 3); // InsufficientOutput
@@ -1617,7 +1618,9 @@ contract PMHookRouter {
         // Use fullMulDiv to prevent overflow: amountInWithFee * rOut can overflow uint256
         uint256 swapped = fullMulDiv(amountInWithFee, rOut, denominator);
 
-        if (swapped < rOut) {
+        // Only return non-zero if swap actually produces output
+        // Returning collateralIn when swapped=0 would cause AMM selection that donates shares
+        if (swapped != 0 && swapped < rOut) {
             totalShares = collateralIn + swapped;
         }
     }
@@ -2558,12 +2561,10 @@ contract PMHookRouter {
         (IZAMM.PoolKey memory k, bool yesIsId0) = _buildKey(marketId, noId, feeOrHook);
         bool zeroForOne = buyYes ? !yesIsId0 : yesIsId0;
 
-        // Allow AMM to contribute whatever it can; final check at caller enforces global minimum
-        // This enables multi-venue routing: vault OTC + AMM + mint fallback can combine to meet minSharesOut
-        uint256 minSwapOut = 0;
-
+        // Require minimum 1 output to prevent value-destroying swaps where split shares are donated
+        // for nothing. This matches sell-side behavior and prevents zero-output donation attacks.
         uint256 swappedShares =
-            ZAMM.swapExactIn(k, collateralToSwap, minSwapOut, zeroForOne, address(this), deadline);
+            ZAMM.swapExactIn(k, collateralToSwap, 1, zeroForOne, address(this), deadline);
 
         ammSharesOut = collateralToSwap + swappedShares;
         PAMM.transfer(to, desiredTokenId, ammSharesOut);

@@ -85,8 +85,8 @@ contract TestReverter {
     // Corrected pattern
     function revertWithCorrectedPattern(bytes4 selector, uint8 code) external pure {
         assembly {
-            mstore(0x00, shl(224, selector))
-            mstore(0x20, code)
+            mstore(0x00, selector)
+            mstore(0x04, code)
             revert(0x00, 0x24)
         }
     }

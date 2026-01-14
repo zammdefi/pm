@@ -103,6 +103,12 @@ contract PMHookRouterSelectorsTest is Test {
         assertEq(expected, bytes4(0x5f598ac3), "getCloseWindow selector mismatch");
     }
 
+    function test_FunctionSelector_getMaxPriceImpactBps() public pure {
+        // Used in _getMaxPriceImpactBps at line 1740
+        bytes4 expected = bytes4(keccak256("getMaxPriceImpactBps(uint256)"));
+        assertEq(expected, bytes4(0x9e9feaae), "getMaxPriceImpactBps selector mismatch");
+    }
+
     function test_FunctionSelector_permit() public pure {
         // EIP-2612 permit
         bytes4 expected =
