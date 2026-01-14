@@ -55,7 +55,7 @@ contract MasterRouterWithdrawalFixTest is Test {
 
         // 50 shares get filled
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // Check unfilled before Alice withdraws
         (, uint256 aliceUnfilledBefore,,) = router.getUserPosition(marketId, false, 5000, alice);
@@ -66,7 +66,7 @@ contract MasterRouterWithdrawalFixTest is Test {
 
         // Alice withdraws her 75 unfilled shares
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 75 ether, alice);
+        (uint256 withdrawn,) = router.withdrawFromPool(marketId, false, 5000, 75 ether, alice);
         assertEq(withdrawn, 75 ether, "Alice withdrew 75");
 
         // CRITICAL: Bob's unfilled should STILL be 75, not affected by Alice's withdrawal
@@ -92,7 +92,7 @@ contract MasterRouterWithdrawalFixTest is Test {
 
         // 60 shares get filled (20% filled), paying 30 ETH
         vm.prank(taker);
-        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, taker);
+        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, 0, taker, 0);
 
         // Alice MUST claim before withdrawing in accumulator model
         vm.prank(alice);
@@ -107,7 +107,7 @@ contract MasterRouterWithdrawalFixTest is Test {
         // More shares get filled - 40 shares for 20 ETH
         // Pool now has: Alice ~50 scaled, Bob 200 scaled = 250 total
         vm.prank(taker);
-        router.fillFromPool{value: 20 ether}(marketId, false, 5000, 40 ether, taker);
+        router.fillFromPool{value: 20 ether}(marketId, false, 5000, 40 ether, 0, taker, 0);
 
         // Check earnings from second fill
         vm.prank(alice);
@@ -144,7 +144,7 @@ contract MasterRouterWithdrawalFixTest is Test {
 
         // 30 shares filled
         vm.prank(taker);
-        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, taker);
+        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, 0, taker, 0);
 
         // Each should have 90 unfilled
         (, uint256 aliceUnfilled1,,) = router.getUserPosition(marketId, false, 5000, alice);
@@ -189,7 +189,7 @@ contract MasterRouterWithdrawalFixTest is Test {
 
         // 30 filled - totalShares decreases
         vm.prank(taker);
-        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, taker);
+        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, 0, taker, 0);
 
         (totalShares, totalScaled,,) = router.pools(poolId);
         assertEq(totalShares, 70 ether, "70 shares remaining after 30 filled");

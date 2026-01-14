@@ -58,12 +58,12 @@ contract MasterRouterSecurityFixesTest is Test {
 
         // Alice withdraws 40 shares BEFORE any fills
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 40 ether, alice);
+        (uint256 withdrawn,) = router.withdrawFromPool(marketId, false, 5000, 40 ether, alice);
         assertEq(withdrawn, 40 ether, "Alice withdraws 40 shares");
 
         // Now taker fills 60 shares (Alice's 10 + Bob's 50)
         vm.prank(taker);
-        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, taker);
+        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, 0, taker, 0);
 
         // Check collateral distribution
         vm.prank(alice);
@@ -92,7 +92,7 @@ contract MasterRouterSecurityFixesTest is Test {
 
         // Taker fills 60 shares
         vm.prank(taker);
-        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, taker);
+        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, 0, taker, 0);
 
         // Both should get proportional amounts (50/100 each)
         vm.prank(alice);
@@ -125,7 +125,7 @@ contract MasterRouterSecurityFixesTest is Test {
 
         // Taker fills 50 (all remaining shares)
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // Bob should NOT be able to withdraw (all shares filled)
         vm.prank(bob);
@@ -141,11 +141,11 @@ contract MasterRouterSecurityFixesTest is Test {
 
         // Fill 50 shares
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // Alice should be able to withdraw remaining 50
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 0, alice);
+        (uint256 withdrawn,) = router.withdrawFromPool(marketId, false, 5000, 0, alice);
         assertEq(withdrawn, 50 ether, "Alice withdraws 50 unfilled shares");
     }
 
@@ -165,7 +165,7 @@ contract MasterRouterSecurityFixesTest is Test {
             vm.prank(address(uint160(1000 + i)));
             vm.deal(address(uint160(1000 + i)), 10 ether);
             router.fillFromPool{value: 5 ether}(
-                marketId, false, 5000, 10 ether, address(uint160(1000 + i))
+                marketId, false, 5000, 10 ether, 0, address(uint160(1000 + i)), 0
             );
         }
 
@@ -192,7 +192,7 @@ contract MasterRouterSecurityFixesTest is Test {
 
         // Fill 30 from remaining 60 shares - Alice earns 15 ETH
         vm.prank(taker);
-        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, taker);
+        router.fillFromPool{value: 15 ether}(marketId, false, 5000, 30 ether, 0, taker, 0);
 
         (
             uint256 userScaled,
@@ -216,7 +216,7 @@ contract MasterRouterSecurityFixesTest is Test {
 
         // First fill
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // First claim
         vm.prank(alice);
@@ -226,7 +226,7 @@ contract MasterRouterSecurityFixesTest is Test {
         // Second fill
         vm.prank(bob);
         vm.deal(bob, 100 ether);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, bob);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, bob, 0);
 
         // Second claim
         vm.prank(alice);
@@ -247,7 +247,7 @@ contract MasterRouterSecurityFixesTest is Test {
 
         // Fill all shares
         vm.prank(taker);
-        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, taker);
+        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, 0, taker, 0);
 
         // Withdrawal should revert (no unfilled shares)
         vm.prank(alice);

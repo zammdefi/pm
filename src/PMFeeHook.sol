@@ -64,8 +64,6 @@ interface IPAMM {
             uint256 collateralLocked
         );
 
-    function getNoId(uint256 marketId) external pure returns (uint256);
-
     struct PoolKey {
         uint256 id0;
         uint256 id1;
@@ -245,7 +243,7 @@ contract PMFeeHook is IZAMMHook {
 
         // Default config: Optimized for router-first architecture with $100-10k pools
         // Fee context: Router vault charges 1-5% spread, so AMM at 0.1-0.75% is competitive
-        // Price impact @ 12% is the real constraint: $100 pool→~$10 trades, $1k pool→~$100 trades
+        // Price impact @ 12% is the real constraint: $100 pool->~$10 trades, $1k pool->~$100 trades
         defaultConfig.minFeeBps = 10; // 0.10% steady-state (cheaper than vault's 1% min)
         defaultConfig.maxFeeBps = 75; // 0.75% bootstrap (competitive with vault)
         defaultConfig.maxSkewFeeBps = 80; // 0.80% at 90/10+ (anti-manipulation)
@@ -379,7 +377,7 @@ contract PMFeeHook is IZAMMHook {
         if (meta[poolId].active) revert AlreadyRegistered();
 
         uint256 yesId = marketId;
-        uint256 noId = PAMM.getNoId(marketId);
+        uint256 noId = _getNoId(marketId);
         bool yesIsToken0 = yesId < noId;
         poolToMarket[poolId] = marketId;
         meta[poolId] =
@@ -662,7 +660,7 @@ contract PMFeeHook is IZAMMHook {
             if (ok) {
                 // Cached reserves available: compute post-swap reserves from deltas
                 // Formula: after = before + delta (positive delta = added to pool)
-                // ASSUMPTION: ZAMM delta convention matches: trader sells → positive delta (pool gains)
+                // ASSUMPTION: ZAMM delta convention matches: trader sells -> positive delta (pool gains)
                 // If ZAMM changes convention, defensive fallback below will catch invalid results
                 int256 a0 = int256(uint256(r0Before)) + d0;
                 int256 a1 = int256(uint256(r1Before)) + d1;
@@ -699,10 +697,9 @@ contract PMFeeHook is IZAMMHook {
             _recordPriceSnapshot(poolId, m.yesIsToken0, poolData);
         }
 
-        // Clear transient cache unconditionally to prevent stale reads in subsequent calls
-        // (Note: transient storage auto-clears at tx end, so this only matters within same tx)
-        // Unconditional clear is simpler and cheaper than tload+branch (transient writes are cheap)
-        // Clear if cache was potentially written (feeNeedsReserves, doImpact, or doVol)
+        // Clear transient cache to prevent stale reads in subsequent swaps within same tx
+        // (Note: transient storage auto-clears at tx end, so this only matters for multi-swap txs)
+        // Only clear if cache was potentially written (avoids unnecessary tstore when unused)
         if (doImpact || doVol || feeNeedsReserves) {
             assembly ("memory-safe") {
                 tstore(slot, 0)
@@ -732,6 +729,15 @@ contract PMFeeHook is IZAMMHook {
     // ═══════════════════════════════════════════════════════════
     //                     MARKET HELPERS
     // ═══════════════════════════════════════════════════════════
+
+    /// @dev Get NO token ID matching PAMM's formula: keccak256("PMARKET:NO", marketId)
+    function _getNoId(uint256 marketId) internal pure returns (uint256 noId) {
+        assembly ("memory-safe") {
+            mstore(0x00, 0x504d41524b45543a4e4f00000000000000000000000000000000000000000000)
+            mstore(0x0a, marketId)
+            noId := keccak256(0x00, 0x2a)
+        }
+    }
 
     /// @dev Get YES/NO reserves based on ZAMM's canonical ordering (id0 < id1)
     /// @dev Takes yesIsToken0 from caller to avoid redundant storage reads
@@ -913,7 +919,7 @@ contract PMFeeHook is IZAMMHook {
         data.valid = (r0 > 0 && r1 > 0);
     }
 
-    /// @dev Bootstrap fee with configurable decay curve (linear/exp/sqrt/log)
+    /// @dev Bootstrap fee with configurable decay curve (linear/cubic/sqrt/ease-in)
     function _bootstrapFee(uint256 start, uint256 nowTs, Config storage c)
         internal
         view
@@ -929,7 +935,7 @@ contract PMFeeHook is IZAMMHook {
             uint256 range = uint256(c.maxFeeBps) - uint256(c.minFeeBps); // Safe: validated
             uint256 progressBps = (elapsed * 10000) / uint256(c.bootstrapWindow);
 
-            // Apply decay curve: 0=linear, 1=cubic, 2=sqrt, 3=log
+            // Apply decay curve: 0=linear, 1=cubic, 2=sqrt, 3=ease-in
             uint8 mode = _getBootstrapDecayMode(c);
             uint256 ratio;
 
@@ -1076,7 +1082,7 @@ contract PMFeeHook is IZAMMHook {
         // Note: Integer division in mean may cause intermediate underflow in unchecked block,
         // but modular arithmetic (mod 2^256) produces correct variance result. Mathematically,
         // variance ≥ 0 always holds, and even if wraparound occurs, the final fee is safely
-        // capped by volatilityFeeBps (line 1087-1091).
+        // capped by volatilityFeeBps.
         uint256 varianceSum;
         unchecked {
             varianceSum = sumSq - (2 * mean * sum) + (count * mean * mean);

@@ -99,7 +99,7 @@ interface IPMHookRouter {
 
 /// @title MasterRouter - Complete Abstraction Layer
 /// @notice Pooled orderbook + vault integration for prediction markets
-/// @dev Fixed accumulator-based accounting to prevent late joiner theft
+/// @dev Accumulator-based accounting prevents late joiner theft
 contract MasterRouter {
     address constant ETH = address(0);
     IPAMM constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
@@ -107,6 +107,8 @@ contract MasterRouter {
         IPMHookRouter(0x0000000000BADa259Cb860c12ccD9500d9496B3e);
 
     uint256 constant REENTRANCY_SLOT = 0x929eee149b4bd21268;
+    uint256 constant ETH_SPENT_SLOT = 0x929eee149b4bd21269;
+    uint256 constant MULTICALL_DEPTH_SLOT = 0x929eee149b4bd2126a;
     uint256 constant BPS_DENOM = 10000;
     uint256 constant ACC = 1e18; // Accumulator precision
 
@@ -138,6 +140,14 @@ contract MasterRouter {
     event ProceedsClaimed(bytes32 indexed poolId, address indexed user, uint256 collateralClaimed);
 
     event SharesWithdrawn(bytes32 indexed poolId, address indexed user, uint256 sharesWithdrawn);
+
+    event SharesDeposited(
+        uint256 indexed marketId,
+        address indexed user,
+        bytes32 indexed poolId,
+        uint256 sharesIn,
+        uint256 priceInBps
+    );
 
     // Bid pool events (collateral pools buying shares)
     event BidPoolCreated(
@@ -181,6 +191,14 @@ contract MasterRouter {
         bool keepYes,
         uint256 sharesKept,
         uint256 vaultShares
+    );
+
+    event MintAndSellOther(
+        uint256 indexed marketId,
+        address indexed user,
+        uint256 collateralIn,
+        bool keepYes,
+        uint256 collateralRecovered
     );
 
     /*//////////////////////////////////////////////////////////////
@@ -240,7 +258,7 @@ contract MasterRouter {
     /// @dev Bitmap tracking active price levels
     /// Key: keccak256(marketId, isYes, isAsk) => 40 uint256s covering prices 0-10239
     /// Each bit represents whether a pool exists at that price (1-9999 valid range)
-    mapping(bytes32 => uint256[40]) internal priceBitmap;
+    mapping(bytes32 => uint256[40]) public priceBitmap;
 
     constructor() payable {
         PAMM.setOperator(address(PM_HOOK_ROUTER), true);
@@ -267,6 +285,72 @@ contract MasterRouter {
             mstore(0x00, selector)
             mstore(0x04, code)
             revert(0x00, 0x24)
+        }
+    }
+
+    /// @dev Validate ETH amount with multicall-aware cumulative tracking
+    function _validateETHAmount(address collateral, uint256 requiredAmount) internal {
+        assembly ("memory-safe") {
+            if iszero(collateral) {
+                switch tload(MULTICALL_DEPTH_SLOT)
+                case 0 {
+                    // Standalone call: simple validation against msg.value
+                    if iszero(eq(callvalue(), requiredAmount)) {
+                        mstore(0x00, ERR_VALIDATION)
+                        mstore(0x04, 3)
+                        revert(0x00, 0x24)
+                    }
+                }
+                default {
+                    // Multicall: track cumulative ETH requirement
+                    let prev := tload(ETH_SPENT_SLOT)
+                    let cumulativeRequired := add(prev, requiredAmount)
+                    // Check for overflow
+                    if mul(requiredAmount, lt(cumulativeRequired, prev)) {
+                        mstore(0x00, ERR_VALIDATION)
+                        mstore(0x04, 0)
+                        revert(0x00, 0x24)
+                    }
+                    if lt(callvalue(), cumulativeRequired) {
+                        mstore(0x00, ERR_VALIDATION)
+                        mstore(0x04, 3)
+                        revert(0x00, 0x24)
+                    }
+                    tstore(ETH_SPENT_SLOT, cumulativeRequired)
+                }
+            }
+            // If non-ETH collateral but ETH sent, revert (unless in multicall where other calls may need it)
+            if and(iszero(iszero(collateral)), iszero(iszero(callvalue()))) {
+                if iszero(tload(MULTICALL_DEPTH_SLOT)) {
+                    mstore(0x00, ERR_VALIDATION)
+                    mstore(0x04, 4)
+                    revert(0x00, 0x24)
+                }
+            }
+        }
+    }
+
+    /// @dev Refund ETH to caller, deferring actual transfer if in multicall
+    function _refundETHToCaller(uint256 amount) internal {
+        assembly ("memory-safe") {
+            switch tload(MULTICALL_DEPTH_SLOT)
+            case 0 {
+                // Not in multicall: transfer immediately
+                if iszero(call(gas(), caller(), amount, codesize(), 0x00, codesize(), 0x00)) {
+                    mstore(0x00, ERR_TRANSFER)
+                    mstore(0x04, 2)
+                    revert(0x00, 0x24)
+                }
+            }
+            default {
+                // In multicall: decrement tracking only, defer actual transfer to multicall exit
+                let spent := tload(ETH_SPENT_SLOT)
+                if spent {
+                    let decrement := amount
+                    if gt(decrement, spent) { decrement := spent }
+                    tstore(ETH_SPENT_SLOT, sub(spent, decrement))
+                }
+            }
         }
     }
 
@@ -343,10 +427,8 @@ contract MasterRouter {
         address collateral;
         (,,,,, collateral,) = PAMM.markets(marketId);
 
-        if (collateral == ETH) {
-            if (msg.value != collateralIn) _revert(ERR_VALIDATION, 3);
-        } else {
-            if (msg.value != 0) _revert(ERR_VALIDATION, 4);
+        _validateETHAmount(collateral, collateralIn);
+        if (collateral != ETH) {
             _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
             _ensureApproval(collateral, address(PAMM));
         }
@@ -375,6 +457,161 @@ contract MasterRouter {
         emit MintAndPool(marketId, msg.sender, poolId, collateralIn, keepYes, priceInBps);
     }
 
+    /// @notice Deposit existing PM shares to an ASK pool at a specific price
+    /// @dev Use this to migrate positions or add shares you already own to a pool
+    /// @param marketId Market ID
+    /// @param isYes True to deposit YES shares, false for NO shares
+    /// @param sharesIn Amount of shares to deposit
+    /// @param priceInBps Price to sell at (in basis points, 1-9999)
+    /// @param to Recipient of pool position (LP units)
+    /// @return poolId The pool identifier
+    function depositSharesToPool(
+        uint256 marketId,
+        bool isYes,
+        uint256 sharesIn,
+        uint256 priceInBps,
+        address to
+    ) public nonReentrant returns (bytes32 poolId) {
+        if (to == address(0)) to = msg.sender;
+        if (!PAMM.tradingOpen(marketId)) _revert(ERR_STATE, 0);
+        if (sharesIn == 0) _revert(ERR_VALIDATION, 1);
+        if (priceInBps == 0 || priceInBps >= BPS_DENOM) _revert(ERR_VALIDATION, 2);
+
+        // Transfer shares from user
+        uint256 tokenId = _getTokenId(marketId, isYes);
+        bool success = PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn);
+        if (!success) _revert(ERR_TRANSFER, 1);
+
+        poolId = getPoolId(marketId, isYes, priceInBps);
+        Pool storage pool = pools[poolId];
+        bool wasEmpty = pool.totalShares == 0;
+
+        _deposit(pool, positions[poolId][to], sharesIn);
+
+        if (wasEmpty) {
+            _setPriceBit(marketId, isYes, true, priceInBps, true);
+        }
+
+        emit SharesDeposited(marketId, msg.sender, poolId, sharesIn, priceInBps);
+    }
+
+    /// @notice Migrate ASK pool position to a new price (no external share custody)
+    /// @dev More gas-efficient than withdraw + deposit - shares stay in contract
+    /// @param marketId Market ID
+    /// @param isYes True for YES pool, false for NO pool
+    /// @param oldPriceInBps Current price level to migrate from
+    /// @param newPriceInBps New price level to migrate to
+    /// @param sharesToMigrate Amount of shares to migrate (0 = all)
+    /// @param to Recipient of new position and any claimed collateral
+    /// @return sharesMigrated Shares moved to new pool
+    /// @return collateralClaimed Pending collateral from old pool fills
+    function migrateAskPosition(
+        uint256 marketId,
+        bool isYes,
+        uint256 oldPriceInBps,
+        uint256 newPriceInBps,
+        uint256 sharesToMigrate,
+        address to
+    ) public nonReentrant returns (uint256 sharesMigrated, uint256 collateralClaimed) {
+        if (to == address(0)) to = msg.sender;
+        if (newPriceInBps == 0 || newPriceInBps >= BPS_DENOM) _revert(ERR_VALIDATION, 2);
+        if (oldPriceInBps == newPriceInBps) _revert(ERR_VALIDATION, 7);
+
+        bytes32 oldPoolId = getPoolId(marketId, isYes, oldPriceInBps);
+        Pool storage oldPool = pools[oldPoolId];
+        UserPosition storage oldPos = positions[oldPoolId][msg.sender];
+
+        // Claim pending collateral from old pool
+        collateralClaimed = _claim(oldPool, oldPos);
+
+        // Withdraw shares (stay in contract)
+        sharesMigrated = _withdraw(oldPool, oldPos, sharesToMigrate);
+
+        // Clear old bitmap if empty
+        if (oldPool.totalShares == 0) {
+            _setPriceBit(marketId, isYes, true, oldPriceInBps, false);
+        }
+
+        // Deposit to new pool
+        bytes32 newPoolId = getPoolId(marketId, isYes, newPriceInBps);
+        Pool storage newPool = pools[newPoolId];
+        bool wasEmpty = newPool.totalShares == 0;
+
+        _deposit(newPool, positions[newPoolId][to], sharesMigrated);
+
+        if (wasEmpty) {
+            _setPriceBit(marketId, isYes, true, newPriceInBps, true);
+        }
+
+        // Transfer claimed collateral
+        if (collateralClaimed > 0) {
+            address collateral;
+            (,,,,, collateral,) = PAMM.markets(marketId);
+            if (collateral == ETH) {
+                _safeTransferETH(to, collateralClaimed);
+            } else {
+                _safeTransfer(collateral, to, collateralClaimed);
+            }
+            emit ProceedsClaimed(oldPoolId, msg.sender, collateralClaimed);
+        }
+
+        emit SharesWithdrawn(oldPoolId, msg.sender, sharesMigrated);
+        emit SharesDeposited(marketId, msg.sender, newPoolId, sharesMigrated, newPriceInBps);
+    }
+
+    /// @notice Migrate BID pool position to a different price level
+    /// @dev Mirror of migrateAskPosition for BID pools
+    function migrateBidPosition(
+        uint256 marketId,
+        bool buyYes,
+        uint256 oldPriceInBps,
+        uint256 newPriceInBps,
+        uint256 collateralToMigrate,
+        address to
+    ) public nonReentrant returns (uint256 collateralMigrated, uint256 sharesClaimed) {
+        if (to == address(0)) to = msg.sender;
+        if (newPriceInBps == 0 || newPriceInBps >= BPS_DENOM) _revert(ERR_VALIDATION, 2);
+        if (oldPriceInBps == newPriceInBps) _revert(ERR_VALIDATION, 7);
+
+        bytes32 oldPoolId = getBidPoolId(marketId, buyYes, oldPriceInBps);
+        BidPool storage oldPool = bidPools[oldPoolId];
+        BidPosition storage oldPos = bidPositions[oldPoolId][msg.sender];
+
+        // Claim pending shares from old pool
+        sharesClaimed = _claimBidShares(oldPool, oldPos);
+
+        // Withdraw collateral (stay in contract)
+        collateralMigrated = _withdrawFromBidPool(oldPool, oldPos, collateralToMigrate);
+
+        // Clear old bitmap if empty
+        if (oldPool.totalCollateral == 0) {
+            _setPriceBit(marketId, buyYes, false, oldPriceInBps, false);
+        }
+
+        // Deposit to new pool
+        bytes32 newPoolId = getBidPoolId(marketId, buyYes, newPriceInBps);
+        BidPool storage newPool = bidPools[newPoolId];
+        bool wasEmpty = newPool.totalCollateral == 0;
+
+        _depositToBidPool(newPool, bidPositions[newPoolId][to], collateralMigrated);
+
+        if (wasEmpty) {
+            _setPriceBit(marketId, buyYes, false, newPriceInBps, true);
+        }
+
+        // Transfer claimed shares
+        if (sharesClaimed > 0) {
+            uint256 tokenId = _getTokenId(marketId, buyYes);
+            if (!PAMM.transfer(to, tokenId, sharesClaimed)) _revert(ERR_TRANSFER, 0);
+            emit BidSharesClaimed(oldPoolId, msg.sender, sharesClaimed);
+        }
+
+        emit BidCollateralWithdrawn(oldPoolId, msg.sender, collateralMigrated);
+        emit BidPoolCreated(
+            marketId, msg.sender, newPoolId, collateralMigrated, buyYes, newPriceInBps
+        );
+    }
+
     /// @notice Internal: Deposit shares into pool (accumulator model)
     function _deposit(Pool storage p, UserPosition storage u, uint256 sharesIn) internal {
         uint256 mintScaled;
@@ -400,14 +637,24 @@ contract MasterRouter {
     }
 
     /// @notice Fill shares from a pool
+    /// @param marketId Market ID
+    /// @param isYes True to buy YES shares, false for NO
+    /// @param priceInBps Price level in basis points
+    /// @param sharesWanted Amount of shares to buy
+    /// @param maxCollateral Maximum collateral willing to pay (slippage protection)
+    /// @param to Recipient of shares
+    /// @param deadline Transaction deadline (0 = no deadline)
     function fillFromPool(
         uint256 marketId,
         bool isYes,
         uint256 priceInBps,
         uint256 sharesWanted,
-        address to
+        uint256 maxCollateral,
+        address to,
+        uint256 deadline
     ) public payable nonReentrant returns (uint256 sharesBought, uint256 collateralPaid) {
         if (to == address(0)) to = msg.sender;
+        if (deadline != 0 && block.timestamp > deadline) _revert(ERR_TIMING, 0);
         if (!PAMM.tradingOpen(marketId)) _revert(ERR_STATE, 0);
         if (sharesWanted == 0) _revert(ERR_VALIDATION, 1);
 
@@ -420,14 +667,13 @@ contract MasterRouter {
         // Use CEILING division to protect sellers
         collateralPaid = mulDivUp(sharesWanted, priceInBps, BPS_DENOM);
         if (collateralPaid == 0) _revert(ERR_VALIDATION, 5);
+        if (maxCollateral != 0 && collateralPaid > maxCollateral) _revert(ERR_VALIDATION, 9);
 
         address collateral;
         (,,,,, collateral,) = PAMM.markets(marketId);
 
-        if (collateral == ETH) {
-            if (msg.value != collateralPaid) _revert(ERR_VALIDATION, 3);
-        } else {
-            if (msg.value != 0) _revert(ERR_VALIDATION, 4);
+        _validateETHAmount(collateral, collateralPaid);
+        if (collateral != ETH) {
             _safeTransferFrom(collateral, msg.sender, address(this), collateralPaid);
         }
 
@@ -452,7 +698,7 @@ contract MasterRouter {
         // Remove shares from pool
         p.totalShares -= sharesOut;
 
-        // Distribute collateral to LP units (immutable snapshot)
+        // Add to cumulative earnings per LP unit
         p.collateralEarned += collateralIn;
         p.accCollPerScaled += mulDiv(collateralIn, ACC, p.totalScaled);
     }
@@ -495,18 +741,22 @@ contract MasterRouter {
     }
 
     /// @notice Withdraw unfilled shares from pool
+    /// @dev Auto-claims any pending proceeds before withdrawing to prevent loss
     function withdrawFromPool(
         uint256 marketId,
         bool isYes,
         uint256 priceInBps,
         uint256 sharesToWithdraw,
         address to
-    ) public nonReentrant returns (uint256 sharesWithdrawn) {
+    ) public nonReentrant returns (uint256 sharesWithdrawn, uint256 collateralClaimed) {
         if (to == address(0)) to = msg.sender;
 
         bytes32 poolId = getPoolId(marketId, isYes, priceInBps);
         Pool storage pool = pools[poolId];
         UserPosition storage pos = positions[poolId][msg.sender];
+
+        // Auto-claim pending proceeds first to prevent loss
+        collateralClaimed = _claim(pool, pos);
 
         sharesWithdrawn = _withdraw(pool, pos, sharesToWithdraw);
 
@@ -515,11 +765,76 @@ contract MasterRouter {
             _setPriceBit(marketId, isYes, true, priceInBps, false);
         }
 
+        address collateral;
+        (,,,,, collateral,) = PAMM.markets(marketId);
+
+        // Transfer claimed proceeds
+        if (collateralClaimed > 0) {
+            if (collateral == ETH) {
+                _safeTransferETH(to, collateralClaimed);
+            } else {
+                _safeTransfer(collateral, to, collateralClaimed);
+            }
+            emit ProceedsClaimed(poolId, msg.sender, collateralClaimed);
+        }
+
+        // Transfer withdrawn shares
         uint256 tokenId = _getTokenId(marketId, isYes);
         bool success = PAMM.transfer(to, tokenId, sharesWithdrawn);
         if (!success) _revert(ERR_TRANSFER, 0);
 
         emit SharesWithdrawn(poolId, msg.sender, sharesWithdrawn);
+    }
+
+    /// @notice Exit a depleted ASK pool - burn LP units when no shares remain
+    /// @dev Use when pool is fully filled (totalShares=0) but you still have scaled position
+    /// @param marketId Market ID
+    /// @param isYes True for YES pool, false for NO pool
+    /// @param priceInBps Price level in basis points
+    /// @param to Recipient of any remaining collateral proceeds
+    /// @return collateralClaimed Collateral claimed from pending proceeds
+    function exitDepletedAskPool(uint256 marketId, bool isYes, uint256 priceInBps, address to)
+        public
+        nonReentrant
+        returns (uint256 collateralClaimed)
+    {
+        if (to == address(0)) to = msg.sender;
+
+        bytes32 poolId = getPoolId(marketId, isYes, priceInBps);
+        Pool storage p = pools[poolId];
+        UserPosition storage u = positions[poolId][msg.sender];
+
+        // Only allowed when pool is depleted (no shares left to withdraw)
+        if (p.totalShares != 0) _revert(ERR_STATE, 3);
+        if (u.scaled == 0) _revert(ERR_VALIDATION, 6);
+
+        // Claim any pending proceeds first
+        collateralClaimed = _claim(p, u);
+
+        // Burn all user's LP units
+        uint256 burnScaled = u.scaled;
+        u.scaled = 0;
+        u.collDebt = 0;
+        p.totalScaled -= burnScaled;
+
+        // Clear bitmap if pool is fully exited (no shares and no LPs)
+        if (p.totalScaled == 0) {
+            _setPriceBit(marketId, isYes, true, priceInBps, false);
+        }
+
+        // Transfer claimed proceeds
+        if (collateralClaimed > 0) {
+            address collateral;
+            (,,,,, collateral,) = PAMM.markets(marketId);
+
+            if (collateral == ETH) {
+                _safeTransferETH(to, collateralClaimed);
+            } else {
+                _safeTransfer(collateral, to, collateralClaimed);
+            }
+
+            emit ProceedsClaimed(poolId, msg.sender, collateralClaimed);
+        }
     }
 
     /// @notice Internal: Withdraw shares (accumulator model)
@@ -566,10 +881,8 @@ contract MasterRouter {
         address collateral;
         (,,,,, collateral,) = PAMM.markets(marketId);
 
-        if (collateral == ETH) {
-            if (msg.value != collateralIn) _revert(ERR_VALIDATION, 3);
-        } else {
-            if (msg.value != 0) _revert(ERR_VALIDATION, 4);
+        _validateETHAmount(collateral, collateralIn);
+        if (collateral != ETH) {
             _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
             _ensureApproval(collateral, address(PAMM));
         }
@@ -589,19 +902,16 @@ contract MasterRouter {
         emit MintAndVault(marketId, msg.sender, collateralIn, keepYes, sharesKept, vaultShares);
     }
 
-    /// @notice Buy shares with integrated routing (pool → vault OTC → AMM → mint)
-    /// @param poolPriceInBps Optional: Try pooled orderbook at this price first (0 = skip pool)
-    /// @param feeOrHook Deprecated parameter (PMHookRouter now uses canonical feeOrHook internally)
-    function buy(
+    /// @notice Mint and sell other side into bid pools, then PMHookRouter
+    /// @dev Recovers collateral instead of vault LP position
+    function mintAndSellOther(
         uint256 marketId,
-        bool buyYes,
         uint256 collateralIn,
-        uint256 minSharesOut,
-        uint256 poolPriceInBps,
-        uint256 feeOrHook,
+        bool keepYes,
+        uint256 minPriceBps,
         address to,
         uint256 deadline
-    ) public payable nonReentrant returns (uint256 totalSharesOut, bytes4[] memory sources) {
+    ) public payable nonReentrant returns (uint256 sharesKept, uint256 collateralRecovered) {
         if (to == address(0)) to = msg.sender;
         if (deadline != 0 && block.timestamp > deadline) _revert(ERR_TIMING, 0);
         if (collateralIn == 0) _revert(ERR_VALIDATION, 1);
@@ -610,21 +920,131 @@ contract MasterRouter {
         address collateral;
         (,,,,, collateral,) = PAMM.markets(marketId);
 
-        // Track balance BEFORE operations for proper refund calculation
-        uint256 balanceBefore = collateral == ETH ? address(this).balance - msg.value : 0;
+        _validateETHAmount(collateral, collateralIn);
+        if (collateral != ETH) {
+            _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
+            _ensureApproval(collateral, address(PAMM));
+        }
 
-        if (collateral == ETH) {
-            if (msg.value != collateralIn) _revert(ERR_VALIDATION, 3);
-        } else {
-            if (msg.value != 0) _revert(ERR_VALIDATION, 4);
+        // Mint both sides
+        PAMM.split{value: collateral == ETH ? collateralIn : 0}(
+            marketId, collateralIn, address(this)
+        );
+
+        // Transfer kept side to user
+        sharesKept = collateralIn;
+        {
+            uint256 keepId = _getTokenId(marketId, keepYes);
+            if (!PAMM.transfer(to, keepId, sharesKept)) _revert(ERR_TRANSFER, 0);
+        }
+
+        // Sell other side
+        bool sellYes = !keepYes;
+        uint256 remaining = collateralIn;
+        uint256 poolColl; // Track pool collateral separately (needs transfer from MasterRouter)
+
+        // Sweep bid pools from highest price down
+        if (minPriceBps > 0) {
+            bytes32 bitmapKey = _getBitmapKey(marketId, sellYes, false);
+
+            for (uint256 b; b < 40 && remaining > 0; ++b) {
+                uint256 bucket = 39 - b;
+                uint256 word = priceBitmap[bitmapKey][bucket];
+
+                while (word != 0 && remaining > 0) {
+                    uint256 bit = _highestSetBit(word);
+                    uint256 price = (bucket << 8) | bit;
+                    word &= ~(1 << bit);
+
+                    if (price < minPriceBps) continue;
+
+                    bytes32 bidPoolId = getBidPoolId(marketId, sellYes, price);
+                    BidPool storage bp = bidPools[bidPoolId];
+                    uint256 depth = bp.totalCollateral;
+                    if (depth == 0) continue;
+
+                    uint256 maxShares = mulDiv(depth, BPS_DENOM, price);
+                    uint256 toSell;
+                    uint256 toReceive;
+
+                    if (remaining >= maxShares) {
+                        toSell = maxShares;
+                        toReceive = depth;
+                    } else {
+                        toSell = remaining;
+                        toReceive = mulDivUp(toSell, price, BPS_DENOM);
+                        if (toReceive > depth) {
+                            toReceive = depth;
+                            toSell = mulDiv(toReceive, BPS_DENOM, price);
+                        }
+                    }
+
+                    if (toSell == 0) continue;
+
+                    _fillBidPool(bp, toSell, toReceive);
+
+                    if (bp.totalCollateral == 0) {
+                        _setPriceBit(marketId, sellYes, false, price, false);
+                    }
+
+                    poolColl += toReceive;
+                    remaining -= toSell;
+
+                    emit BidPoolFilled(bidPoolId, msg.sender, toSell, toReceive);
+                }
+            }
+        }
+
+        collateralRecovered = poolColl;
+
+        // Route remainder through PMHookRouter (sends collateral directly to `to`)
+        if (remaining > 0) {
+            (uint256 pmColl,) = PM_HOOK_ROUTER.sellWithBootstrap(
+                marketId, sellYes, remaining, 0, to, deadline == 0 ? type(uint256).max : deadline
+            );
+            collateralRecovered += pmColl;
+        }
+
+        // Transfer pool collateral to user (PMHookRouter already sent its portion)
+        if (poolColl > 0) {
+            if (collateral == ETH) {
+                _safeTransferETH(to, poolColl);
+            } else {
+                _safeTransfer(collateral, to, poolColl);
+            }
+        }
+
+        emit MintAndSellOther(marketId, msg.sender, collateralIn, keepYes, collateralRecovered);
+    }
+
+    /// @notice Buy shares with integrated routing (pool -> PMHookRouter)
+    /// @param poolPriceInBps Optional: Try pooled orderbook at this price first (0 = skip pool)
+    function buy(
+        uint256 marketId,
+        bool buyYes,
+        uint256 collateralIn,
+        uint256 minSharesOut,
+        uint256 poolPriceInBps,
+        address to,
+        uint256 deadline
+    ) public payable nonReentrant returns (uint256 totalSharesOut, bytes4[] memory sources) {
+        if (to == address(0)) to = msg.sender;
+        if (deadline != 0 && block.timestamp > deadline) _revert(ERR_TIMING, 0);
+        if (deadline == 0) deadline = type(uint256).max; // Normalize for PMHookRouter
+        if (collateralIn == 0) _revert(ERR_VALIDATION, 1);
+        if (!PAMM.tradingOpen(marketId)) _revert(ERR_STATE, 0);
+
+        address collateral;
+        (,,,,, collateral,) = PAMM.markets(marketId);
+
+        _validateETHAmount(collateral, collateralIn);
+        if (collateral != ETH) {
             _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
         }
 
         uint256 remainingCollateral = collateralIn;
-        uint256 poolCollateralKept = 0;
 
         // Step 1: Try pooled orderbook first (if price specified)
-        bool filledFromPool = false;
         if (poolPriceInBps > 0 && poolPriceInBps < BPS_DENOM) {
             bytes32 poolId = getPoolId(marketId, buyYes, poolPriceInBps);
             Pool storage pool = pools[poolId];
@@ -653,11 +1073,10 @@ contract MasterRouter {
                     emit PoolFilled(poolId, msg.sender, sharesToBuy, collateralNeeded);
 
                     totalSharesOut = sharesToBuy;
-                    filledFromPool = true;
-                    poolCollateralKept = collateralNeeded;
 
                     // If fully satisfied, return early
                     if (collateralNeeded >= remainingCollateral) {
+                        if (totalSharesOut < minSharesOut) _revert(ERR_VALIDATION, 9);
                         sources = new bytes4[](1);
                         sources[0] = bytes4(keccak256("POOL"));
                         return (totalSharesOut, sources);
@@ -669,11 +1088,15 @@ contract MasterRouter {
             }
         }
 
-        // Step 2: Route remaining through PMHookRouter (vault OTC → AMM → mint)
+        // Step 2: Route remaining through PMHookRouter (vault OTC -> AMM -> mint)
         if (remainingCollateral > 0) {
             if (collateral != ETH) {
                 _ensureApproval(collateral, address(PM_HOOK_ROUTER));
             }
+
+            // Track balance before PMHookRouter call to detect refunds
+            uint256 balanceBefore = collateral == ETH ? address(this).balance : 0;
+            uint256 poolSharesOut = totalSharesOut; // Capture pool shares before PMHookRouter
 
             (uint256 additionalShares, bytes4 pmSource,) = PM_HOOK_ROUTER.buyWithBootstrap{
                 value: collateral == ETH ? remainingCollateral : 0
@@ -688,8 +1111,17 @@ contract MasterRouter {
 
             totalSharesOut += additionalShares;
 
+            // Refund any ETH returned by PMHookRouter
+            if (collateral == ETH) {
+                uint256 balanceAfter = address(this).balance;
+                uint256 expectedBalance = balanceBefore - remainingCollateral;
+                if (balanceAfter > expectedBalance) {
+                    _refundETHToCaller(balanceAfter - expectedBalance);
+                }
+            }
+
             // Combine sources
-            if (filledFromPool) {
+            if (poolSharesOut > 0) {
                 sources = new bytes4[](2);
                 sources[0] = bytes4(keccak256("POOL"));
                 sources[1] = pmSource;
@@ -700,43 +1132,184 @@ contract MasterRouter {
         }
 
         if (totalSharesOut < minSharesOut) _revert(ERR_VALIDATION, 9);
-
-        // Refund any unused ETH using balance-based calculation
-        if (collateral == ETH) {
-            uint256 balanceAfter = address(this).balance;
-            uint256 toRefund = balanceAfter > (balanceBefore + poolCollateralKept)
-                ? balanceAfter - balanceBefore - poolCollateralKept
-                : 0;
-
-            if (toRefund > 0) {
-                _safeTransferETH(msg.sender, toRefund);
-            }
-        }
     }
 
-    /// @notice Sell shares with integrated routing (bid pool → vault OTC → AMM → merge)
+    /// @notice Buy shares with multi-price sweep (fills best-priced pools first)
+    /// @dev Sweeps ASK pools from lowest price up to maxPriceBps, then routes remainder to PMHookRouter
+    /// @param marketId Market to buy in
+    /// @param buyYes True to buy YES shares, false for NO shares
+    /// @param collateralIn Amount of collateral to spend
+    /// @param minSharesOut Minimum shares to receive (slippage protection)
+    /// @param maxPriceBps Maximum price willing to pay from pools (0 = skip pools, use PMHookRouter only)
+    /// @param to Recipient of shares
+    /// @param deadline Transaction deadline (0 = no deadline)
+    /// @return totalSharesOut Total shares received
+    /// @return poolSharesOut Shares filled from pools
+    /// @return poolLevelsFilled Number of price levels touched
+    /// @return sources Execution sources used
+    function buyWithSweep(
+        uint256 marketId,
+        bool buyYes,
+        uint256 collateralIn,
+        uint256 minSharesOut,
+        uint256 maxPriceBps,
+        address to,
+        uint256 deadline
+    )
+        public
+        payable
+        nonReentrant
+        returns (
+            uint256 totalSharesOut,
+            uint256 poolSharesOut,
+            uint256 poolLevelsFilled,
+            bytes4[] memory sources
+        )
+    {
+        if (to == address(0)) to = msg.sender;
+        if (deadline != 0 && block.timestamp > deadline) _revert(ERR_TIMING, 0);
+        if (deadline == 0) deadline = type(uint256).max;
+        if (collateralIn == 0) _revert(ERR_VALIDATION, 1);
+        if (!PAMM.tradingOpen(marketId)) _revert(ERR_STATE, 0);
+
+        address collateral;
+        (,,,,, collateral,) = PAMM.markets(marketId);
+
+        _validateETHAmount(collateral, collateralIn);
+        if (collateral != ETH) {
+            _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
+        }
+
+        uint256 remainingCollateral = collateralIn;
+
+        // Step 1: Sweep pools from lowest price up to maxPriceBps
+        if (maxPriceBps > 0 && maxPriceBps < BPS_DENOM) {
+            bytes32 bitmapKey = _getBitmapKey(marketId, buyYes, true);
+            uint256 tokenId = _getTokenId(marketId, buyYes);
+
+            // Scan from lowest price upward
+            for (uint256 bucket; bucket < 40 && remainingCollateral > 0; ++bucket) {
+                uint256 word = priceBitmap[bitmapKey][bucket];
+                while (word != 0 && remainingCollateral > 0) {
+                    uint256 bit = _lowestSetBit(word);
+                    uint256 price = (bucket << 8) | bit;
+                    word &= ~(1 << bit);
+
+                    // Skip invalid prices or prices above max
+                    if (price == 0 || price > maxPriceBps) continue;
+
+                    bytes32 poolId = getPoolId(marketId, buyYes, price);
+                    Pool storage pool = pools[poolId];
+                    uint256 depth = pool.totalShares;
+                    if (depth == 0) continue;
+
+                    // Calculate fill amount
+                    uint256 costToFill = mulDivUp(depth, price, BPS_DENOM);
+                    uint256 sharesToBuy;
+                    uint256 collateralNeeded;
+
+                    if (remainingCollateral >= costToFill) {
+                        // Fill entire pool
+                        sharesToBuy = depth;
+                        collateralNeeded = costToFill;
+                    } else {
+                        // Partial fill
+                        sharesToBuy = mulDiv(remainingCollateral, BPS_DENOM, price);
+                        if (sharesToBuy == 0) continue;
+                        collateralNeeded = mulDivUp(sharesToBuy, price, BPS_DENOM);
+                    }
+
+                    // Execute fill
+                    _fill(pool, sharesToBuy, collateralNeeded);
+
+                    // Clear bitmap if pool is now empty
+                    if (pool.totalShares == 0) {
+                        _setPriceBit(marketId, buyYes, true, price, false);
+                    }
+
+                    // Transfer shares to recipient
+                    bool success = PAMM.transfer(to, tokenId, sharesToBuy);
+                    if (!success) _revert(ERR_TRANSFER, 0);
+
+                    emit PoolFilled(poolId, msg.sender, sharesToBuy, collateralNeeded);
+
+                    poolSharesOut += sharesToBuy;
+                    totalSharesOut += sharesToBuy;
+                    remainingCollateral -= collateralNeeded;
+                    ++poolLevelsFilled;
+                }
+            }
+        }
+
+        // Step 2: Route remaining through PMHookRouter
+        if (remainingCollateral > 0) {
+            if (collateral != ETH) {
+                _ensureApproval(collateral, address(PM_HOOK_ROUTER));
+            }
+
+            uint256 balanceBefore = collateral == ETH ? address(this).balance : 0;
+
+            (uint256 additionalShares, bytes4 pmSource,) = PM_HOOK_ROUTER.buyWithBootstrap{
+                value: collateral == ETH ? remainingCollateral : 0
+            }(
+                marketId,
+                buyYes,
+                remainingCollateral,
+                minSharesOut > totalSharesOut ? minSharesOut - totalSharesOut : 0,
+                to,
+                deadline
+            );
+
+            totalSharesOut += additionalShares;
+
+            // Refund any ETH returned by PMHookRouter
+            if (collateral == ETH) {
+                uint256 balanceAfter = address(this).balance;
+                uint256 expectedBalance = balanceBefore - remainingCollateral;
+                if (balanceAfter > expectedBalance) {
+                    _refundETHToCaller(balanceAfter - expectedBalance);
+                }
+            }
+
+            // Build sources array
+            if (poolLevelsFilled > 0) {
+                sources = new bytes4[](2);
+                sources[0] = bytes4(keccak256("POOL"));
+                sources[1] = pmSource;
+            } else {
+                sources = new bytes4[](1);
+                sources[0] = pmSource;
+            }
+        } else if (poolLevelsFilled > 0) {
+            sources = new bytes4[](1);
+            sources[0] = bytes4(keccak256("POOL"));
+        }
+
+        if (totalSharesOut < minSharesOut) _revert(ERR_VALIDATION, 9);
+    }
+
+    /// @notice Sell shares with integrated routing (bid pool -> PMHookRouter)
     /// @param bidPoolPriceInBps Optional: Try bid pool at this price first (0 = skip pool)
-    /// @param feeOrHook Deprecated parameter (PMHookRouter now uses canonical feeOrHook internally)
     function sell(
         uint256 marketId,
         bool sellYes,
         uint256 sharesIn,
         uint256 minCollateralOut,
         uint256 bidPoolPriceInBps,
-        uint256 feeOrHook,
         address to,
         uint256 deadline
     ) public nonReentrant returns (uint256 totalCollateralOut, bytes4[] memory sources) {
         if (to == address(0)) to = msg.sender;
         if (deadline != 0 && block.timestamp > deadline) _revert(ERR_TIMING, 0);
+        if (deadline == 0) deadline = type(uint256).max; // Normalize for PMHookRouter
         if (sharesIn == 0) _revert(ERR_VALIDATION, 1);
+        if (!PAMM.tradingOpen(marketId)) _revert(ERR_STATE, 0);
 
         uint256 tokenId = _getTokenId(marketId, sellYes);
         bool success = PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn);
         if (!success) _revert(ERR_TRANSFER, 1);
 
         uint256 remainingShares = sharesIn;
-        bool filledFromBidPool = false;
 
         // Step 1: Try bid pool first (if price specified)
         if (bidPoolPriceInBps > 0 && bidPoolPriceInBps < BPS_DENOM) {
@@ -778,11 +1351,11 @@ contract MasterRouter {
                         emit BidPoolFilled(bidPoolId, msg.sender, sharesToSell, collateralToSpend);
 
                         totalCollateralOut = collateralToSpend;
-                        filledFromBidPool = true;
                         remainingShares -= sharesToSell;
 
                         // If fully satisfied, return early
                         if (remainingShares == 0) {
+                            if (totalCollateralOut < minCollateralOut) _revert(ERR_VALIDATION, 9);
                             sources = new bytes4[](1);
                             sources[0] = bytes4(keccak256("BIDPOOL"));
                             return (totalCollateralOut, sources);
@@ -793,7 +1366,153 @@ contract MasterRouter {
         }
 
         // Step 2: Route remaining through PMHookRouter
-        // PMHookRouter is set as PAMM operator in constructor, so it pulls shares directly
+        // MasterRouter authorized PMHookRouter as PAMM operator in constructor
+        if (remainingShares > 0) {
+            uint256 poolCollateralOut = totalCollateralOut; // Capture bid pool collateral before PMHookRouter
+
+            bytes4 pmSource;
+            uint256 pmCollateral;
+            (pmCollateral, pmSource) = PM_HOOK_ROUTER.sellWithBootstrap(
+                marketId,
+                sellYes,
+                remainingShares,
+                minCollateralOut > totalCollateralOut ? minCollateralOut - totalCollateralOut : 0,
+                to,
+                deadline
+            );
+
+            totalCollateralOut += pmCollateral;
+
+            if (poolCollateralOut > 0) {
+                sources = new bytes4[](2);
+                sources[0] = bytes4(keccak256("BIDPOOL"));
+                sources[1] = pmSource;
+            } else {
+                sources = new bytes4[](1);
+                sources[0] = pmSource;
+            }
+        }
+
+        if (totalCollateralOut < minCollateralOut) _revert(ERR_VALIDATION, 9);
+    }
+
+    /// @notice Sell shares with multi-price sweep (fills best-priced bid pools first)
+    /// @dev Sweeps BID pools from highest price down to minPriceBps, then routes remainder to PMHookRouter
+    /// @param marketId Market to sell in
+    /// @param sellYes True to sell YES shares, false for NO shares
+    /// @param sharesIn Amount of shares to sell
+    /// @param minCollateralOut Minimum collateral to receive (slippage protection)
+    /// @param minPriceBps Minimum price willing to accept from bid pools (0 = skip pools, use PMHookRouter only)
+    /// @param to Recipient of collateral
+    /// @param deadline Transaction deadline (0 = no deadline)
+    /// @return totalCollateralOut Total collateral received
+    /// @return poolCollateralOut Collateral from bid pools
+    /// @return poolLevelsFilled Number of price levels touched
+    /// @return sources Execution sources used
+    function sellWithSweep(
+        uint256 marketId,
+        bool sellYes,
+        uint256 sharesIn,
+        uint256 minCollateralOut,
+        uint256 minPriceBps,
+        address to,
+        uint256 deadline
+    )
+        public
+        nonReentrant
+        returns (
+            uint256 totalCollateralOut,
+            uint256 poolCollateralOut,
+            uint256 poolLevelsFilled,
+            bytes4[] memory sources
+        )
+    {
+        if (to == address(0)) to = msg.sender;
+        if (deadline != 0 && block.timestamp > deadline) _revert(ERR_TIMING, 0);
+        if (deadline == 0) deadline = type(uint256).max;
+        if (sharesIn == 0) _revert(ERR_VALIDATION, 1);
+        if (!PAMM.tradingOpen(marketId)) _revert(ERR_STATE, 0);
+
+        // Transfer shares from seller to this contract
+        uint256 tokenId = _getTokenId(marketId, sellYes);
+        bool success = PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn);
+        if (!success) _revert(ERR_TRANSFER, 1);
+
+        address collateral;
+        (,,,,, collateral,) = PAMM.markets(marketId);
+
+        uint256 remainingShares = sharesIn;
+
+        // Step 1: Sweep bid pools from highest price down to minPriceBps
+        if (minPriceBps > 0 && minPriceBps < BPS_DENOM) {
+            bytes32 bitmapKey = _getBitmapKey(marketId, sellYes, false); // false = BID pools
+
+            // Scan from highest price downward
+            for (uint256 b; b < 40 && remainingShares > 0; ++b) {
+                uint256 bucket = 39 - b;
+                uint256 word = priceBitmap[bitmapKey][bucket];
+                while (word != 0 && remainingShares > 0) {
+                    uint256 bit = _highestSetBit(word);
+                    uint256 price = (bucket << 8) | bit;
+                    word &= ~(1 << bit);
+
+                    // Skip invalid prices or prices below minimum
+                    if (price == 0 || price < minPriceBps) continue;
+
+                    bytes32 bidPoolId = getBidPoolId(marketId, sellYes, price);
+                    BidPool storage bidPool = bidPools[bidPoolId];
+                    uint256 collateralDepth = bidPool.totalCollateral;
+                    if (collateralDepth == 0) continue;
+
+                    // Calculate fill amount
+                    // Max shares this pool can buy at its price
+                    uint256 maxShares = mulDiv(collateralDepth, BPS_DENOM, price);
+                    uint256 sharesToSell;
+                    uint256 collateralToReceive;
+
+                    if (remainingShares >= maxShares) {
+                        // Fill entire pool
+                        sharesToSell = maxShares;
+                        collateralToReceive = collateralDepth;
+                    } else {
+                        // Partial fill
+                        sharesToSell = remainingShares;
+                        collateralToReceive = mulDivUp(sharesToSell, price, BPS_DENOM);
+                        // Cap at available collateral
+                        if (collateralToReceive > collateralDepth) {
+                            collateralToReceive = collateralDepth;
+                            sharesToSell = mulDiv(collateralToReceive, BPS_DENOM, price);
+                        }
+                    }
+
+                    if (sharesToSell == 0 || collateralToReceive == 0) continue;
+
+                    // Execute fill
+                    _fillBidPool(bidPool, sharesToSell, collateralToReceive);
+
+                    // Clear bitmap if bid pool is now empty
+                    if (bidPool.totalCollateral == 0) {
+                        _setPriceBit(marketId, sellYes, false, price, false);
+                    }
+
+                    // Transfer collateral to seller
+                    if (collateral == ETH) {
+                        _safeTransferETH(to, collateralToReceive);
+                    } else {
+                        _safeTransfer(collateral, to, collateralToReceive);
+                    }
+
+                    emit BidPoolFilled(bidPoolId, msg.sender, sharesToSell, collateralToReceive);
+
+                    poolCollateralOut += collateralToReceive;
+                    totalCollateralOut += collateralToReceive;
+                    remainingShares -= sharesToSell;
+                    ++poolLevelsFilled;
+                }
+            }
+        }
+
+        // Step 2: Route remaining through PMHookRouter
         if (remainingShares > 0) {
             bytes4 pmSource;
             uint256 pmCollateral;
@@ -808,7 +1527,8 @@ contract MasterRouter {
 
             totalCollateralOut += pmCollateral;
 
-            if (filledFromBidPool) {
+            // Build sources array
+            if (poolLevelsFilled > 0) {
                 sources = new bytes4[](2);
                 sources[0] = bytes4(keccak256("BIDPOOL"));
                 sources[1] = pmSource;
@@ -816,6 +1536,9 @@ contract MasterRouter {
                 sources = new bytes4[](1);
                 sources[0] = pmSource;
             }
+        } else if (poolLevelsFilled > 0) {
+            sources = new bytes4[](1);
+            sources[0] = bytes4(keccak256("BIDPOOL"));
         }
 
         if (totalCollateralOut < minCollateralOut) _revert(ERR_VALIDATION, 9);
@@ -887,10 +1610,8 @@ contract MasterRouter {
         address collateral;
         (,,,,, collateral,) = PAMM.markets(marketId);
 
-        if (collateral == ETH) {
-            if (msg.value != collateralIn) _revert(ERR_VALIDATION, 3);
-        } else {
-            if (msg.value != 0) _revert(ERR_VALIDATION, 4);
+        _validateETHAmount(collateral, collateralIn);
+        if (collateral != ETH) {
             _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
         }
 
@@ -932,16 +1653,27 @@ contract MasterRouter {
     }
 
     /// @notice Sell shares directly to a bid pool at the pool's price
+    /// @param marketId Market ID
+    /// @param isYes True to sell YES shares, false for NO
+    /// @param priceInBps Price level in basis points
+    /// @param sharesWanted Amount of shares to sell
+    /// @param minCollateral Minimum collateral to receive (slippage protection)
+    /// @param to Recipient of collateral
+    /// @param deadline Transaction deadline (0 = no deadline)
     function sellToPool(
         uint256 marketId,
         bool isYes,
         uint256 priceInBps,
         uint256 sharesWanted,
-        address to
+        uint256 minCollateral,
+        address to,
+        uint256 deadline
     ) public nonReentrant returns (uint256 sharesSold, uint256 collateralReceived) {
         if (to == address(0)) to = msg.sender;
+        if (deadline != 0 && block.timestamp > deadline) _revert(ERR_TIMING, 0);
         if (!PAMM.tradingOpen(marketId)) _revert(ERR_STATE, 0);
         if (sharesWanted == 0) _revert(ERR_VALIDATION, 1);
+        if (priceInBps == 0 || priceInBps >= BPS_DENOM) _revert(ERR_VALIDATION, 2);
 
         bytes32 bidPoolId = getBidPoolId(marketId, isYes, priceInBps);
         BidPool storage bidPool = bidPools[bidPoolId];
@@ -957,6 +1689,7 @@ contract MasterRouter {
             sharesSold = mulDiv(collateralReceived, BPS_DENOM, priceInBps);
         }
         if (collateralReceived == 0) _revert(ERR_VALIDATION, 5);
+        if (minCollateral != 0 && collateralReceived < minCollateral) _revert(ERR_VALIDATION, 9);
 
         // Take shares from seller
         uint256 tokenId = _getTokenId(marketId, isYes);
@@ -1028,18 +1761,22 @@ contract MasterRouter {
     }
 
     /// @notice Withdraw unfilled collateral from bid pool
+    /// @dev Auto-claims any pending shares before withdrawing to prevent loss
     function withdrawFromBidPool(
         uint256 marketId,
         bool isYes,
         uint256 priceInBps,
         uint256 collateralToWithdraw,
         address to
-    ) public nonReentrant returns (uint256 collateralWithdrawn) {
+    ) public nonReentrant returns (uint256 collateralWithdrawn, uint256 sharesClaimed) {
         if (to == address(0)) to = msg.sender;
 
         bytes32 bidPoolId = getBidPoolId(marketId, isYes, priceInBps);
         BidPool storage bidPool = bidPools[bidPoolId];
         BidPosition storage pos = bidPositions[bidPoolId][msg.sender];
+
+        // Auto-claim pending shares first to prevent loss
+        sharesClaimed = _claimBidShares(bidPool, pos);
 
         collateralWithdrawn = _withdrawFromBidPool(bidPool, pos, collateralToWithdraw);
 
@@ -1051,6 +1788,15 @@ contract MasterRouter {
         address collateral;
         (,,,,, collateral,) = PAMM.markets(marketId);
 
+        // Transfer claimed shares
+        if (sharesClaimed > 0) {
+            uint256 tokenId = _getTokenId(marketId, isYes);
+            bool success = PAMM.transfer(to, tokenId, sharesClaimed);
+            if (!success) _revert(ERR_TRANSFER, 0);
+            emit BidSharesClaimed(bidPoolId, msg.sender, sharesClaimed);
+        }
+
+        // Transfer withdrawn collateral
         if (collateral == ETH) {
             _safeTransferETH(to, collateralWithdrawn);
         } else {
@@ -1058,6 +1804,52 @@ contract MasterRouter {
         }
 
         emit BidCollateralWithdrawn(bidPoolId, msg.sender, collateralWithdrawn);
+    }
+
+    /// @notice Exit a depleted BID pool - burn LP units when no collateral remains
+    /// @dev Use when pool is fully spent (totalCollateral=0) but you still have scaled position
+    /// @param marketId Market ID
+    /// @param isYes True for YES bid pool, false for NO bid pool
+    /// @param priceInBps Price level in basis points
+    /// @param to Recipient of any pending shares
+    /// @return sharesClaimed Shares claimed from pending fills
+    function exitDepletedBidPool(uint256 marketId, bool isYes, uint256 priceInBps, address to)
+        public
+        nonReentrant
+        returns (uint256 sharesClaimed)
+    {
+        if (to == address(0)) to = msg.sender;
+
+        bytes32 bidPoolId = getBidPoolId(marketId, isYes, priceInBps);
+        BidPool storage p = bidPools[bidPoolId];
+        BidPosition storage u = bidPositions[bidPoolId][msg.sender];
+
+        // Only allowed when pool is depleted (no collateral left to withdraw)
+        if (p.totalCollateral != 0) _revert(ERR_STATE, 3);
+        if (u.scaled == 0) _revert(ERR_VALIDATION, 6);
+
+        // Claim any pending shares first
+        sharesClaimed = _claimBidShares(p, u);
+
+        // Burn all user's LP units
+        uint256 burnScaled = u.scaled;
+        u.scaled = 0;
+        u.sharesDebt = 0;
+        p.totalScaled -= burnScaled;
+
+        // Clear bitmap if pool is fully exited (no collateral and no LPs)
+        if (p.totalScaled == 0) {
+            _setPriceBit(marketId, isYes, false, priceInBps, false);
+        }
+
+        // Transfer claimed shares
+        if (sharesClaimed > 0) {
+            uint256 tokenId = _getTokenId(marketId, isYes);
+            bool success = PAMM.transfer(to, tokenId, sharesClaimed);
+            if (!success) _revert(ERR_TRANSFER, 0);
+
+            emit BidSharesClaimed(bidPoolId, msg.sender, sharesClaimed);
+        }
     }
 
     /// @notice Internal: Withdraw from bid pool
@@ -1111,10 +1903,8 @@ contract MasterRouter {
         address collateral;
         (,,,,, collateral,) = PAMM.markets(marketId);
 
-        if (collateral == ETH) {
-            if (msg.value != collateralAmount) _revert(ERR_VALIDATION, 3);
-        } else {
-            if (msg.value != 0) _revert(ERR_VALIDATION, 4);
+        _validateETHAmount(collateral, collateralAmount);
+        if (collateral != ETH) {
             _safeTransferFrom(collateral, msg.sender, address(this), collateralAmount);
             _ensureApproval(collateral, address(PM_HOOK_ROUTER));
         }
@@ -1143,16 +1933,66 @@ contract MasterRouter {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Execute multiple calls in a single transaction
+    /// @dev Tracks cumulative ETH usage to prevent msg.value double-spend attacks
     function multicall(bytes[] calldata data) public payable returns (bytes[] memory results) {
+        // Increment depth counter to enable cumulative ETH tracking
+        assembly ("memory-safe") {
+            // Prevent reentrant entry into multicall while a guarded function is executing
+            if tload(REENTRANCY_SLOT) {
+                mstore(0x00, ERR_REENTRANCY)
+                revert(0x00, 0x04)
+            }
+
+            let depth := tload(MULTICALL_DEPTH_SLOT)
+            tstore(MULTICALL_DEPTH_SLOT, add(depth, 1))
+            // If entering outermost multicall, reset ETH tracking
+            if iszero(depth) { tstore(ETH_SPENT_SLOT, 0) }
+        }
+
         results = new bytes[](data.length);
-        for (uint256 i; i < data.length; ++i) {
+        for (uint256 i; i != data.length; ++i) {
             (bool ok, bytes memory result) = address(this).delegatecall(data[i]);
-            if (!ok) {
-                assembly ("memory-safe") {
-                    revert(add(result, 0x20), mload(result))
-                }
+            assembly ("memory-safe") {
+                if iszero(ok) { revert(add(result, 0x20), mload(result)) }
             }
             results[i] = result;
+        }
+
+        // Decrement depth and handle final ETH refund if exiting outermost multicall
+        assembly ("memory-safe") {
+            let depth := sub(tload(MULTICALL_DEPTH_SLOT), 1)
+            tstore(MULTICALL_DEPTH_SLOT, depth)
+
+            // Only the outermost multicall does final refund + clears ETH tracking
+            if iszero(depth) {
+                let totalSpent := tload(ETH_SPENT_SLOT)
+                tstore(ETH_SPENT_SLOT, 0)
+
+                // Only refund if we received more ETH than spent
+                if gt(callvalue(), totalSpent) {
+                    // Set reentrancy lock before external call
+                    tstore(REENTRANCY_SLOT, address())
+                    if iszero(
+                        call(
+                            gas(),
+                            caller(),
+                            sub(callvalue(), totalSpent),
+                            codesize(),
+                            0x00,
+                            codesize(),
+                            0x00
+                        )
+                    ) {
+                        // Clear lock before revert
+                        tstore(REENTRANCY_SLOT, 0)
+                        mstore(0x00, ERR_TRANSFER)
+                        mstore(0x04, 2)
+                        revert(0x00, 0x24)
+                    }
+                    // Clear reentrancy lock after successful call
+                    tstore(REENTRANCY_SLOT, 0)
+                }
+            }
         }
     }
 
@@ -1246,7 +2086,7 @@ contract MasterRouter {
     /// @param pricesInBps Array of prices to query (in basis points)
     /// @return depths Array of available shares at each price level
     function getPoolDepths(uint256 marketId, bool isYes, uint256[] calldata pricesInBps)
-        external
+        public
         view
         returns (uint256[] memory depths)
     {
@@ -1263,7 +2103,7 @@ contract MasterRouter {
     /// @param pricesInBps Array of prices to query (in basis points)
     /// @return depths Array of available collateral at each price level
     function getBidPoolDepths(uint256 marketId, bool buyYes, uint256[] calldata pricesInBps)
-        external
+        public
         view
         returns (uint256[] memory depths)
     {
@@ -1282,7 +2122,7 @@ contract MasterRouter {
     /// @return askDepths Shares available for sale at each price (ASK pools)
     /// @return bidDepths Collateral available to buy at each price (BID pools)
     function getOrderbook(uint256 marketId, bool isYes, uint256[] calldata pricesInBps)
-        external
+        public
         view
         returns (uint256[] memory askDepths, uint256[] memory bidDepths)
     {
@@ -1303,7 +2143,7 @@ contract MasterRouter {
     /// @return totalScaled Total LP units issued
     /// @return collateralEarned Total collateral collected from fills
     function getPoolInfo(uint256 marketId, bool isYes, uint256 priceInBps)
-        external
+        public
         view
         returns (uint256 totalShares, uint256 totalScaled, uint256 collateralEarned)
     {
@@ -1317,7 +2157,7 @@ contract MasterRouter {
     /// @return totalScaled Total LP units issued
     /// @return sharesAcquired Total shares bought from fills
     function getBidPoolInfo(uint256 marketId, bool buyYes, uint256 priceInBps)
-        external
+        public
         view
         returns (uint256 totalCollateral, uint256 totalScaled, uint256 sharesAcquired)
     {
@@ -1336,7 +2176,7 @@ contract MasterRouter {
     /// @return price Best ask price in bps (0 if no asks)
     /// @return depth Shares available at best price
     function getBestAsk(uint256 marketId, bool isYes)
-        external
+        public
         view
         returns (uint256 price, uint256 depth)
     {
@@ -1362,7 +2202,7 @@ contract MasterRouter {
     /// @return price Best bid price in bps (0 if no bids)
     /// @return depth Collateral available at best price
     function getBestBid(uint256 marketId, bool buyYes)
-        external
+        public
         view
         returns (uint256 price, uint256 depth)
     {
@@ -1389,7 +2229,7 @@ contract MasterRouter {
     /// @return bestAskPrice Lowest ask price (0 if none)
     /// @return bestAskDepth Shares at best ask
     function getSpread(uint256 marketId, bool isYes)
-        external
+        public
         view
         returns (
             uint256 bestBidPrice,
@@ -1438,395 +2278,8 @@ contract MasterRouter {
         }
     }
 
-    /// @notice Get all active price levels with depth (for orderbook UI)
-    /// @dev Scans bitmap and returns non-zero price levels up to maxLevels (capped at 50)
-    /// @param marketId The market ID
-    /// @param isYes True for YES side, false for NO side
-    /// @param maxLevels Maximum price levels per side (capped at 50)
-    /// @return askPrices Active ask prices (ascending)
-    /// @return askDepths Shares at each ask price
-    /// @return bidPrices Active bid prices (descending)
-    /// @return bidDepths Collateral at each bid price
-    function getActiveLevels(uint256 marketId, bool isYes, uint256 maxLevels)
-        external
-        view
-        returns (
-            uint256[] memory askPrices,
-            uint256[] memory askDepths,
-            uint256[] memory bidPrices,
-            uint256[] memory bidDepths
-        )
-    {
-        // Cap to prevent excessive memory allocation
-        if (maxLevels > 50) maxLevels = 50;
-
-        // Allocate arrays (will resize via assembly)
-        askPrices = new uint256[](maxLevels);
-        askDepths = new uint256[](maxLevels);
-        bidPrices = new uint256[](maxLevels);
-        bidDepths = new uint256[](maxLevels);
-
-        uint256 askCount;
-        uint256 bidCount;
-
-        // Scan asks (low to high)
-        bytes32 askKey = _getBitmapKey(marketId, isYes, true);
-        for (uint256 bucket; bucket < 40 && askCount < maxLevels; ++bucket) {
-            uint256 bits = priceBitmap[askKey][bucket];
-            while (bits != 0 && askCount < maxLevels) {
-                uint256 bit = _lowestSetBit(bits);
-                uint256 price = (bucket << 8) | bit;
-                uint256 depth = pools[getPoolId(marketId, isYes, price)].totalShares;
-                if (depth > 0) {
-                    askPrices[askCount] = price;
-                    askDepths[askCount] = depth;
-                    ++askCount;
-                }
-                bits &= bits - 1; // Clear lowest bit
-            }
-        }
-
-        // Scan bids (high to low)
-        bytes32 bidKey = _getBitmapKey(marketId, isYes, false);
-        for (uint256 i = 40; i > 0 && bidCount < maxLevels; --i) {
-            uint256 bucket = i - 1;
-            uint256 bits = priceBitmap[bidKey][bucket];
-            while (bits != 0 && bidCount < maxLevels) {
-                uint256 bit = _highestSetBit(bits);
-                uint256 price = (bucket << 8) | bit;
-                uint256 depth = bidPools[getBidPoolId(marketId, isYes, price)].totalCollateral;
-                if (depth > 0) {
-                    bidPrices[bidCount] = price;
-                    bidDepths[bidCount] = depth;
-                    ++bidCount;
-                }
-                bits &= ~(1 << bit); // Clear highest bit
-            }
-        }
-
-        // Resize arrays to actual count
-        assembly ("memory-safe") {
-            mstore(askPrices, askCount)
-            mstore(askDepths, askCount)
-            mstore(bidPrices, bidCount)
-            mstore(bidDepths, bidCount)
-        }
-    }
-
-    /// @notice Get all active positions for a user on a market side (for "My Orders" UI)
-    /// @dev Scans bitmap for active pools and checks user's position at each.
-    ///      NOTE: Only finds positions at pools with active liquidity. For fully-depleted
-    ///      pools where user has unclaimed proceeds, use getUserPosition() with specific price
-    ///      or index MintAndPool/BidPoolCreated events for complete coverage.
-    /// @param marketId The market ID
-    /// @param isYes True for YES side, false for NO side
-    /// @param user Address to check positions for
-    /// @return askPrices Prices where user has ASK positions (selling shares)
-    /// @return askShares Withdrawable shares at each ASK price
-    /// @return askPendingColl Pending collateral earnings at each ASK price
-    /// @return bidPrices Prices where user has BID positions (buying shares)
-    /// @return bidCollateral Withdrawable collateral at each BID price
-    /// @return bidPendingShares Pending shares at each BID price
-    function getUserActivePositions(uint256 marketId, bool isYes, address user)
-        external
-        view
-        returns (
-            uint256[] memory askPrices,
-            uint256[] memory askShares,
-            uint256[] memory askPendingColl,
-            uint256[] memory bidPrices,
-            uint256[] memory bidCollateral,
-            uint256[] memory bidPendingShares
-        )
-    {
-        // Cap at 50 positions per side (same as getActiveLevels)
-        uint256 maxPositions = 50;
-
-        askPrices = new uint256[](maxPositions);
-        askShares = new uint256[](maxPositions);
-        askPendingColl = new uint256[](maxPositions);
-        bidPrices = new uint256[](maxPositions);
-        bidCollateral = new uint256[](maxPositions);
-        bidPendingShares = new uint256[](maxPositions);
-
-        uint256 askCount;
-        uint256 bidCount;
-
-        // Scan ASK pools (user selling shares)
-        bytes32 askKey = _getBitmapKey(marketId, isYes, true);
-        for (uint256 bucket; bucket < 40 && askCount < maxPositions; ++bucket) {
-            uint256 bits = priceBitmap[askKey][bucket];
-            while (bits != 0 && askCount < maxPositions) {
-                uint256 bit = _lowestSetBit(bits);
-                uint256 price = (bucket << 8) | bit;
-
-                bytes32 poolId = getPoolId(marketId, isYes, price);
-                UserPosition storage pos = positions[poolId][user];
-
-                if (pos.scaled > 0) {
-                    Pool storage pool = pools[poolId];
-
-                    // Calculate withdrawable shares
-                    uint256 withdrawable = pool.totalScaled > 0
-                        ? mulDiv(pos.scaled, pool.totalShares, pool.totalScaled)
-                        : 0;
-
-                    // Calculate pending collateral
-                    uint256 accumulated = mulDiv(pos.scaled, pool.accCollPerScaled, ACC);
-                    uint256 pending = accumulated > pos.collDebt ? accumulated - pos.collDebt : 0;
-
-                    askPrices[askCount] = price;
-                    askShares[askCount] = withdrawable;
-                    askPendingColl[askCount] = pending;
-                    ++askCount;
-                }
-
-                bits &= bits - 1;
-            }
-        }
-
-        // Scan BID pools (user buying shares)
-        bytes32 bidKey = _getBitmapKey(marketId, isYes, false);
-        for (uint256 bucket; bucket < 40 && bidCount < maxPositions; ++bucket) {
-            uint256 bits = priceBitmap[bidKey][bucket];
-            while (bits != 0 && bidCount < maxPositions) {
-                uint256 bit = _lowestSetBit(bits);
-                uint256 price = (bucket << 8) | bit;
-
-                bytes32 bidPoolId = getBidPoolId(marketId, isYes, price);
-                BidPosition storage pos = bidPositions[bidPoolId][user];
-
-                if (pos.scaled > 0) {
-                    BidPool storage bidPool = bidPools[bidPoolId];
-
-                    // Calculate withdrawable collateral
-                    uint256 withdrawable = bidPool.totalScaled > 0
-                        ? mulDiv(pos.scaled, bidPool.totalCollateral, bidPool.totalScaled)
-                        : 0;
-
-                    // Calculate pending shares
-                    uint256 accumulated = mulDiv(pos.scaled, bidPool.accSharesPerScaled, ACC);
-                    uint256 pending =
-                        accumulated > pos.sharesDebt ? accumulated - pos.sharesDebt : 0;
-
-                    bidPrices[bidCount] = price;
-                    bidCollateral[bidCount] = withdrawable;
-                    bidPendingShares[bidCount] = pending;
-                    ++bidCount;
-                }
-
-                bits &= bits - 1;
-            }
-        }
-
-        // Resize arrays
-        assembly ("memory-safe") {
-            mstore(askPrices, askCount)
-            mstore(askShares, askCount)
-            mstore(askPendingColl, askCount)
-            mstore(bidPrices, bidCount)
-            mstore(bidCollateral, bidCount)
-            mstore(bidPendingShares, bidCount)
-        }
-    }
-
-    /// @notice Batch query user positions at specific prices (for complete coverage with event indexing)
-    /// @dev Use with prices from indexed MintAndPool/BidPoolCreated events for depleted pools
-    /// @param marketId The market ID
-    /// @param isYes True for YES side, false for NO side
-    /// @param user Address to check
-    /// @param prices Array of prices to check (from event index)
-    /// @return askShares Withdrawable shares at each price (0 if no position)
-    /// @return askPending Pending collateral at each price
-    /// @return bidCollateral Withdrawable collateral at each price (0 if no position)
-    /// @return bidPending Pending shares at each price
-    function getUserPositionsBatch(
-        uint256 marketId,
-        bool isYes,
-        address user,
-        uint256[] calldata prices
-    )
-        external
-        view
-        returns (
-            uint256[] memory askShares,
-            uint256[] memory askPending,
-            uint256[] memory bidCollateral,
-            uint256[] memory bidPending
-        )
-    {
-        uint256 len = prices.length;
-        askShares = new uint256[](len);
-        askPending = new uint256[](len);
-        bidCollateral = new uint256[](len);
-        bidPending = new uint256[](len);
-
-        for (uint256 i; i < len; ++i) {
-            uint256 price = prices[i];
-
-            // Check ASK position
-            bytes32 poolId = getPoolId(marketId, isYes, price);
-            UserPosition storage askPos = positions[poolId][user];
-            if (askPos.scaled > 0) {
-                Pool storage pool = pools[poolId];
-                askShares[i] = pool.totalScaled > 0
-                    ? mulDiv(askPos.scaled, pool.totalShares, pool.totalScaled)
-                    : 0;
-                uint256 acc = mulDiv(askPos.scaled, pool.accCollPerScaled, ACC);
-                askPending[i] = acc > askPos.collDebt ? acc - askPos.collDebt : 0;
-            }
-
-            // Check BID position
-            bytes32 bidPoolId = getBidPoolId(marketId, isYes, price);
-            BidPosition storage bidPos = bidPositions[bidPoolId][user];
-            if (bidPos.scaled > 0) {
-                BidPool storage bidPool = bidPools[bidPoolId];
-                bidCollateral[i] = bidPool.totalScaled > 0
-                    ? mulDiv(bidPos.scaled, bidPool.totalCollateral, bidPool.totalScaled)
-                    : 0;
-                uint256 acc = mulDiv(bidPos.scaled, bidPool.accSharesPerScaled, ACC);
-                bidPending[i] = acc > bidPos.sharesDebt ? acc - bidPos.sharesDebt : 0;
-            }
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                          QUOTE / SIMULATION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Simulate buying shares from ASK pools (sellers)
-    /// @param marketId Market to buy in
-    /// @param isYes True for YES shares, false for NO shares
-    /// @param collateralIn Amount of collateral to spend
-    /// @return sharesOut Total shares that would be received
-    /// @return avgPrice Weighted average fill price in bps
-    /// @return levelsFilled Number of price levels touched
-    /// @dev Uses ceiling division for cost (matches actual fillFromPool behavior)
-    function quoteBuyFromPools(uint256 marketId, bool isYes, uint256 collateralIn)
-        external
-        view
-        returns (uint256 sharesOut, uint256 avgPrice, uint256 levelsFilled)
-    {
-        if (collateralIn == 0) return (0, 0, 0);
-
-        bytes32 bitmapKey = _getBitmapKey(marketId, isYes, true);
-        uint256 remaining = collateralIn;
-        uint256 totalCollateralSpent;
-
-        // Scan from lowest ask price upward
-        for (uint256 bucket; bucket < 40 && remaining > 0; ++bucket) {
-            uint256 word = priceBitmap[bitmapKey][bucket];
-            while (word != 0 && remaining > 0) {
-                uint256 bit = _lowestSetBit(word);
-                uint256 price = (bucket << 8) | bit;
-                word &= ~(1 << bit);
-
-                if (price == 0 || price >= BPS_DENOM) continue;
-
-                bytes32 poolId = getPoolId(marketId, isYes, price);
-                Pool storage pool = pools[poolId];
-                uint256 depth = pool.totalShares;
-                if (depth == 0) continue;
-
-                // Cost to fill entire pool at this price (ceiling to match actual fills)
-                uint256 costToFill = mulDivUp(depth, price, BPS_DENOM);
-
-                if (remaining >= costToFill) {
-                    // Fill entire pool
-                    sharesOut += depth;
-                    totalCollateralSpent += costToFill;
-                    remaining -= costToFill;
-                    ++levelsFilled;
-                } else {
-                    // Partial fill - floor division for shares (buyer gets fewer)
-                    uint256 sharesBought = mulDiv(remaining, BPS_DENOM, price);
-                    sharesOut += sharesBought;
-                    totalCollateralSpent += remaining;
-                    remaining = 0;
-                    ++levelsFilled;
-                }
-            }
-        }
-
-        if (sharesOut > 0) {
-            avgPrice = mulDivUp(totalCollateralSpent, BPS_DENOM, sharesOut);
-        }
-    }
-
-    /// @notice Simulate selling shares to BID pools (buyers)
-    /// @param marketId Market to sell in
-    /// @param isYes True for YES shares, false for NO shares
-    /// @param sharesIn Amount of shares to sell
-    /// @return collateralOut Total collateral that would be received
-    /// @return avgPrice Weighted average fill price in bps
-    /// @return levelsFilled Number of price levels touched
-    /// @dev Uses ceiling division for collateral received (matches actual sellToPool behavior)
-    function quoteSellToPools(uint256 marketId, bool isYes, uint256 sharesIn)
-        external
-        view
-        returns (uint256 collateralOut, uint256 avgPrice, uint256 levelsFilled)
-    {
-        if (sharesIn == 0) return (0, 0, 0);
-
-        bytes32 bitmapKey = _getBitmapKey(marketId, isYes, false); // false = BID
-        uint256 remaining = sharesIn;
-        uint256 totalSharesSold;
-
-        // Scan from highest bid price downward
-        for (uint256 b; b < 40 && remaining > 0; ++b) {
-            uint256 bucket = 39 - b;
-            uint256 word = priceBitmap[bitmapKey][bucket];
-            while (word != 0 && remaining > 0) {
-                uint256 bit = _highestSetBit(word);
-                uint256 price = (bucket << 8) | bit;
-                word &= ~(1 << bit);
-
-                if (price == 0 || price >= BPS_DENOM) continue;
-
-                bytes32 bidPoolId = getBidPoolId(marketId, isYes, price);
-                BidPool storage bidPool = bidPools[bidPoolId];
-                uint256 collateralDepth = bidPool.totalCollateral;
-                if (collateralDepth == 0) continue;
-
-                // Max shares this pool can buy at its price (floor - pool can afford fewer)
-                uint256 maxShares = mulDiv(collateralDepth, BPS_DENOM, price);
-
-                if (remaining >= maxShares) {
-                    // Fill entire pool
-                    collateralOut += collateralDepth;
-                    totalSharesSold += maxShares;
-                    remaining -= maxShares;
-                    ++levelsFilled;
-                } else {
-                    // Partial fill (ceiling to match actual sellToPool)
-                    uint256 collateralReceived = mulDivUp(remaining, price, BPS_DENOM);
-                    collateralOut += collateralReceived;
-                    totalSharesSold += remaining;
-                    remaining = 0;
-                    ++levelsFilled;
-                }
-            }
-        }
-
-        if (totalSharesSold > 0) {
-            avgPrice = mulDivUp(collateralOut, BPS_DENOM, totalSharesSold);
-        }
-    }
-
-    /// @notice Get basic market information for display
-    /// @param marketId Market to query
-    /// @return collateral Token address (address(0) for ETH)
-    /// @return closeTime Unix timestamp when market closes
-    /// @return tradingOpen Whether trading is currently allowed
-    /// @return resolved Whether market has been resolved
-    function getMarketInfo(uint256 marketId)
-        external
-        view
-        returns (address collateral, uint64 closeTime, bool tradingOpen, bool resolved)
-    {
-        (, resolved,,, closeTime, collateral,) = PAMM.markets(marketId);
-        tradingOpen = PAMM.tradingOpen(marketId);
-    }
+    // NOTE: getActiveLevels, getUserActivePositions, getUserPositionsBatch moved to PMHookQuoter
+    // to keep MasterRouter under bytecode limit
 
     /*//////////////////////////////////////////////////////////////
                           INTERNAL HELPERS

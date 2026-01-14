@@ -58,7 +58,7 @@ contract PMHookRouterQuoteTest is Test {
         hook.transferOwnership(address(router));
 
         // Deploy quoter
-        quoter = new PMHookQuoter(address(router));
+        quoter = new PMHookQuoter(address(router), address(0));
 
         ALICE = makeAddr("ALICE");
         BOB = makeAddr("BOB");
@@ -634,5 +634,65 @@ contract PMHookRouterQuoteTest is Test {
         assertEq(quotedSource, actualSource, "Quote source should match actual source");
 
         console.log("PASS: Sell quote matches execution");
+    }
+
+    /// @notice Test that AMM buy quote matches router execution (validates rIn/rOut fix)
+    function test_QuoteAMMBuy_MatchesExecution() public {
+        _bootstrapMarket();
+
+        console.log("=== AMM BUY QUOTE VS EXECUTION ===");
+
+        // Wait for TWAP
+        vm.warp(block.timestamp + 35 minutes);
+        vm.roll(block.number + 175);
+        router.updateTWAPObservation(marketId);
+
+        // Deplete vault to force AMM-only path
+        vm.startPrank(BOB);
+        PAMM.split{value: 500 ether}(marketId, 500 ether, BOB);
+        PAMM.setOperator(address(router), true);
+        // Create imbalanced vault (3x+ ratio prevents mint)
+        router.depositToVault(marketId, true, 400 ether, BOB, block.timestamp + 7 hours);
+        vm.stopPrank();
+
+        // Buy multiple times to deplete vault OTC
+        for (uint256 i = 0; i < 5; i++) {
+            vm.prank(ALICE);
+            try router.buyWithBootstrap{value: 20 ether}(
+                marketId, true, 20 ether, 0, ALICE, block.timestamp + 1 hours
+            ) {}
+                catch {}
+        }
+
+        // Now quote and execute a small AMM buy
+        uint256 buyAmount = 5 ether;
+        (uint256 quotedShares, bool usesVault, bytes4 source,) =
+            quoter.quoteBootstrapBuy(marketId, true, buyAmount, 0);
+
+        console.log("Quoted shares:", quotedShares);
+        console.log("Uses vault:", usesVault);
+        console.log("Source:", string(abi.encodePacked(source)));
+
+        vm.prank(BOB);
+        (uint256 actualShares, bytes4 actualSource,) = router.buyWithBootstrap{value: buyAmount}(
+            marketId, true, buyAmount, 0, BOB, block.timestamp + 1 hours
+        );
+
+        console.log("Actual shares:", actualShares);
+        console.log("Actual source:", string(abi.encodePacked(actualSource)));
+
+        // Key assertion: quote should match execution within tolerance
+        if (quotedShares > 0 && actualShares > 0) {
+            uint256 diff = quotedShares > actualShares
+                ? quotedShares - actualShares
+                : actualShares - quotedShares;
+            uint256 percentDiff = (diff * 100) / actualShares;
+            console.log("Difference (%):", percentDiff);
+
+            // After fix, AMM quotes should match execution closely
+            assertLe(percentDiff, 10, "AMM quote should be within 10% of actual");
+        }
+
+        console.log("PASS: AMM buy quote matches execution");
     }
 }

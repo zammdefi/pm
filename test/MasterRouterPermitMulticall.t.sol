@@ -297,7 +297,7 @@ contract MasterRouterPermitMulticallTest is Test {
             router.permit.selector, address(token), bob, collateralNeeded, deadline, v, r, s
         );
         calls[1] = abi.encodeWithSelector(
-            router.fillFromPool.selector, tokenMarketId, false, 5000, amount, bob
+            router.fillFromPool.selector, tokenMarketId, false, 5000, amount, 0, bob, 0
         );
 
         vm.prank(bob);
@@ -398,7 +398,7 @@ contract MasterRouterPermitMulticallTest is Test {
             router.permitDAI.selector, address(dai), bob, nonce, expiry, true, v, r, s
         );
         calls[1] = abi.encodeWithSelector(
-            router.fillFromPool.selector, daiMarketId, false, 5000, amount, bob
+            router.fillFromPool.selector, daiMarketId, false, 5000, amount, 0, bob, 0
         );
 
         vm.prank(bob);
@@ -443,7 +443,7 @@ contract MasterRouterPermitMulticallTest is Test {
             router.permit.selector, address(token), bob, bobCollateral, deadline2, v2, r2, s2
         );
         calls2[1] = abi.encodeWithSelector(
-            router.fillFromPool.selector, tokenMarketId, false, 5000, bobAmount, bob
+            router.fillFromPool.selector, tokenMarketId, false, 5000, bobAmount, 0, bob, 0
         );
 
         vm.prank(bob);

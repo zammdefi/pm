@@ -35,7 +35,7 @@ contract BugFixVerificationTest is Test {
         vm.prank(alice);
         router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         (,, uint256 pendingBefore,) = router.getUserPosition(marketId, false, 5000, alice);
         assertEq(pendingBefore, 25 ether, "Should have 25 ETH pending");
@@ -58,7 +58,7 @@ contract BugFixVerificationTest is Test {
         vm.prank(alice);
         router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         (,, uint256 pendingBefore,) = router.getUserPosition(marketId, false, 5000, alice);
         assertEq(pendingBefore, 25 ether);
@@ -88,7 +88,7 @@ contract BugFixVerificationTest is Test {
         vm.prank(seller);
         pamm.setOperator(address(router), true);
         vm.prank(seller);
-        router.sellToPool(marketId, true, 5000, 50 ether, seller);
+        router.sellToPool(marketId, true, 5000, 50 ether, 0, seller, 0);
 
         (,, uint256 pendingBefore,) = router.getBidPosition(marketId, true, 5000, alice);
         assertEq(pendingBefore, 50 ether, "Should have 50 shares pending");
@@ -116,7 +116,7 @@ contract BugFixVerificationTest is Test {
         vm.prank(seller);
         pamm.setOperator(address(router), true);
         vm.prank(seller);
-        router.sellToPool(marketId, true, 5000, 50 ether, seller);
+        router.sellToPool(marketId, true, 5000, 50 ether, 0, seller, 0);
 
         (,, uint256 pendingBefore,) = router.getBidPosition(marketId, true, 5000, alice);
         assertEq(pendingBefore, 50 ether);

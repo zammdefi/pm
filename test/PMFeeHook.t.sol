@@ -2724,6 +2724,65 @@ contract PMFeeHookTest is Test {
         console.log("registerMarket unauthorized reverts: passed");
     }
 
+    /// @notice Test that PMFeeHook's internal _getNoId matches PAMM.getNoId
+    /// @dev This verifies the optimization we made to avoid external call
+    function test_GetNoId_MatchesPAMM() public {
+        // Test with multiple market IDs
+        uint256[] memory testIds = new uint256[](6);
+        testIds[0] = 0;
+        testIds[1] = 1;
+        testIds[2] = 42;
+        testIds[3] = 1000;
+        testIds[4] = type(uint256).max;
+        testIds[5] = 0x123456789abcdef;
+
+        for (uint256 i = 0; i < testIds.length; i++) {
+            uint256 testMarketId = testIds[i];
+            uint256 pammResult = PAMM.getNoId(testMarketId);
+            uint256 localResult = _getNoIdLocal(testMarketId);
+
+            assertEq(localResult, pammResult, "PMFeeHook _getNoId must match PAMM.getNoId");
+        }
+
+        console.log("_getNoId matches PAMM.getNoId for all test cases: passed");
+    }
+
+    /// @notice Fuzz test that _getNoId always matches PAMM.getNoId
+    function testFuzz_GetNoId_MatchesPAMM(uint256 testMarketId) public view {
+        uint256 pammResult = PAMM.getNoId(testMarketId);
+        uint256 localResult = _getNoIdLocal(testMarketId);
+
+        assertEq(localResult, pammResult, "PMFeeHook _getNoId must match PAMM.getNoId");
+    }
+
+    /// @notice Test that yesIsToken0 is correctly set based on _getNoId
+    function test_YesIsToken0_CorrectlyDerived() public {
+        marketId = _createMarket("YesIsToken0 Test", block.timestamp + 7 days);
+        poolId = hook.registerMarket(marketId);
+
+        // Get noId from PAMM to verify
+        uint256 pammNoId = PAMM.getNoId(marketId);
+        bool expectedYesIsToken0 = marketId < pammNoId;
+
+        (, bool active, bool actualYesIsToken0) = hook.meta(poolId);
+        assertTrue(active, "Pool should be active");
+        assertEq(actualYesIsToken0, expectedYesIsToken0, "yesIsToken0 should match marketId < noId");
+
+        console.log("yesIsToken0 correctly derived: passed");
+        console.log("  marketId:", marketId);
+        console.log("  noId:", pammNoId);
+        console.log("  yesIsToken0:", actualYesIsToken0);
+    }
+
+    /// @dev Local copy of _getNoId for testing (matches PMFeeHook's implementation)
+    function _getNoIdLocal(uint256 testMarketId) internal pure returns (uint256 result) {
+        assembly ("memory-safe") {
+            mstore(0x00, 0x504d41524b45543a4e4f00000000000000000000000000000000000000000000)
+            mstore(0x0a, testMarketId)
+            result := keccak256(0x00, 0x2a)
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                     CONFIG VALIDATION EDGE CASES
     //////////////////////////////////////////////////////////////*/

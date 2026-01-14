@@ -102,7 +102,7 @@ contract MasterRouterFuzzTest is Test {
         (uint256 sharesBought, uint256 collateralPaid) = router.fillFromPool{
             value: collateralNeeded
         }(
-            marketId, false, priceBps, fillAmount, TAKER
+            marketId, false, priceBps, fillAmount, 0, TAKER, 0
         );
 
         // Verify fill
@@ -132,7 +132,7 @@ contract MasterRouterFuzzTest is Test {
 
         // Withdraw
         vm.prank(ALICE);
-        uint256 withdrawn =
+        (uint256 withdrawn,) =
             router.withdrawFromPool(marketId, false, priceBps, withdrawAmount, ALICE);
 
         // Verify withdrawal
@@ -168,7 +168,9 @@ contract MasterRouterFuzzTest is Test {
 
         // Fill
         vm.prank(TAKER);
-        router.fillFromPool{value: collateralNeeded}(marketId, false, priceBps, fillAmount, TAKER);
+        router.fillFromPool{value: collateralNeeded}(
+            marketId, false, priceBps, fillAmount, 0, TAKER, 0
+        );
 
         // Check pending before claim (allow small rounding)
         (,, uint256 pending,) = router.getUserPosition(marketId, false, priceBps, ALICE);
@@ -244,7 +246,9 @@ contract MasterRouterFuzzTest is Test {
             if (collateral > 0) {
                 vm.deal(TAKER, collateral);
                 vm.prank(TAKER);
-                router.fillFromPool{value: collateral}(marketId, false, priceBps, fillAmount, TAKER);
+                router.fillFromPool{value: collateral}(
+                    marketId, false, priceBps, fillAmount, 0, TAKER, 0
+                );
             }
         }
 
@@ -289,7 +293,7 @@ contract MasterRouterFuzzTest is Test {
         vm.deal(TAKER, collateral);
 
         vm.prank(TAKER);
-        router.fillFromPool{value: collateral}(marketId, false, priceBps, fillAmount, TAKER);
+        router.fillFromPool{value: collateral}(marketId, false, priceBps, fillAmount, 0, TAKER, 0);
 
         // Claim both
         vm.prank(ALICE);
@@ -336,7 +340,7 @@ contract MasterRouterFuzzTest is Test {
         vm.deal(TAKER, collateral);
 
         vm.prank(TAKER);
-        router.fillFromPool{value: collateral}(marketId, false, priceBps, fillAmount, TAKER);
+        router.fillFromPool{value: collateral}(marketId, false, priceBps, fillAmount, 0, TAKER, 0);
 
         // Check pending proportions
         (,, uint256 alicePending,) = router.getUserPosition(marketId, false, priceBps, ALICE);
@@ -373,7 +377,7 @@ contract MasterRouterFuzzTest is Test {
         vm.deal(TAKER, collateral);
 
         vm.prank(TAKER);
-        router.fillFromPool{value: collateral}(marketId, false, priceBps, fillAmount, TAKER);
+        router.fillFromPool{value: collateral}(marketId, false, priceBps, fillAmount, 0, TAKER, 0);
 
         // Claim BEFORE withdraw (allow rounding)
         vm.prank(ALICE);
@@ -384,7 +388,8 @@ contract MasterRouterFuzzTest is Test {
         (, uint256 withdrawable,,) = router.getUserPosition(marketId, false, priceBps, ALICE);
 
         vm.prank(ALICE);
-        uint256 withdrawn = router.withdrawFromPool(marketId, false, priceBps, withdrawable, ALICE);
+        (uint256 withdrawn,) =
+            router.withdrawFromPool(marketId, false, priceBps, withdrawable, ALICE);
         assertEq(withdrawn, withdrawable, "Withdrew all remaining");
 
         // Verify final state
@@ -417,7 +422,9 @@ contract MasterRouterFuzzTest is Test {
 
             vm.deal(TAKER, collateral);
             vm.prank(TAKER);
-            router.fillFromPool{value: collateral}(marketId, false, priceBps, fillPerRound, TAKER);
+            router.fillFromPool{value: collateral}(
+                marketId, false, priceBps, fillPerRound, 0, TAKER, 0
+            );
 
             totalCollateral += collateral;
         }

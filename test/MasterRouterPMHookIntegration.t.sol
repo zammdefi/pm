@@ -223,7 +223,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
         // Bob fills from pool
         vm.prank(bob);
         (uint256 bought, uint256 paid) =
-            router.fillFromPool{value: 4 ether}(marketId, false, 4000, 10 ether, bob);
+            router.fillFromPool{value: 4 ether}(marketId, false, 4000, 10 ether, 0, bob, 0);
 
         assertEq(bought, 10 ether, "Should buy 10 NO shares");
         assertEq(paid, 4 ether, "Should pay 4 ETH (10 * 0.40)");
@@ -237,7 +237,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         // Bob fills
         vm.prank(bob);
-        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, 0, bob, 0);
 
         // Alice claims
         uint256 aliceBalBefore = alice.balance;
@@ -255,7 +255,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         // Bob fills half
         vm.prank(bob);
-        router.fillFromPool{value: 2.5 ether}(marketId, false, 5000, 5 ether, bob);
+        router.fillFromPool{value: 2.5 ether}(marketId, false, 5000, 5 ether, 0, bob, 0);
 
         // Alice claims first (required before withdraw)
         vm.prank(alice);
@@ -263,7 +263,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         // Alice withdraws remaining
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 0, alice);
+        (uint256 withdrawn,) = router.withdrawFromPool(marketId, false, 5000, 0, alice);
 
         assertEq(withdrawn, 5 ether, "Alice should withdraw 5 NO shares");
         assertEq(pamm.balanceOf(alice, noId), 5 ether, "Alice should have NO tokens");
@@ -283,7 +283,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         // Carol fills everything
         vm.prank(carol);
-        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, carol);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, 0, carol, 0);
 
         // Both should be able to claim proportionally
         vm.prank(alice);
@@ -308,7 +308,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         // Carol fills 10 (half the pool)
         vm.prank(carol);
-        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, carol);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, 0, carol, 0);
 
         // Alice claims her share (2.5 ETH = 50% of 5 ETH)
         vm.prank(alice);
@@ -317,7 +317,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         // Alice withdraws remaining shares
         vm.prank(alice);
-        uint256 aliceWithdrawn = router.withdrawFromPool(marketId, false, 5000, 0, alice);
+        (uint256 aliceWithdrawn,) = router.withdrawFromPool(marketId, false, 5000, 0, alice);
         assertEq(aliceWithdrawn, 5 ether, "Alice withdraws 5 NO shares");
 
         // Bob can still claim his share
@@ -342,13 +342,13 @@ contract MasterRouterPMHookIntegrationTest is Test {
         // Carol buys from cheaper tier first
         vm.prank(carol);
         (uint256 bought1,) =
-            router.fillFromPool{value: 2 ether}(marketId, false, 4000, 5 ether, carol);
+            router.fillFromPool{value: 2 ether}(marketId, false, 4000, 5 ether, 0, carol, 0);
         assertEq(bought1, 5 ether, "Should buy all 5 shares at 40%");
 
         // Carol buys from more expensive tier
         vm.prank(carol);
         (uint256 bought2,) =
-            router.fillFromPool{value: 3 ether}(marketId, false, 6000, 5 ether, carol);
+            router.fillFromPool{value: 3 ether}(marketId, false, 6000, 5 ether, 0, carol, 0);
         assertEq(bought2, 5 ether, "Should buy all 5 shares at 60%");
 
         // Verify claims
@@ -371,7 +371,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         vm.prank(bob);
         vm.expectRevert();
-        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, 0, bob, 0);
     }
 
     function test_revert_withdrawMoreThanOwned() public {
@@ -407,7 +407,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
         router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
 
         vm.prank(bob);
-        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, 0, bob, 0);
     }
 
     function testGas_claimProceeds() public {
@@ -415,7 +415,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
         router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, alice);
 
         vm.prank(bob);
-        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, bob);
+        router.fillFromPool{value: 5 ether}(marketId, false, 5000, 10 ether, 0, bob, 0);
 
         vm.prank(alice);
         router.claimProceeds(marketId, false, 5000, alice);
@@ -444,7 +444,6 @@ contract MasterRouterPMHookIntegrationTest is Test {
             5 ether, // collateralIn
             0, // minSharesOut
             0, // poolPriceInBps (0 = skip pool)
-            0, // feeOrHook (deprecated)
             alice,
             0 // deadline
         );
@@ -459,7 +458,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
     function test_sell_routesThroughPMHookRouter() public {
         // First, alice gets some YES shares
         vm.prank(alice);
-        router.buy{value: 10 ether}(marketId, true, 10 ether, 0, 0, 0, alice, 0);
+        router.buy{value: 10 ether}(marketId, true, 10 ether, 0, 0, alice, 0);
 
         uint256 aliceYesBefore = pamm.balanceOf(alice, marketId);
         assertGt(aliceYesBefore, 0, "Alice should have YES shares");
@@ -476,7 +475,6 @@ contract MasterRouterPMHookIntegrationTest is Test {
             aliceYesBefore, // sharesIn
             0, // minCollateralOut
             0, // bidPoolPriceInBps (0 = skip bid pool)
-            0, // feeOrHook (deprecated)
             alice,
             0 // deadline
         );
@@ -494,7 +492,7 @@ contract MasterRouterPMHookIntegrationTest is Test {
 
         // Alice gets YES shares
         vm.prank(alice);
-        router.buy{value: 10 ether}(marketId, true, 10 ether, 0, 0, 0, alice, 0);
+        router.buy{value: 10 ether}(marketId, true, 10 ether, 0, 0, alice, 0);
 
         uint256 aliceYes = pamm.balanceOf(alice, marketId);
 
@@ -510,7 +508,6 @@ contract MasterRouterPMHookIntegrationTest is Test {
             aliceYes, // sharesIn
             0, // minCollateralOut
             6000, // bidPoolPriceInBps (try Carol's bid pool)
-            0,
             alice,
             0
         );
@@ -535,7 +532,6 @@ contract MasterRouterPMHookIntegrationTest is Test {
             10 ether, // collateralIn
             0, // minSharesOut
             4000, // poolPriceInBps (try Alice's pool)
-            0,
             bob,
             0
         );
@@ -564,13 +560,98 @@ contract MasterRouterPMHookIntegrationTest is Test {
                     REGRESSION TESTS FOR BUG FIXES
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Regression test: buy() must properly handle ETH refunds from PMHookRouter
+    /// @dev When PMHookRouter does a partial fill and refunds unused ETH, MasterRouter must
+    ///      detect this and update ETH tracking so the user gets their refund.
+    ///      BUG: The old code checked (balanceAfter > balanceBefore) which is NEVER true
+    ///      because we sent ETH out. Fix: check (balanceAfter > balanceBefore - amountSent)
+    function test_regression_buyETHRefundFromPMHookRouter() public {
+        // Step 1: Create vault liquidity that's LESS than what we'll try to buy
+        // mintAndVault(keepYes=true) deposits NO shares to vault
+        vm.prank(alice);
+        router.mintAndVault{value: 3 ether}(marketId, 3 ether, true, alice);
+        // Now vault has 3 ETH worth of NO shares
+
+        // Step 2: Bob tries to buy YES with 10 ETH
+        // Mock will check NO vault (sellSide for YES buy), find 3 ETH liquidity
+        // Mock does OTC for 3 ETH, refunds 7 ETH back to MasterRouter
+        uint256 bobBalanceBefore = bob.balance;
+        uint256 routerBalanceBefore = address(router).balance;
+
+        vm.prank(bob);
+        (uint256 sharesOut,) = router.buy{value: 10 ether}(
+            marketId,
+            true, // buyYes - will check NO vault for OTC
+            10 ether,
+            0, // minSharesOut
+            0, // poolPriceInBps (skip pool)
+            bob,
+            0
+        );
+
+        // Step 3: Verify ETH handling
+        // Bob should have received a refund for the unused 7 ETH
+        // With the bug: Bob loses 7 ETH (stuck in router)
+        // With the fix: Bob only spends 3 ETH
+
+        uint256 bobBalanceAfter = bob.balance;
+        uint256 routerBalanceAfter = address(router).balance;
+
+        // Bob should only have spent 3 ETH (the OTC fill amount)
+        assertEq(
+            bobBalanceBefore - bobBalanceAfter,
+            3 ether,
+            "Bob should only spend ETH for actual fill, not lose refund"
+        );
+
+        // Router should not be holding any excess ETH
+        assertEq(
+            routerBalanceAfter,
+            routerBalanceBefore,
+            "Router should not hold excess ETH from failed refund detection"
+        );
+
+        // Verify Bob got shares
+        assertEq(sharesOut, 3 ether, "Bob should receive shares equal to OTC fill");
+        assertEq(pamm.balanceOf(bob, marketId), 3 ether, "Bob has YES tokens");
+    }
+
+    /// @notice Regression test: buy() ETH refund works correctly in multicall
+    /// @dev Same bug but in multicall context where ETH tracking is cumulative
+    function test_regression_buyETHRefundInMulticall() public {
+        // Setup vault liquidity
+        vm.prank(alice);
+        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
+
+        uint256 bobBalanceBefore = bob.balance;
+
+        // Bob does multicall: [buy 10 ETH] where only 5 ETH can be filled via OTC
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeCall(router.buy, (marketId, true, 10 ether, 0, 0, bob, 0));
+
+        vm.prank(bob);
+        router.multicall{value: 10 ether}(calls);
+
+        uint256 bobBalanceAfter = bob.balance;
+
+        // Bob should get 5 ETH refund (10 sent - 5 used)
+        assertEq(
+            bobBalanceBefore - bobBalanceAfter,
+            5 ether,
+            "Multicall: Bob should only spend ETH for actual fill"
+        );
+
+        // Router should have no significant excess ETH (allow minor dust from rounding)
+        assertLe(address(router).balance, 10, "Multicall: Router should not hold significant ETH");
+    }
+
     /// @notice Regression test: sell() must not pre-transfer shares before PMHookRouter call
     /// @dev PMHookRouter.sellWithBootstrap pulls shares via transferFrom(msg.sender, ...)
     ///      If MasterRouter pre-transfers, the transferFrom fails because shares are gone
     function test_regression_sellDoesNotPreTransfer() public {
         // Get shares
         vm.prank(alice);
-        router.buy{value: 5 ether}(marketId, true, 5 ether, 0, 0, 0, alice, 0);
+        router.buy{value: 5 ether}(marketId, true, 5 ether, 0, 0, alice, 0);
 
         uint256 shares = pamm.balanceOf(alice, marketId);
 
@@ -582,9 +663,454 @@ contract MasterRouterPMHookIntegrationTest is Test {
         //   PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn)
         // which expects shares to still be in MasterRouter
         vm.prank(alice);
-        router.sell(marketId, true, shares, 0, 0, 0, alice, 0);
+        router.sell(marketId, true, shares, 0, 0, alice, 0);
 
         // If we get here, the fix is working
         assertEq(pamm.balanceOf(alice, marketId), 0, "Shares sold successfully");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    BUY WITH SWEEP TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test buyWithSweep fills multiple price levels in order
+    /// @dev When keepYes=false, mintAndPool creates ASK pools selling YES shares
+    function test_buyWithSweep_multiplePoolLevels() public {
+        // Alice creates pool selling YES at 40% (keepYes=false means sell YES)
+        vm.prank(alice);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 4000, alice);
+
+        // Bob creates pool selling YES at 45%
+        vm.prank(bob);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 4500, bob);
+
+        // Carol creates pool selling YES at 50%
+        vm.prank(carol);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 5000, carol);
+
+        // Dave buys YES with sweep up to 50%
+        vm.prank(dave);
+        (
+            uint256 totalSharesOut,
+            uint256 poolSharesOut,
+            uint256 levelsFilled,
+            bytes4[] memory sources
+        ) = router.buyWithSweep{value: 10 ether}(
+            marketId,
+            true, // buyYes - buy from ASK pools selling YES
+            10 ether,
+            0, // minSharesOut
+            5000, // maxPriceBps - sweep all pools up to 50%
+            dave,
+            0
+        );
+
+        // Should have filled from 40% and 45% pools (cheapest first)
+        // 40%: 5 shares cost 2 ETH (5 * 0.4)
+        // 45%: 5 shares cost 2.25 ETH (5 * 0.45)
+        // Total from pools: 10 shares for ~4.25 ETH
+        // Remaining ~5.75 ETH goes to PMHookRouter
+
+        assertGt(poolSharesOut, 0, "Should have filled from pools");
+        assertGe(levelsFilled, 2, "Should have filled at least 2 price levels");
+        assertGt(totalSharesOut, poolSharesOut, "Should have additional shares from PMHookRouter");
+        assertEq(sources.length, 2, "Should have 2 sources (POOL + PMHookRouter)");
+        assertEq(sources[0], bytes4(keccak256("POOL")), "First source should be POOL");
+
+        // Verify Dave received shares
+        assertEq(pamm.balanceOf(dave, marketId), totalSharesOut, "Dave has correct YES balance");
+    }
+
+    /// @notice Test buyWithSweep respects maxPriceBps limit
+    function test_buyWithSweep_respectsMaxPrice() public {
+        // Create pools selling YES at different prices
+        vm.prank(alice);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 4000, alice); // 40%
+
+        vm.prank(bob);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 6000, bob); // 60%
+
+        // Dave sweeps only up to 45% - should skip 60% pool
+        vm.prank(dave);
+        (uint256 totalSharesOut, uint256 poolSharesOut, uint256 levelsFilled,) = router.buyWithSweep{
+            value: 10 ether
+        }(
+            marketId,
+            true,
+            10 ether,
+            0,
+            4500, // maxPriceBps - only fill pools at 45% or below
+            dave,
+            0
+        );
+
+        // Should only fill from 40% pool
+        assertEq(levelsFilled, 1, "Should have filled exactly 1 price level");
+
+        // 40% pool: 5 shares cost 2 ETH
+        assertEq(poolSharesOut, 5 ether, "Should have filled entire 40% pool");
+
+        // 60% pool should be untouched (isYes=true because we're buying YES)
+        bytes32 pool60 = router.getPoolId(marketId, true, 6000);
+        (uint256 remaining,,,) = router.pools(pool60);
+        assertEq(remaining, 5 ether, "60% pool should be untouched");
+    }
+
+    /// @notice Test buyWithSweep with maxPriceBps=0 skips pools entirely
+    function test_buyWithSweep_skipPoolsWhenMaxPriceZero() public {
+        // Create a pool selling YES
+        vm.prank(alice);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 4000, alice);
+
+        // Dave buys with maxPriceBps=0 - should skip pools
+        vm.prank(dave);
+        (
+            uint256 totalSharesOut,
+            uint256 poolSharesOut,
+            uint256 levelsFilled,
+            bytes4[] memory sources
+        ) = router.buyWithSweep{value: 5 ether}(
+            marketId,
+            true,
+            5 ether,
+            0,
+            0, // maxPriceBps=0 - skip pools
+            dave,
+            0
+        );
+
+        assertEq(poolSharesOut, 0, "No shares from pools");
+        assertEq(levelsFilled, 0, "No levels filled");
+        assertGt(totalSharesOut, 0, "Should have shares from PMHookRouter");
+        assertEq(sources.length, 1, "Only PMHookRouter source");
+
+        // Pool should be untouched (isYes=true for YES ASK pool)
+        bytes32 poolId = router.getPoolId(marketId, true, 4000);
+        (uint256 remaining,,,) = router.pools(poolId);
+        assertEq(remaining, 5 ether, "Pool should be untouched");
+    }
+
+    /// @notice Test buyWithSweep partial fill of last pool
+    function test_buyWithSweep_partialFillLastPool() public {
+        // Create single pool selling YES at 50%
+        vm.prank(alice);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, false, 5000, alice);
+
+        // Dave buys 3 ETH worth - should partially fill
+        vm.prank(dave);
+        (uint256 totalSharesOut, uint256 poolSharesOut, uint256 levelsFilled,) =
+            router.buyWithSweep{value: 3 ether}(marketId, true, 3 ether, 0, 5000, dave, 0);
+
+        // At 50%, 3 ETH buys 6 shares
+        assertEq(poolSharesOut, 6 ether, "Should buy 6 shares at 50%");
+        assertEq(levelsFilled, 1, "One level touched");
+        assertEq(totalSharesOut, poolSharesOut, "All shares from pool (no PMHookRouter needed)");
+
+        // Pool should have 4 shares remaining
+        bytes32 poolId = router.getPoolId(marketId, true, 5000);
+        (uint256 remaining,,,) = router.pools(poolId);
+        assertEq(remaining, 4 ether, "Pool should have 4 shares remaining");
+    }
+
+    /// @notice Test buyWithSweep fills pools in correct order (lowest first)
+    function test_buyWithSweep_fillsLowestPriceFirst() public {
+        // Create pools in reverse order (highest first) - all selling YES
+        vm.prank(carol);
+        router.mintAndPool{value: 2 ether}(marketId, 2 ether, false, 5000, carol); // 50%
+
+        vm.prank(bob);
+        router.mintAndPool{value: 2 ether}(marketId, 2 ether, false, 4000, bob); // 40%
+
+        vm.prank(alice);
+        router.mintAndPool{value: 2 ether}(marketId, 2 ether, false, 3000, alice); // 30%
+
+        // Dave buys exactly enough to fill 30% and 40% pools
+        // 30%: 2 shares = 0.6 ETH
+        // 40%: 2 shares = 0.8 ETH
+        // Total: 1.4 ETH
+        vm.prank(dave);
+        (, uint256 poolSharesOut, uint256 levelsFilled, bytes4[] memory sources) =
+            router.buyWithSweep{value: 1.4 ether}(marketId, true, 1.4 ether, 0, 5000, dave, 0);
+
+        assertEq(poolSharesOut, 4 ether, "Should have bought 4 shares from pools");
+        assertEq(levelsFilled, 2, "Should have filled 2 levels");
+        assertEq(sources.length, 1, "Only pool source (no PMHookRouter needed)");
+
+        // 30% and 40% pools should be empty
+        bytes32 pool30 = router.getPoolId(marketId, true, 3000);
+        bytes32 pool40 = router.getPoolId(marketId, true, 4000);
+        bytes32 pool50 = router.getPoolId(marketId, true, 5000);
+
+        (uint256 remaining30,,,) = router.pools(pool30);
+        (uint256 remaining40,,,) = router.pools(pool40);
+        (uint256 remaining50,,,) = router.pools(pool50);
+
+        assertEq(remaining30, 0, "30% pool should be empty");
+        assertEq(remaining40, 0, "40% pool should be empty");
+        assertEq(remaining50, 2 ether, "50% pool should be untouched");
+    }
+
+    /// @notice Gas test for buyWithSweep
+    function testGas_buyWithSweep() public {
+        // Create multiple pools selling YES
+        vm.prank(alice);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 4000, alice);
+        vm.prank(bob);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 4500, bob);
+        vm.prank(carol);
+        router.mintAndPool{value: 5 ether}(marketId, 5 ether, false, 5000, carol);
+
+        // Measure gas for sweep
+        vm.prank(dave);
+        router.buyWithSweep{value: 10 ether}(marketId, true, 10 ether, 0, 5000, dave, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SELL WITH SWEEP TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test sellWithSweep fills multiple bid pool levels in order (highest first)
+    /// @dev Bid pools are created by createBidPool - collateral pools waiting to buy shares
+    function test_sellWithSweep_multipleBidPoolLevels() public {
+        // First, give Alice some YES shares to sell
+        vm.prank(alice);
+        router.mintAndVault{value: 20 ether}(marketId, 20 ether, true, alice);
+        // Alice now has 20 YES shares
+
+        // Alice must approve router to transfer her shares
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Create bid pools at different prices (buyers waiting to buy YES)
+        vm.prank(bob);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 6000, bob); // Bid at 60%
+
+        vm.prank(carol);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 5500, carol); // Bid at 55%
+
+        vm.prank(dave);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 5000, dave); // Bid at 50%
+
+        // Alice sells YES shares with sweep down to 50%
+        uint256 aliceBalanceBefore = alice.balance;
+        vm.prank(alice);
+        (
+            uint256 totalCollateralOut,
+            uint256 poolCollateralOut,
+            uint256 levelsFilled,
+            bytes4[] memory sources
+        ) = router.sellWithSweep(
+            marketId,
+            true, // sellYes - sell to BID pools buying YES
+            15 ether, // Sell 15 shares
+            0, // minCollateralOut
+            5000, // minPriceBps - accept bids at 50% or higher
+            alice,
+            0
+        );
+
+        // Should have filled from 60%, 55%, and potentially 50% pools (highest price first)
+        assertGt(poolCollateralOut, 0, "Should have filled from bid pools");
+        assertGe(levelsFilled, 2, "Should have filled at least 2 price levels");
+        assertGt(totalCollateralOut, 0, "Should have received collateral");
+
+        // Verify Alice received collateral
+        assertGt(alice.balance, aliceBalanceBefore, "Alice should have more ETH");
+    }
+
+    /// @notice Test sellWithSweep respects minPriceBps limit
+    function test_sellWithSweep_respectsMinPrice() public {
+        // Give Alice YES shares
+        vm.prank(alice);
+        router.mintAndVault{value: 10 ether}(marketId, 10 ether, true, alice);
+
+        // Alice must approve router to transfer her shares
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Create bid pools at different prices
+        vm.prank(bob);
+        router.createBidPool{value: 3 ether}(marketId, 3 ether, true, 6000, bob); // 60%
+
+        vm.prank(carol);
+        router.createBidPool{value: 3 ether}(marketId, 3 ether, true, 4000, carol); // 40%
+
+        // Alice sells with minPrice=55% - should skip 40% pool
+        vm.prank(alice);
+        (uint256 totalCollateralOut, uint256 poolCollateralOut, uint256 levelsFilled,) = router.sellWithSweep(
+            marketId,
+            true,
+            10 ether,
+            0,
+            5500, // minPriceBps - only accept bids at 55% or higher
+            alice,
+            0
+        );
+
+        // Should only fill from 60% pool
+        assertEq(levelsFilled, 1, "Should have filled exactly 1 price level");
+
+        // 40% pool should be untouched
+        bytes32 pool40 = router.getBidPoolId(marketId, true, 4000);
+        (uint256 remaining,,,) = router.bidPools(pool40);
+        assertEq(remaining, 3 ether, "40% bid pool should be untouched");
+    }
+
+    /// @notice Test sellWithSweep with minPriceBps=0 skips pools entirely
+    function test_sellWithSweep_skipPoolsWhenMinPriceZero() public {
+        // Give Alice YES shares
+        vm.prank(alice);
+        router.mintAndVault{value: 5 ether}(marketId, 5 ether, true, alice);
+
+        // Alice must approve router to transfer her shares
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Create a bid pool
+        vm.prank(bob);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 6000, bob);
+
+        // Alice sells with minPriceBps=0 - should skip pools
+        vm.prank(alice);
+        (
+            uint256 totalCollateralOut,
+            uint256 poolCollateralOut,
+            uint256 levelsFilled,
+            bytes4[] memory sources
+        ) = router.sellWithSweep(
+            marketId,
+            true,
+            5 ether,
+            0,
+            0, // minPriceBps=0 - skip pools
+            alice,
+            0
+        );
+
+        assertEq(poolCollateralOut, 0, "No collateral from pools");
+        assertEq(levelsFilled, 0, "No levels filled");
+        assertGt(totalCollateralOut, 0, "Should have collateral from PMHookRouter");
+        assertEq(sources.length, 1, "Only PMHookRouter source");
+
+        // Bid pool should be untouched
+        bytes32 bidPoolId = router.getBidPoolId(marketId, true, 6000);
+        (uint256 remaining,,,) = router.bidPools(bidPoolId);
+        assertEq(remaining, 5 ether, "Bid pool should be untouched");
+    }
+
+    /// @notice Test sellWithSweep partial fill of last pool
+    function test_sellWithSweep_partialFillLastPool() public {
+        // Give Alice YES shares
+        vm.prank(alice);
+        router.mintAndVault{value: 10 ether}(marketId, 10 ether, true, alice);
+
+        // Alice must approve router to transfer her shares
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Create single bid pool at 50% with enough collateral for 10 shares
+        vm.prank(bob);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 5000, bob);
+        // At 50%, 5 ETH can buy 10 shares
+
+        // Alice sells only 3 shares - should partially fill
+        vm.prank(alice);
+        (uint256 totalCollateralOut, uint256 poolCollateralOut, uint256 levelsFilled,) =
+            router.sellWithSweep(
+                marketId,
+                true,
+                3 ether, // Sell 3 shares
+                0,
+                5000,
+                alice,
+                0
+            );
+
+        // At 50%, 3 shares = 1.5 ETH (ceiling = 1.5 ETH)
+        assertEq(levelsFilled, 1, "One level touched");
+        assertEq(
+            totalCollateralOut,
+            poolCollateralOut,
+            "All collateral from pool (no PMHookRouter needed)"
+        );
+
+        // Bid pool should have remaining collateral
+        bytes32 bidPoolId = router.getBidPoolId(marketId, true, 5000);
+        (uint256 remaining,,,) = router.bidPools(bidPoolId);
+        assertGt(remaining, 0, "Bid pool should have remaining collateral");
+    }
+
+    /// @notice Test sellWithSweep fills pools in correct order (highest first)
+    function test_sellWithSweep_fillsHighestPriceFirst() public {
+        // Give Alice YES shares
+        vm.prank(alice);
+        router.mintAndVault{value: 10 ether}(marketId, 10 ether, true, alice);
+
+        // Alice must approve router to transfer her shares
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Create bid pools in arbitrary order
+        vm.prank(dave);
+        router.createBidPool{value: 1 ether}(marketId, 1 ether, true, 5000, dave); // 50%
+
+        vm.prank(carol);
+        router.createBidPool{value: 1 ether}(marketId, 1 ether, true, 7000, carol); // 70%
+
+        vm.prank(bob);
+        router.createBidPool{value: 1 ether}(marketId, 1 ether, true, 6000, bob); // 60%
+
+        // Alice sells enough to fill 70% and 60% pools
+        // 70%: 1 ETH buys ~1.43 shares
+        // 60%: 1 ETH buys ~1.67 shares
+        // Total: ~3.1 shares for 2 ETH - need at least 4 to empty both
+        vm.prank(alice);
+        (, uint256 poolCollateralOut, uint256 levelsFilled, bytes4[] memory sources) = router.sellWithSweep(
+            marketId,
+            true,
+            5 ether, // Sell 5 shares to ensure 70% and 60% are fully emptied
+            0,
+            5000, // Accept bids down to 50%
+            alice,
+            0
+        );
+
+        assertGe(levelsFilled, 2, "Should have filled at least 2 levels");
+
+        // 70% and 60% pools should be emptied first (highest prices)
+        bytes32 pool70 = router.getBidPoolId(marketId, true, 7000);
+        bytes32 pool60 = router.getBidPoolId(marketId, true, 6000);
+        bytes32 pool50 = router.getBidPoolId(marketId, true, 5000);
+
+        (uint256 remaining70,,,) = router.bidPools(pool70);
+        (uint256 remaining60,,,) = router.bidPools(pool60);
+        (uint256 remaining50,,,) = router.bidPools(pool50);
+
+        assertEq(remaining70, 0, "70% pool should be empty (highest priority)");
+        assertEq(remaining60, 0, "60% pool should be empty (second priority)");
+        // 50% pool may or may not be touched depending on exact fill
+    }
+
+    /// @notice Gas test for sellWithSweep
+    function testGas_sellWithSweep() public {
+        // Give Alice YES shares
+        vm.prank(alice);
+        router.mintAndVault{value: 15 ether}(marketId, 15 ether, true, alice);
+
+        // Alice must approve router to transfer her shares
+        vm.prank(alice);
+        pamm.setOperator(address(router), true);
+
+        // Create multiple bid pools
+        vm.prank(bob);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 6000, bob);
+        vm.prank(carol);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 5500, carol);
+        vm.prank(dave);
+        router.createBidPool{value: 5 ether}(marketId, 5 ether, true, 5000, dave);
+
+        // Measure gas for sweep
+        vm.prank(alice);
+        router.sellWithSweep(marketId, true, 10 ether, 0, 5000, alice, 0);
     }
 }

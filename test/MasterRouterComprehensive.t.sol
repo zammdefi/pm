@@ -70,7 +70,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Try to fill 1 share at 0.5 = 0 collateral (should revert)
         vm.prank(taker);
         vm.expectRevert();
-        router.fillFromPool(marketId, false, 5000, 1, taker);
+        router.fillFromPool(marketId, false, 5000, 1, 0, taker, 0);
     }
 
     /// @notice Test: Maximum price (9999 bps = 0.9999)
@@ -81,7 +81,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill at 99.99% price
         vm.prank(taker);
-        router.fillFromPool{value: 99.99 ether}(marketId, false, 9999, 100 ether, taker);
+        router.fillFromPool{value: 99.99 ether}(marketId, false, 9999, 100 ether, 0, taker, 0);
 
         (uint256 totalShares,,,) = router.pools(poolId);
         assertEq(totalShares, 0, "All shares filled (totalShares depleted)");
@@ -94,7 +94,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill at 0.01% price - need 100 ETH to buy 1000000 shares, but only 100 available
         vm.prank(taker);
-        router.fillFromPool{value: 0.01 ether}(marketId, false, 1, 100 ether, taker);
+        router.fillFromPool{value: 0.01 ether}(marketId, false, 1, 100 ether, 0, taker, 0);
 
         (uint256 totalShares,,,) = router.pools(poolId);
         assertEq(totalShares, 0, "All shares filled (totalShares depleted)");
@@ -109,7 +109,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill 99 shares - leaves exactly 1 share
         vm.prank(taker);
-        router.fillFromPool{value: 49.5 ether}(marketId, false, 5000, 99 ether, taker);
+        router.fillFromPool{value: 49.5 ether}(marketId, false, 5000, 99 ether, 0, taker, 0);
 
         // Check exactly 1 share remains
         (uint256 totalShares,,,) = router.pools(poolId);
@@ -117,7 +117,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill the last share
         vm.prank(taker);
-        router.fillFromPool{value: 0.5 ether}(marketId, false, 5000, 1 ether, taker);
+        router.fillFromPool{value: 0.5 ether}(marketId, false, 5000, 1 ether, 0, taker, 0);
 
         // Check pool fully filled
         (totalShares,,,) = router.pools(poolId);
@@ -141,7 +141,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill from YES pool
         vm.prank(taker);
-        router.fillFromPool{value: 70 ether}(marketId, false, 7000, 100 ether, taker);
+        router.fillFromPool{value: 70 ether}(marketId, false, 7000, 100 ether, 0, taker, 0);
 
         (uint256 totalShares1,,,) = router.pools(poolId1);
         (uint256 totalShares2,,,) = router.pools(poolId2);
@@ -180,11 +180,11 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Attacker sees Bob's tx to fill 500 shares and tries to front-run
         vm.prank(attacker);
-        router.fillFromPool{value: 250 ether}(marketId, false, 5000, 500 ether, attacker);
+        router.fillFromPool{value: 250 ether}(marketId, false, 5000, 500 ether, 0, attacker, 0);
 
         // Bob's tx goes through but only fills remaining
         vm.prank(bob);
-        router.fillFromPool{value: 250 ether}(marketId, false, 5000, 500 ether, bob);
+        router.fillFromPool{value: 250 ether}(marketId, false, 5000, 500 ether, 0, bob, 0);
 
         // Verify attacker and bob both got shares (no DoS)
         assertEq(pamm.balanceOf(attacker, noId), 500 ether, "Attacker got shares");
@@ -204,7 +204,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Victim fills 50 shares (attacker earns 25 ETH)
         vm.prank(bob);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, bob);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, bob, 0);
 
         // Attacker MUST claim before withdrawing (accumulator model requirement)
         vm.prank(attacker);
@@ -263,7 +263,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Fill multiple times to accumulate earnings
         for (uint256 i = 0; i < 10; i++) {
             vm.prank(taker);
-            router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, taker);
+            router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, 0, taker, 0);
         }
 
         // totalCollateralEarned is now uint256, so won't overflow
@@ -306,7 +306,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Partial fill (doesn't change scaled amounts)
         vm.prank(taker);
-        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, taker);
+        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, 0, taker, 0);
 
         // Invariant should still hold (fill doesn't change scaled)
         (aliceScaled,,,) = router.getUserPosition(marketId, false, 5000, alice);
@@ -369,7 +369,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill
         vm.prank(taker);
-        router.fillFromPool{value: 100 ether}(marketId, false, 5000, 200 ether, taker);
+        router.fillFromPool{value: 100 ether}(marketId, false, 5000, 200 ether, 0, taker, 0);
 
         bytes32 poolId = router.getPoolId(marketId, false, 5000);
 
@@ -396,7 +396,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill 60 shares
         vm.prank(taker);
-        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, taker);
+        router.fillFromPool{value: 30 ether}(marketId, false, 5000, 60 ether, 0, taker, 0);
 
         // Alice should only be able to withdraw 40 (her portion of remaining shares)
         (, uint256 userWithdrawable,,) = router.getUserPosition(marketId, false, 5000, alice);
@@ -409,7 +409,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Withdraw exactly withdrawable should work
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 40 ether, alice);
+        (uint256 withdrawn,) = router.withdrawFromPool(marketId, false, 5000, 40 ether, alice);
         assertEq(withdrawn, 40 ether, "Withdrew exactly withdrawable amount");
     }
 
@@ -443,7 +443,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Taker fills from best price first (30%)
         vm.prank(taker);
-        router.fillFromPool{value: 30 ether}(marketId, false, 3000, 100 ether, taker);
+        router.fillFromPool{value: 30 ether}(marketId, false, 3000, 100 ether, 0, taker, 0);
 
         // Verify Alice's pool filled (totalShares depleted to 0)
         bytes32 alicePoolId = router.getPoolId(marketId, false, 3000);
@@ -452,7 +452,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Taker fills from next best (40%)
         vm.prank(taker);
-        router.fillFromPool{value: 80 ether}(marketId, false, 4000, 200 ether, taker);
+        router.fillFromPool{value: 80 ether}(marketId, false, 4000, 200 ether, 0, taker, 0);
 
         bytes32 bobPoolId = router.getPoolId(marketId, false, 4000);
         (uint256 bobTotalShares,,,) = router.pools(bobPoolId);
@@ -471,7 +471,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // 2. Taker fills 50 shares (Alice earns 25 ETH)
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // 3. Bob pools 100 ETH (joins at current exchange rate)
         vm.prank(bob);
@@ -484,12 +484,12 @@ contract MasterRouterComprehensiveTest is Test {
 
         // 5. Alice withdraws her unfilled shares
         vm.prank(alice);
-        uint256 aliceWithdrew = router.withdrawFromPool(marketId, false, 5000, 0, alice);
+        (uint256 aliceWithdrew,) = router.withdrawFromPool(marketId, false, 5000, 0, alice);
         assertGt(aliceWithdrew, 0, "Alice withdrew some shares");
 
         // 6. Taker fills 50 more shares (only Bob benefits now since Alice withdrew)
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // 7. Bob claims (gets the second fill earnings)
         vm.prank(bob);
@@ -508,7 +508,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fully fill
         vm.prank(taker);
-        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, taker);
+        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, 0, taker, 0);
 
         // Alice tries to withdraw (should revert - no unfilled shares)
         vm.prank(alice);
@@ -525,7 +525,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Try to fill 1 wei share - costs 0.0001 wei (rounds to 0, should revert)
         vm.prank(taker);
         vm.expectRevert(); // collateralPaid == 0 check
-        router.fillFromPool(marketId, false, 1, 1, taker);
+        router.fillFromPool(marketId, false, 1, 1, 0, taker, 0);
     }
 
     /// @notice Test: Rapid repeated small fills
@@ -536,7 +536,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Fill 1 share at a time, 100 times
         for (uint256 i = 0; i < 100; i++) {
             vm.prank(taker);
-            router.fillFromPool{value: 0.5 ether}(marketId, false, 5000, 1 ether, taker);
+            router.fillFromPool{value: 0.5 ether}(marketId, false, 5000, 1 ether, 0, taker, 0);
         }
 
         // Verify correct accounting: 1000 - 100 = 900 shares remaining
@@ -569,12 +569,12 @@ contract MasterRouterComprehensiveTest is Test {
 
         // 3. Attacker withdraws before any fills (gets all shares back)
         vm.prank(attacker);
-        uint256 withdrawn = router.withdrawFromPool(marketId, false, 5000, 0, attacker);
+        (uint256 withdrawn,) = router.withdrawFromPool(marketId, false, 5000, 0, attacker);
         assertEq(withdrawn, 100 ether, "Attacker withdrew all shares");
 
         // 4. Fill happens (only Alice earns)
         vm.prank(taker);
-        router.fillFromPool{value: 450 ether}(marketId, false, 5000, 900 ether, taker);
+        router.fillFromPool{value: 450 ether}(marketId, false, 5000, 900 ether, 0, taker, 0);
 
         // 5. Attacker tries to claim (should get 0 since withdrew)
         vm.prank(attacker);
@@ -604,7 +604,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Fill from each pool with minimum amounts
         for (uint256 i = 0; i < 100; i++) {
             vm.prank(taker);
-            router.fillFromPool{value: 5}(marketId, false, 5000, 10, taker);
+            router.fillFromPool{value: 5}(marketId, false, 5000, 10, 0, taker, 0);
         }
 
         // Attacker claims from all (would be gas-inefficient in reality)
@@ -639,7 +639,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Fill
         vm.prank(taker);
-        router.fillFromPool{value: 100 ether}(marketId, false, 5000, 200 ether, taker);
+        router.fillFromPool{value: 100 ether}(marketId, false, 5000, 200 ether, 0, taker, 0);
 
         // Each sybil claims
         uint256 totalSybilEarned = 0;
@@ -682,7 +682,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Fill
         uint256 gasBefore = gasleft();
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
         uint256 gasUsed = gasBefore - gasleft();
 
         // Verify gas usage is reasonable (should be O(1) not O(n))
@@ -705,7 +705,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Fill a portion
         vm.deal(taker, 50000 ether);
         vm.prank(taker);
-        router.fillFromPool{value: 50000 ether}(marketId, false, 5000, 100000 ether, taker);
+        router.fillFromPool{value: 50000 ether}(marketId, false, 5000, 100000 ether, 0, taker, 0);
     }
 
     /// @notice Test: uint256 storage allows large amounts (no uint112 overflow)
@@ -738,7 +738,7 @@ contract MasterRouterComprehensiveTest is Test {
         // Bob uses buy() with pool price parameter
         vm.prank(bob);
         (uint256 sharesOut, bytes4[] memory sources) =
-            router.buy{value: 40 ether}(marketId, false, 40 ether, 100 ether, 4000, 0, bob, 0);
+            router.buy{value: 40 ether}(marketId, false, 40 ether, 100 ether, 4000, bob, 0);
 
         // Verify Bob got shares from pool
         assertEq(sharesOut, 100 ether, "Bob got 100 NO shares");
@@ -758,7 +758,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // First fill
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // Alice claims first time
         vm.prank(alice);
@@ -767,7 +767,7 @@ contract MasterRouterComprehensiveTest is Test {
 
         // Second fill
         vm.prank(taker);
-        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, taker);
+        router.fillFromPool{value: 25 ether}(marketId, false, 5000, 50 ether, 0, taker, 0);
 
         // Alice claims second time (should get only new earnings)
         vm.prank(alice);
@@ -778,5 +778,164 @@ contract MasterRouterComprehensiveTest is Test {
         vm.prank(alice);
         uint256 thirdClaim = router.claimProceeds(marketId, false, 5000, alice);
         assertEq(thirdClaim, 0, "Third claim: 0 (no new earnings)");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    DEPLETED POOL EXIT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Proves the depleted pool bricking issue exists and exitDepletedAskPool fixes it
+    function test_depletedAskPool_lifecycle() public {
+        // Step 1: Alice creates ASK pool (selling NO at 50%)
+        vm.prank(alice);
+        bytes32 poolId =
+            router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
+
+        // Verify initial state
+        (uint256 totalShares, uint256 totalScaled,,) = router.pools(poolId);
+        assertEq(totalShares, 100 ether, "Initial totalShares");
+        assertEq(totalScaled, 100 ether, "Initial totalScaled");
+
+        // Step 2: Bob fills entire pool
+        vm.prank(bob);
+        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, 0, bob, 0);
+
+        // Pool is now depleted
+        (totalShares, totalScaled,,) = router.pools(poolId);
+        assertEq(totalShares, 0, "Pool depleted: totalShares = 0");
+        assertEq(totalScaled, 100 ether, "But totalScaled still > 0");
+
+        // Step 3: Alice claims her proceeds (but her scaled position remains)
+        vm.prank(alice);
+        uint256 claimed = router.claimProceeds(marketId, false, 5000, alice);
+        assertEq(claimed, 50 ether, "Alice claimed proceeds");
+
+        // Check Alice still has scaled position
+        (uint256 userScaled,,,) = router.getUserPosition(marketId, false, 5000, alice);
+        assertEq(userScaled, 100 ether, "Alice still has scaled units");
+
+        // Step 4: Alice tries to withdraw - THIS SHOULD FAIL (the bug)
+        vm.prank(alice);
+        vm.expectRevert(); // ERR_VALIDATION, 6 (userMax = 0)
+        router.withdrawFromPool(marketId, false, 5000, 0, alice);
+
+        // Step 5: Carol tries to add new liquidity - THIS SHOULD FAIL (price level bricked)
+        vm.prank(carol);
+        vm.expectRevert(); // ERR_STATE, 2 (Pool exhausted but LPs haven't withdrawn)
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, carol);
+
+        // Step 6: Alice uses exitDepletedAskPool to exit (THE FIX)
+        vm.prank(alice);
+        uint256 exitClaimed = router.exitDepletedAskPool(marketId, false, 5000, alice);
+        assertEq(exitClaimed, 0, "No more proceeds to claim");
+
+        // Verify Alice's position is cleared
+        (userScaled,,,) = router.getUserPosition(marketId, false, 5000, alice);
+        assertEq(userScaled, 0, "Alice's scaled position cleared");
+
+        // Verify totalScaled is now 0
+        (totalShares, totalScaled,,) = router.pools(poolId);
+        assertEq(totalScaled, 0, "Pool totalScaled now 0");
+
+        // Step 7: Carol can now add liquidity (price level unbricked)
+        vm.prank(carol);
+        router.mintAndPool{value: 10 ether}(marketId, 10 ether, true, 5000, carol);
+
+        (totalShares, totalScaled,,) = router.pools(poolId);
+        assertEq(totalShares, 10 ether, "Carol's deposit succeeded");
+        assertEq(totalScaled, 10 ether, "New totalScaled");
+    }
+
+    /// @notice Test exitDepletedAskPool reverts when pool is not depleted
+    function test_exitDepletedAskPool_revertsIfNotDepleted() public {
+        vm.prank(alice);
+        router.mintAndPool{value: 100 ether}(marketId, 100 ether, true, 5000, alice);
+
+        // Pool has shares, so exit should fail
+        vm.prank(alice);
+        vm.expectRevert(); // ERR_STATE, 3 (not depleted)
+        router.exitDepletedAskPool(marketId, false, 5000, alice);
+    }
+
+    /// @notice Test exitDepletedAskPool with multiple LPs
+    function test_exitDepletedAskPool_multipleLPs() public {
+        // Alice and Bob both deposit
+        vm.prank(alice);
+        router.mintAndPool{value: 60 ether}(marketId, 60 ether, true, 5000, alice);
+
+        vm.prank(bob);
+        router.mintAndPool{value: 40 ether}(marketId, 40 ether, true, 5000, bob);
+
+        // Carol fills entire pool
+        vm.prank(carol);
+        router.fillFromPool{value: 50 ether}(marketId, false, 5000, 100 ether, 0, carol, 0);
+
+        // Both Alice and Bob exit
+        vm.prank(alice);
+        uint256 aliceClaimed = router.exitDepletedAskPool(marketId, false, 5000, alice);
+        assertEq(aliceClaimed, 30 ether, "Alice gets 60% of 50 ETH");
+
+        vm.prank(bob);
+        uint256 bobClaimed = router.exitDepletedAskPool(marketId, false, 5000, bob);
+        assertEq(bobClaimed, 20 ether, "Bob gets 40% of 50 ETH");
+
+        // Pool is now fully cleared
+        bytes32 poolId = router.getPoolId(marketId, false, 5000);
+        (uint256 totalShares, uint256 totalScaled,,) = router.pools(poolId);
+        assertEq(totalScaled, 0, "Pool fully cleared");
+    }
+
+    /// @notice Proves depleted BID pool bricking and exitDepletedBidPool fix
+    function test_depletedBidPool_lifecycle() public {
+        // Step 1: Alice creates BID pool (buying YES at 50%)
+        vm.prank(alice);
+        bytes32 bidPoolId =
+            router.createBidPool{value: 50 ether}(marketId, 50 ether, true, 5000, alice);
+
+        // Bob mints shares to sell
+        vm.prank(bob);
+        pamm.split{value: 100 ether}(marketId, 100 ether, bob);
+
+        // Approve router
+        vm.prank(bob);
+        pamm.setOperator(address(router), true);
+
+        // Step 2: Bob sells to pool, depleting it entirely
+        vm.prank(bob);
+        router.sellToPool(marketId, true, 5000, 100 ether, 0, bob, 0);
+
+        // Pool is depleted
+        (uint256 totalCollateral, uint256 totalScaled,,) = router.bidPools(bidPoolId);
+        assertEq(totalCollateral, 0, "Bid pool depleted: totalCollateral = 0");
+        assertEq(totalScaled, 50 ether, "But totalScaled still > 0");
+
+        // Step 3: Alice claims her shares
+        vm.prank(alice);
+        router.claimBidShares(marketId, true, 5000, alice);
+
+        // Alice still has scaled position
+        (uint256 userScaled,,,) = router.getBidPosition(marketId, true, 5000, alice);
+        assertEq(userScaled, 50 ether, "Alice still has scaled units");
+
+        // Step 4: Alice can't withdraw (bug)
+        vm.prank(alice);
+        vm.expectRevert(); // ERR_VALIDATION, 6
+        router.withdrawFromBidPool(marketId, true, 5000, 0, alice);
+
+        // Step 5: Carol can't add new bid (bricked)
+        vm.prank(carol);
+        vm.expectRevert(); // ERR_STATE, 2
+        router.createBidPool{value: 10 ether}(marketId, 10 ether, true, 5000, carol);
+
+        // Step 6: Alice exits depleted bid pool (fix)
+        vm.prank(alice);
+        router.exitDepletedBidPool(marketId, true, 5000, alice);
+
+        // Step 7: Carol can now add bid
+        vm.prank(carol);
+        router.createBidPool{value: 10 ether}(marketId, 10 ether, true, 5000, carol);
+
+        (totalCollateral, totalScaled,,) = router.bidPools(bidPoolId);
+        assertEq(totalCollateral, 10 ether, "Carol's bid succeeded");
     }
 }

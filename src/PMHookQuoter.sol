@@ -24,7 +24,7 @@ interface IZAMM {
         );
 }
 
-interface IPAMM {
+interface IPAMMView {
     function markets(uint256 marketId)
         external
         view
@@ -46,7 +46,7 @@ interface IPMFeeHook {
     function getCloseWindow(uint256 marketId) external view returns (uint256);
 }
 
-interface IPMHookRouter {
+interface IPMHookRouterView {
     struct BootstrapVault {
         uint112 yesShares;
         uint112 noShares;
@@ -73,10 +73,34 @@ interface IPMHookRouter {
     function totalNoVaultShares(uint256 marketId) external view returns (uint256);
 }
 
+/// @notice MasterRouter interface for pool data access
+interface IMasterRouter {
+    function pools(bytes32 poolId) external view returns (uint256, uint256, uint256, address);
+    function bidPools(bytes32 bidPoolId) external view returns (uint256, uint256, uint256, address);
+    function priceBitmap(bytes32 key, uint256 bucket) external view returns (uint256);
+    function getPoolId(uint256 marketId, bool isYes, uint256 priceInBps)
+        external
+        pure
+        returns (bytes32);
+    function getBidPoolId(uint256 marketId, bool buyYes, uint256 priceInBps)
+        external
+        pure
+        returns (bytes32);
+    function positions(bytes32 poolId, address user)
+        external
+        view
+        returns (uint256 scaled, uint256 collDebt);
+    function bidPositions(bytes32 bidPoolId, address user)
+        external
+        view
+        returns (uint256 scaled, uint256 sharesDebt);
+}
+
 /// @title PMHookQuoter
-/// @notice View-only quoter for PMHookRouter buy/sell operations
-/// @dev Separate contract to keep router under bytecode limit
+/// @notice View-only quoter for PMHookRouter and MasterRouter buy/sell operations
+/// @dev Separate contract to keep routers under bytecode limit
 contract PMHookQuoter {
+    bytes4 constant ERR_COMPUTATION = 0x05832717;
     uint256 constant FLAG_BEFORE = 1 << 255;
     uint256 constant FLAG_AFTER = 1 << 254;
     uint256 constant DEFAULT_FEE_BPS = 30;
@@ -88,11 +112,13 @@ contract PMHookQuoter {
     uint256 constant MAX_UINT112 = 0xffffffffffffffffffffffffffff;
 
     IZAMM constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
-    IPAMM constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
-    IPMHookRouter public immutable ROUTER;
+    IPAMMView constant PAMM = IPAMMView(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
+    IPMHookRouterView public immutable ROUTER;
+    IMasterRouter public immutable MASTER_ROUTER;
 
-    constructor(address router) {
-        ROUTER = IPMHookRouter(router);
+    constructor(address router, address masterRouter) {
+        ROUTER = IPMHookRouterView(router);
+        MASTER_ROUTER = IMasterRouter(masterRouter);
     }
 
     // ============ Quote Functions ============
@@ -576,8 +602,8 @@ contract PMHookQuoter {
 
         bool zeroForOne = (marketId < noId) != buyYes;
         uint256 amountInWithFee = collateralIn * (10000 - feeBps);
-        uint256 rIn = zeroForOne ? r1 : r0;
-        uint256 rOut = zeroForOne ? r0 : r1;
+        uint256 rIn = zeroForOne ? r0 : r1;
+        uint256 rOut = zeroForOne ? r1 : r0;
         uint256 swapped = (amountInWithFee * rOut) / (rIn * 10000 + amountInWithFee);
         // Only return non-zero if swap actually produces output
         if (swapped != 0 && swapped < rOut) {
@@ -658,5 +684,456 @@ contract PMHookQuoter {
         uint256 pAfter = (nAfter * 10000) / (yAfter + nAfter);
 
         return pAfter > pBefore ? pAfter - pBefore : pBefore - pAfter;
+    }
+
+    // ============ MasterRouter Sweep Quote Functions ============
+
+    /// @notice Quote expected output for MasterRouter.buyWithSweep (pools + PMHookRouter)
+    /// @param marketId Market to buy in
+    /// @param buyYes True to buy YES shares, false for NO
+    /// @param collateralIn Amount of collateral to spend
+    /// @param maxPriceBps Maximum price for pool fills (0 = skip pools)
+    /// @return totalSharesOut Total shares expected across all venues
+    /// @return poolSharesOut Shares from pool fills
+    /// @return poolLevelsFilled Number of pool price levels touched
+    /// @return pmSharesOut Shares from PMHookRouter
+    /// @return pmSource PMHookRouter source ("otc", "amm", "mint", "mult")
+    function quoteBuyWithSweep(
+        uint256 marketId,
+        bool buyYes,
+        uint256 collateralIn,
+        uint256 maxPriceBps
+    )
+        external
+        view
+        returns (
+            uint256 totalSharesOut,
+            uint256 poolSharesOut,
+            uint256 poolLevelsFilled,
+            uint256 pmSharesOut,
+            bytes4 pmSource
+        )
+    {
+        if (collateralIn == 0 || address(MASTER_ROUTER) == address(0)) {
+            return (0, 0, 0, 0, bytes4(0));
+        }
+
+        uint256 remainingCollateral = collateralIn;
+
+        // Step 1: Quote pool fills from lowest price up to maxPriceBps
+        if (maxPriceBps > 0 && maxPriceBps < 10000) {
+            bytes32 bitmapKey = keccak256(abi.encode(marketId, buyYes, true));
+
+            for (uint256 bucket; bucket < 40 && remainingCollateral > 0; ++bucket) {
+                uint256 word = MASTER_ROUTER.priceBitmap(bitmapKey, bucket);
+                while (word != 0 && remainingCollateral > 0) {
+                    uint256 bit = _lowestSetBit(word);
+                    uint256 price = (bucket << 8) | bit;
+                    word &= ~(1 << bit);
+
+                    if (price == 0 || price > maxPriceBps) continue;
+
+                    bytes32 poolId = MASTER_ROUTER.getPoolId(marketId, buyYes, price);
+                    (uint256 depth,,,) = MASTER_ROUTER.pools(poolId);
+                    if (depth == 0) continue;
+
+                    uint256 costToFill = (depth * price + 9999) / 10000;
+                    uint256 sharesToBuy;
+                    uint256 collateralNeeded;
+
+                    if (remainingCollateral >= costToFill) {
+                        sharesToBuy = depth;
+                        collateralNeeded = costToFill;
+                    } else {
+                        sharesToBuy = (remainingCollateral * 10000) / price;
+                        if (sharesToBuy == 0) continue;
+                        collateralNeeded = (sharesToBuy * price + 9999) / 10000;
+                    }
+
+                    poolSharesOut += sharesToBuy;
+                    remainingCollateral -= collateralNeeded;
+                    ++poolLevelsFilled;
+                }
+            }
+        }
+
+        totalSharesOut = poolSharesOut;
+
+        // Step 2: Quote PMHookRouter for remainder
+        if (remainingCollateral > 0) {
+            (uint256 pmShares,, bytes4 source,) =
+                quoteBootstrapBuy(marketId, buyYes, remainingCollateral, 0);
+            pmSharesOut = pmShares;
+            pmSource = source;
+            totalSharesOut += pmShares;
+        }
+    }
+
+    /// @notice Quote expected output for MasterRouter.sellWithSweep (pools + PMHookRouter)
+    /// @param marketId Market to sell in
+    /// @param sellYes True to sell YES shares, false for NO
+    /// @param sharesIn Amount of shares to sell
+    /// @param minPriceBps Minimum price for pool fills (0 = skip pools)
+    /// @return totalCollateralOut Total collateral expected across all venues
+    /// @return poolCollateralOut Collateral from pool fills
+    /// @return poolLevelsFilled Number of pool price levels touched
+    /// @return pmCollateralOut Collateral from PMHookRouter
+    /// @return pmSource PMHookRouter source ("otc", "amm", "mult")
+    function quoteSellWithSweep(
+        uint256 marketId,
+        bool sellYes,
+        uint256 sharesIn,
+        uint256 minPriceBps
+    )
+        external
+        view
+        returns (
+            uint256 totalCollateralOut,
+            uint256 poolCollateralOut,
+            uint256 poolLevelsFilled,
+            uint256 pmCollateralOut,
+            bytes4 pmSource
+        )
+    {
+        if (sharesIn == 0 || address(MASTER_ROUTER) == address(0)) {
+            return (0, 0, 0, 0, bytes4(0));
+        }
+
+        uint256 remainingShares = sharesIn;
+
+        // Step 1: Quote pool fills from highest price down to minPriceBps
+        if (minPriceBps > 0 && minPriceBps < 10000) {
+            bytes32 bitmapKey = keccak256(abi.encode(marketId, sellYes, false)); // false = BID
+
+            for (uint256 b; b < 40 && remainingShares > 0; ++b) {
+                uint256 bucket = 39 - b;
+                uint256 word = MASTER_ROUTER.priceBitmap(bitmapKey, bucket);
+                while (word != 0 && remainingShares > 0) {
+                    uint256 bit = _highestSetBit(word);
+                    uint256 price = (bucket << 8) | bit;
+                    word &= ~(1 << bit);
+
+                    if (price == 0 || price < minPriceBps) continue;
+
+                    bytes32 bidPoolId = MASTER_ROUTER.getBidPoolId(marketId, sellYes, price);
+                    (uint256 collateralDepth,,,) = MASTER_ROUTER.bidPools(bidPoolId);
+                    if (collateralDepth == 0) continue;
+
+                    uint256 maxShares = (collateralDepth * 10000) / price;
+                    uint256 sharesToSell;
+                    uint256 collateralReceived;
+
+                    if (remainingShares >= maxShares) {
+                        sharesToSell = maxShares;
+                        collateralReceived = collateralDepth;
+                    } else {
+                        sharesToSell = remainingShares;
+                        collateralReceived = (remainingShares * price + 9999) / 10000;
+                    }
+
+                    poolCollateralOut += collateralReceived;
+                    remainingShares -= sharesToSell;
+                    ++poolLevelsFilled;
+                }
+            }
+        }
+
+        totalCollateralOut = poolCollateralOut;
+
+        // Step 2: Quote PMHookRouter for remainder
+        if (remainingShares > 0) {
+            (uint256 pmCollateral, bytes4 source) =
+                quoteSellWithBootstrap(marketId, sellYes, remainingShares);
+            pmCollateralOut = pmCollateral;
+            pmSource = source;
+            totalCollateralOut += pmCollateral;
+        }
+    }
+
+    /// @dev Find lowest set bit position (isolate lowest bit, then find its position)
+    function _lowestSetBit(uint256 x) internal pure returns (uint256) {
+        return _highestSetBit(x & (~x + 1));
+    }
+
+    /// @dev Find position of highest set bit (0-255), returns 256 for x=0
+    function _highestSetBit(uint256 x) internal pure returns (uint256 r) {
+        if (x == 0) return 256;
+        assembly ("memory-safe") {
+            if gt(x, 0xffffffffffffffffffffffffffffffff) {
+                x := shr(128, x)
+                r := 128
+            }
+            if gt(x, 0xffffffffffffffff) {
+                x := shr(64, x)
+                r := or(r, 64)
+            }
+            if gt(x, 0xffffffff) {
+                x := shr(32, x)
+                r := or(r, 32)
+            }
+            if gt(x, 0xffff) {
+                x := shr(16, x)
+                r := or(r, 16)
+            }
+            if gt(x, 0xff) {
+                x := shr(8, x)
+                r := or(r, 8)
+            }
+            if gt(x, 0xf) {
+                x := shr(4, x)
+                r := or(r, 4)
+            }
+            if gt(x, 0x3) {
+                x := shr(2, x)
+                r := or(r, 2)
+            }
+            if gt(x, 0x1) { r := or(r, 1) }
+        }
+    }
+
+    // ============ MasterRouter View Functions (moved for bytecode savings) ============
+
+    /// @notice Get all active price levels with depth (for orderbook UI)
+    function getActiveLevels(uint256 marketId, bool isYes, uint256 maxLevels)
+        public
+        view
+        returns (
+            uint256[] memory askPrices,
+            uint256[] memory askDepths,
+            uint256[] memory bidPrices,
+            uint256[] memory bidDepths
+        )
+    {
+        if (maxLevels > 50) maxLevels = 50;
+
+        askPrices = new uint256[](maxLevels);
+        askDepths = new uint256[](maxLevels);
+        bidPrices = new uint256[](maxLevels);
+        bidDepths = new uint256[](maxLevels);
+
+        uint256 askCount;
+        uint256 bidCount;
+
+        bytes32 askKey = _getBitmapKey(marketId, isYes, true);
+        for (uint256 bucket; bucket < 40 && askCount < maxLevels; ++bucket) {
+            uint256 bits = MASTER_ROUTER.priceBitmap(askKey, bucket);
+            while (bits != 0 && askCount < maxLevels) {
+                uint256 bit = _lowestSetBit(bits);
+                uint256 price = (bucket << 8) | bit;
+                bytes32 poolId = MASTER_ROUTER.getPoolId(marketId, isYes, price);
+                (uint256 totalShares,,,) = MASTER_ROUTER.pools(poolId);
+                if (totalShares > 0) {
+                    askPrices[askCount] = price;
+                    askDepths[askCount] = totalShares;
+                    ++askCount;
+                }
+                bits &= bits - 1;
+            }
+        }
+
+        bytes32 bidKey = _getBitmapKey(marketId, isYes, false);
+        for (uint256 i = 40; i > 0 && bidCount < maxLevels; --i) {
+            uint256 bucket = i - 1;
+            uint256 bits = MASTER_ROUTER.priceBitmap(bidKey, bucket);
+            while (bits != 0 && bidCount < maxLevels) {
+                uint256 bit = _highestSetBit(bits);
+                uint256 price = (bucket << 8) | bit;
+                bytes32 bidPoolId = MASTER_ROUTER.getBidPoolId(marketId, isYes, price);
+                (uint256 totalCollateral,,,) = MASTER_ROUTER.bidPools(bidPoolId);
+                if (totalCollateral > 0) {
+                    bidPrices[bidCount] = price;
+                    bidDepths[bidCount] = totalCollateral;
+                    ++bidCount;
+                }
+                bits &= ~(1 << bit);
+            }
+        }
+
+        assembly ("memory-safe") {
+            mstore(askPrices, askCount)
+            mstore(askDepths, askCount)
+            mstore(bidPrices, bidCount)
+            mstore(bidDepths, bidCount)
+        }
+    }
+
+    /// @notice Get all active positions for a user on a market side
+    function getUserActivePositions(uint256 marketId, bool isYes, address user)
+        public
+        view
+        returns (
+            uint256[] memory askPrices,
+            uint256[] memory askShares,
+            uint256[] memory askPendingColl,
+            uint256[] memory bidPrices,
+            uint256[] memory bidCollateral,
+            uint256[] memory bidPendingShares
+        )
+    {
+        uint256 maxPositions = 50;
+
+        askPrices = new uint256[](maxPositions);
+        askShares = new uint256[](maxPositions);
+        askPendingColl = new uint256[](maxPositions);
+        bidPrices = new uint256[](maxPositions);
+        bidCollateral = new uint256[](maxPositions);
+        bidPendingShares = new uint256[](maxPositions);
+
+        uint256 askCount;
+        uint256 bidCount;
+
+        bytes32 askKey = _getBitmapKey(marketId, isYes, true);
+        for (uint256 bucket; bucket < 40 && askCount < maxPositions; ++bucket) {
+            uint256 bits = MASTER_ROUTER.priceBitmap(askKey, bucket);
+            while (bits != 0 && askCount < maxPositions) {
+                uint256 bit = _lowestSetBit(bits);
+                uint256 price = (bucket << 8) | bit;
+
+                bytes32 poolId = MASTER_ROUTER.getPoolId(marketId, isYes, price);
+                (uint256 scaled, uint256 collDebt) = MASTER_ROUTER.positions(poolId, user);
+
+                if (scaled > 0) {
+                    (uint256 totalShares, uint256 totalScaled, uint256 accCollPerScaled,) =
+                        MASTER_ROUTER.pools(poolId);
+                    uint256 withdrawable =
+                        totalScaled > 0 ? fullMulDiv(scaled, totalShares, totalScaled) : 0;
+                    uint256 acc = fullMulDiv(scaled, accCollPerScaled, 1e18);
+                    uint256 pending = acc > collDebt ? acc - collDebt : 0;
+
+                    askPrices[askCount] = price;
+                    askShares[askCount] = withdrawable;
+                    askPendingColl[askCount] = pending;
+                    ++askCount;
+                }
+                bits &= bits - 1;
+            }
+        }
+
+        bytes32 bidKey = _getBitmapKey(marketId, isYes, false);
+        for (uint256 bucket; bucket < 40 && bidCount < maxPositions; ++bucket) {
+            uint256 bits = MASTER_ROUTER.priceBitmap(bidKey, bucket);
+            while (bits != 0 && bidCount < maxPositions) {
+                uint256 bit = _lowestSetBit(bits);
+                uint256 price = (bucket << 8) | bit;
+
+                bytes32 bidPoolId = MASTER_ROUTER.getBidPoolId(marketId, isYes, price);
+                (uint256 scaled, uint256 sharesDebt) = MASTER_ROUTER.bidPositions(bidPoolId, user);
+
+                if (scaled > 0) {
+                    (uint256 totalCollateral, uint256 totalScaled, uint256 accSharesPerScaled,) =
+                        MASTER_ROUTER.bidPools(bidPoolId);
+                    uint256 withdrawable =
+                        totalScaled > 0 ? fullMulDiv(scaled, totalCollateral, totalScaled) : 0;
+                    uint256 acc = fullMulDiv(scaled, accSharesPerScaled, 1e18);
+                    uint256 pending = acc > sharesDebt ? acc - sharesDebt : 0;
+
+                    bidPrices[bidCount] = price;
+                    bidCollateral[bidCount] = withdrawable;
+                    bidPendingShares[bidCount] = pending;
+                    ++bidCount;
+                }
+                bits &= bits - 1;
+            }
+        }
+
+        assembly ("memory-safe") {
+            mstore(askPrices, askCount)
+            mstore(askShares, askCount)
+            mstore(askPendingColl, askCount)
+            mstore(bidPrices, bidCount)
+            mstore(bidCollateral, bidCount)
+            mstore(bidPendingShares, bidCount)
+        }
+    }
+
+    /// @notice Batch query user positions at specific prices
+    function getUserPositionsBatch(
+        uint256 marketId,
+        bool isYes,
+        address user,
+        uint256[] calldata prices
+    )
+        public
+        view
+        returns (
+            uint256[] memory askShares,
+            uint256[] memory askPending,
+            uint256[] memory bidCollateral,
+            uint256[] memory bidPending
+        )
+    {
+        uint256 len = prices.length;
+        askShares = new uint256[](len);
+        askPending = new uint256[](len);
+        bidCollateral = new uint256[](len);
+        bidPending = new uint256[](len);
+
+        for (uint256 i; i < len; ++i) {
+            uint256 price = prices[i];
+
+            bytes32 poolId = MASTER_ROUTER.getPoolId(marketId, isYes, price);
+            (uint256 askScaled, uint256 collDebt) = MASTER_ROUTER.positions(poolId, user);
+            if (askScaled > 0) {
+                (uint256 totalShares, uint256 totalScaled, uint256 accCollPerScaled,) =
+                    MASTER_ROUTER.pools(poolId);
+                askShares[i] = totalScaled > 0 ? fullMulDiv(askScaled, totalShares, totalScaled) : 0;
+                uint256 acc = fullMulDiv(askScaled, accCollPerScaled, 1e18);
+                askPending[i] = acc > collDebt ? acc - collDebt : 0;
+            }
+
+            bytes32 bidPoolId = MASTER_ROUTER.getBidPoolId(marketId, isYes, price);
+            (uint256 bidScaled, uint256 sharesDebt) = MASTER_ROUTER.bidPositions(bidPoolId, user);
+            if (bidScaled > 0) {
+                (uint256 totalColl, uint256 totalScaled, uint256 accSharesPerScaled,) =
+                    MASTER_ROUTER.bidPools(bidPoolId);
+                bidCollateral[i] =
+                    totalScaled > 0 ? fullMulDiv(bidScaled, totalColl, totalScaled) : 0;
+                uint256 acc = fullMulDiv(bidScaled, accSharesPerScaled, 1e18);
+                bidPending[i] = acc > sharesDebt ? acc - sharesDebt : 0;
+            }
+        }
+    }
+
+    /// @dev Compute bitmap key for a market/side/type
+    function _getBitmapKey(uint256 marketId, bool isYes, bool isAsk)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(marketId, isYes, isAsk));
+    }
+
+    /// @dev Full precision multiply-divide (handles intermediate overflow)
+    function fullMulDiv(uint256 x, uint256 y, uint256 d) internal pure returns (uint256 z) {
+        assembly ("memory-safe") {
+            z := mul(x, y)
+            for {} 1 {} {
+                if iszero(mul(or(iszero(x), eq(div(z, x), y)), d)) {
+                    let mm := mulmod(x, y, not(0))
+                    let p1 := sub(mm, add(z, lt(mm, z)))
+                    let r := mulmod(x, y, d)
+                    let t := and(d, sub(0, d))
+                    if iszero(gt(d, p1)) {
+                        mstore(0x00, ERR_COMPUTATION)
+                        mstore(0x04, 1)
+                        revert(0x00, 0x24)
+                    }
+                    d := div(d, t)
+                    let inv := xor(2, mul(3, d))
+                    inv := mul(inv, sub(2, mul(d, inv)))
+                    inv := mul(inv, sub(2, mul(d, inv)))
+                    inv := mul(inv, sub(2, mul(d, inv)))
+                    inv := mul(inv, sub(2, mul(d, inv)))
+                    inv := mul(inv, sub(2, mul(d, inv)))
+                    z := mul(
+                        or(mul(sub(p1, gt(r, z)), add(div(sub(0, t), t), 1)), div(sub(z, r), t)),
+                        mul(sub(2, mul(d, inv)), inv)
+                    )
+                    break
+                }
+                z := div(z, d)
+                break
+            }
+        }
     }
 }

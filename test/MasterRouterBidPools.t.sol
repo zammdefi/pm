@@ -155,7 +155,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         vm.prank(seller);
         (uint256 sharesSold, uint256 collateralReceived) =
-            router.sellToPool(marketId, true, priceInBps, 50 ether, seller);
+            router.sellToPool(marketId, true, priceInBps, 50 ether, 0, seller, 0);
 
         assertEq(sharesSold, 50 ether, "Should sell 50 shares");
         assertEq(collateralReceived, 25 ether, "Should receive 25 ETH (50 * 0.50)");
@@ -184,7 +184,7 @@ contract MasterRouterBidPoolsTest is Test {
         // Seller sells 100 shares - should use all 40 ETH
         vm.prank(seller);
         (uint256 sharesSold, uint256 collateralReceived) =
-            router.sellToPool(marketId, true, priceInBps, 100 ether, seller);
+            router.sellToPool(marketId, true, priceInBps, 100 ether, 0, seller, 0);
 
         assertEq(sharesSold, 100 ether, "Should sell 100 shares");
         assertEq(collateralReceived, 40 ether, "Should receive 40 ETH");
@@ -205,7 +205,7 @@ contract MasterRouterBidPoolsTest is Test {
         // Try to sell more than pool can buy (10 ETH at 0.50 = 20 shares max)
         vm.prank(seller);
         vm.expectRevert();
-        router.sellToPool(marketId, true, priceInBps, 50 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 50 ether, 0, seller, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -222,7 +222,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Seller sells 50 shares
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 50 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 50 ether, 0, seller, 0);
 
         // Alice claims her shares
         uint256 aliceSharesBefore = pamm.balanceOf(alice, marketId);
@@ -249,7 +249,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Seller sells 60 shares (30 ETH spent)
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 60 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 60 ether, 0, seller, 0);
 
         // Alice should get 1/3 = 20 shares, Bob should get 2/3 = 40 shares
         vm.prank(alice);
@@ -271,7 +271,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // First fill: 40 shares
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 40 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 40 ether, 0, seller, 0);
 
         // Alice claims first batch
         vm.prank(alice);
@@ -280,7 +280,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Second fill: 60 shares
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 60 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 60 ether, 0, seller, 0);
 
         // Alice claims second batch
         vm.prank(alice);
@@ -308,7 +308,8 @@ contract MasterRouterBidPoolsTest is Test {
         uint256 aliceBalanceBefore = alice.balance;
 
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromBidPool(marketId, true, priceInBps, 50 ether, alice);
+        (uint256 withdrawn,) =
+            router.withdrawFromBidPool(marketId, true, priceInBps, 50 ether, alice);
 
         assertEq(withdrawn, 50 ether, "Should withdraw 50 ETH");
         assertEq(alice.balance, aliceBalanceBefore + 50 ether, "Alice received ETH");
@@ -328,7 +329,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Withdraw all by passing 0
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
+        (uint256 withdrawn,) = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
 
         assertEq(withdrawn, 100 ether, "Should withdraw all 100 ETH");
     }
@@ -343,7 +344,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // 40 shares filled (20 ETH spent)
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 40 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 40 ether, 0, seller, 0);
 
         // Alice MUST claim BEFORE withdrawing in accumulator model
         vm.prank(alice);
@@ -355,7 +356,7 @@ contract MasterRouterBidPoolsTest is Test {
         assertEq(aliceWithdrawable, 80 ether, "Alice can withdraw 80 ETH");
 
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
+        (uint256 withdrawn,) = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
         assertEq(withdrawn, 80 ether, "Withdrew 80 ETH");
     }
 
@@ -372,7 +373,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // 50 shares filled (25 ETH spent from 200 total)
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 50 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 50 ether, 0, seller, 0);
 
         // Alice withdraws her remaining collateral
         vm.prank(alice);
@@ -408,7 +409,6 @@ contract MasterRouterBidPoolsTest is Test {
             50 ether, // sharesIn
             0, // minCollateralOut
             priceInBps, // bidPoolPriceInBps - route through our pool
-            0, // feeOrHook (deprecated)
             seller,
             0 // deadline
         );
@@ -435,7 +435,6 @@ contract MasterRouterBidPoolsTest is Test {
             20 ether,
             0,
             priceInBps, // Use bid pool at this price
-            0,
             seller,
             0
         );
@@ -468,7 +467,8 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Seller sells NO shares
         vm.prank(seller);
-        (uint256 sharesSold,) = router.sellToPool(marketId, false, priceInBps, 50 ether, seller);
+        (uint256 sharesSold,) =
+            router.sellToPool(marketId, false, priceInBps, 50 ether, 0, seller, 0);
         assertEq(sharesSold, 50 ether, "Sold NO shares to pool");
 
         // Alice claims NO shares
@@ -520,7 +520,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // First fill: 40 shares (20 ETH spent)
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 40 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 40 ether, 0, seller, 0);
 
         // Bob joins AFTER first fill
         vm.prank(bob);
@@ -528,7 +528,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Second fill: 40 shares (20 ETH spent from 180 remaining)
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 40 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 40 ether, 0, seller, 0);
 
         // Alice claims - should get 40 from first fill + share of second fill
         vm.prank(alice);
@@ -556,7 +556,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Fill 50 shares
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 50 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 50 ether, 0, seller, 0);
 
         // Alice MUST claim before withdraw to get her shares
         vm.prank(alice);
@@ -565,7 +565,7 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Now withdraw remaining collateral
         vm.prank(alice);
-        uint256 withdrawn = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
+        (uint256 withdrawn,) = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
         assertEq(withdrawn, 75 ether, "Withdrew remaining 75 ETH");
     }
 
@@ -586,10 +586,10 @@ contract MasterRouterBidPoolsTest is Test {
 
         // Multiple sells
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 80 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 80 ether, 0, seller, 0);
 
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 70 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 70 ether, 0, seller, 0);
 
         // Total sold: 150 shares
 
@@ -619,15 +619,15 @@ contract MasterRouterBidPoolsTest is Test {
         // Sell 100 shares (50 ETH spent)
         uint256 sellerBalanceBefore = seller.balance;
         vm.prank(seller);
-        router.sellToPool(marketId, true, priceInBps, 100 ether, seller);
+        router.sellToPool(marketId, true, priceInBps, 100 ether, 0, seller, 0);
         uint256 sellerReceived = seller.balance - sellerBalanceBefore;
 
         // Withdraw remaining
         vm.prank(alice);
-        uint256 aliceWithdrawn = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
+        (uint256 aliceWithdrawn,) = router.withdrawFromBidPool(marketId, true, priceInBps, 0, alice);
 
         vm.prank(bob);
-        uint256 bobWithdrawn = router.withdrawFromBidPool(marketId, true, priceInBps, 0, bob);
+        (uint256 bobWithdrawn,) = router.withdrawFromBidPool(marketId, true, priceInBps, 0, bob);
 
         // Total out should equal total in
         assertEq(

@@ -588,7 +588,7 @@ contract PMHookRouter {
             }
         }
 
-        // Update vault lastActivity (consolidated here from all call sites)
+        // Update vault lastActivity
         vault.lastActivity = uint32(block.timestamp);
     }
 
@@ -710,15 +710,15 @@ contract PMHookRouter {
     uint256 constant MASK_LOWER_224 =
         0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
-    error ValidationError(uint8 code);
-    error TimingError(uint8 code);
-    error StateError(uint8 code);
-    error TransferError(uint8 code);
-    error ComputationError(uint8 code);
-    error SharesError(uint8 code);
-    error Reentrancy();
-    error ApproveFailed();
     error WithdrawalTooSoon(uint256 remainingSeconds);
+    error ComputationError(uint8 code);
+    error ValidationError(uint8 code);
+    error TransferError(uint8 code);
+    error TimingError(uint8 code);
+    error SharesError(uint8 code);
+    error StateError(uint8 code);
+    error ApproveFailed();
+    error Reentrancy();
 
     constructor() payable {
         PAMM.setOperator(address(ZAMM), true);
@@ -1323,8 +1323,6 @@ contract PMHookRouter {
                             marketId,
                             buyYes,
                             safeAMMCollateral,
-                            minSharesOut,
-                            totalSharesOut,
                             to,
                             deadline,
                             noId,
@@ -2114,7 +2112,6 @@ contract PMHookRouter {
         uint256 twapBps;
         uint256 yesReserve;
         uint256 noReserve;
-        bool yesIsId0;
     }
 
     /// @notice Validate TWAP and spot price for rebalancing
@@ -2130,10 +2127,10 @@ contract PMHookRouter {
         if (uint256(r0) * r1 == 0) _revert(ERR_TIMING, 4); // PoolNotReady
 
         uint256 noId = _getNoId(marketId);
-        validation.yesIsId0 = marketId < noId;
+        bool yesIsId0 = marketId < noId;
 
-        validation.yesReserve = validation.yesIsId0 ? uint256(r0) : uint256(r1);
-        validation.noReserve = validation.yesIsId0 ? uint256(r1) : uint256(r0);
+        validation.yesReserve = yesIsId0 ? uint256(r0) : uint256(r1);
+        validation.noReserve = yesIsId0 ? uint256(r1) : uint256(r0);
 
         // Compute spot P(YES) = NO/(YES+NO) to match TWAP convention
         uint256 spotPYesBps;
@@ -2544,8 +2541,6 @@ contract PMHookRouter {
         uint256 marketId,
         bool buyYes,
         uint256 collateralToSwap,
-        uint256 minSharesOut,
-        uint256 totalSharesOut,
         address to,
         uint256 deadline,
         uint256 noId,

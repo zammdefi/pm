@@ -221,7 +221,7 @@ contract PMHookRouterIntegrationTest is BaseTest {
         hook.transferOwnership(address(router));
 
         // Deploy quoter
-        quoter = new PMHookQuoter(address(router));
+        quoter = new PMHookQuoter(address(router), address(0));
 
         ALICE = makeAddr("ALICE");
         BOB = makeAddr("BOB");
