@@ -80,7 +80,7 @@ contract PMHookRouterProductionReadyTest is BaseTest {
         hook.transferOwnership(address(router));
 
         // Deploy quoter
-        quoter = new PMHookQuoter(address(router), address(0));
+        quoter = new PMHookQuoter();
 
         ALICE = makeAddr("ALICE");
         BOB = makeAddr("BOB");

@@ -625,7 +625,7 @@ contract PMHookRouterAdvancedEdgeCasesTest is Test {
         hook.transferOwnership(address(router));
 
         // Deploy quoter
-        quoter = new PMHookQuoter(address(router), address(0));
+        quoter = new PMHookQuoter();
 
         vm.deal(ALICE, 10000 ether);
         vm.deal(BOB, 10000 ether);
