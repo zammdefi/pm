@@ -24,6 +24,7 @@ Minimal onchain mechanisms for binary prediction markets:
 | [GasPM](https://contractscan.xyz/contract/0x0000000000ee3d4294438093EaA34308f47Bc0b4) | `0x0000000000ee3d4294438093EaA34308f47Bc0b4` |
 | [PMFeeHook](https://contractscan.xyz/contract/0x0000000000Cc736804447C7E1dC8d3683a37f1a9) | `0x0000000000Cc736804447C7E1dC8d3683a37f1a9` |
 | [PMHookRouter](https://contractscan.xyz/contract/0x0000000000BADa259Cb860c12ccD9500d9496B3e) | `0x0000000000BADa259Cb860c12ccD9500d9496B3e` |
+| [MasterRouter](https://contractscan.xyz/contract/0x000000000055CdB14b66f37B96a571108FFEeA5C) | `0x000000000055CdB14b66f37B96a571108FFEeA5C` |
 | wstETH | `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0` |
 | ZSTETH | `0x000000000077B216105413Dc45Dc6F6256577c7B` |
 
@@ -798,6 +799,180 @@ router.createBidPool(marketId, collateralAmount, true, 6000, recipient);
 
 // Seller sweeps bid pools
 router.sellWithSweep(marketId, isYes, shares, minOut, minPriceBps, recipient, deadline);
+```
+
+---
+
+## MasterRouter — Pooled Orderbook Router
+
+Complete abstraction layer with pooled orderbook + vault integration. Enables limit orders via on-chain liquidity pools with accumulator-based accounting to prevent late joiner theft.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          MasterRouter                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │
+│  │   ASK Pools     │  │   BID Pools     │  │ Vault Integration│         │
+│  │  (Sell Orders)  │  │  (Buy Orders)   │  │                 │         │
+│  │                 │  │                 │  │                 │         │
+│  │ • mintAndPool   │  │ • createBidPool │  │ • mintAndVault  │         │
+│  │ • depositShares │  │ • sellToPool    │  │ • mintAndSell   │         │
+│  │ • claimProceeds │  │ • claimShares   │  │ • provideLiquidity│        │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘         │
+│           │                    │                    │                   │
+│           └────────────────────┼────────────────────┘                   │
+│                                │                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                      Smart Routing                              │   │
+│  │  • buy()         - Pool first, then PMHookRouter fallback       │   │
+│  │  • buyWithSweep() - Sweep multiple ASK price levels             │   │
+│  │  • sell()        - Pool first, then PMHookRouter fallback       │   │
+│  │  • sellWithSweep() - Sweep multiple BID price levels            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                │                                        │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │
+            ┌───────────────────┼───────────────────┐
+            │                   │                   │
+            ▼                   ▼                   ▼
+┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+│   PMHookRouter    │  │       ZAMM        │  │       PAMM        │
+│  • Vault trading  │  │  • AMM pools      │  │  • Split/merge    │
+│  • Bootstrap      │  │  • Price discovery│  │  • YES/NO tokens  │
+└───────────────────┘  └───────────────────┘  └───────────────────┘
+```
+
+### Key Features
+
+#### Pooled Orderbook (ASK Pools)
+Passive sell orders that get filled when others buy:
+
+```solidity
+// Mint 1 ETH worth of shares, keep YES, pool NO at 40% (4000 bps)
+router.mintAndPool(marketId, 1 ether, true, 4000, recipient);
+
+// Or deposit existing shares to a pool
+router.depositSharesToPool(marketId, false, shares, 4000, recipient);
+
+// Claim collateral when your shares get bought
+router.claimProceeds(marketId, false, 4000, recipient);
+```
+
+#### Bid Pools (Buy Orders)
+Passive buy orders that get filled when others sell:
+
+```solidity
+// Create bid pool: willing to buy YES at 60% (6000 bps)
+router.createBidPool(marketId, 1 ether, true, 6000, recipient);
+
+// Claim shares when your bid gets filled
+router.claimBidShares(marketId, true, 6000, recipient);
+```
+
+#### Smart Routing
+
+| Function | Description |
+|----------|-------------|
+| `buy()` | Buy from specific ASK pool price, then PMHookRouter |
+| `buyWithSweep()` | Sweep ASK pools from lowest price up to max price |
+| `sell()` | Sell to specific BID pool price, then PMHookRouter |
+| `sellWithSweep()` | Sweep BID pools from highest price down to min price |
+
+#### Vault Integration
+
+| Function | Description |
+|----------|-------------|
+| `mintAndVault()` | Split collateral → keep one side, deposit other to vault |
+| `mintAndSellOther()` | Split → keep one side, sell other via pools + PMHookRouter |
+| `provideLiquidity()` | Add liquidity to vault + AMM in one transaction |
+
+#### Pool Management
+
+| Function | Description |
+|----------|-------------|
+| `withdrawFromPool()` | Withdraw unsold shares from ASK pool |
+| `withdrawFromBidPool()` | Withdraw unused collateral from BID pool |
+| `migrateAskPosition()` | Move position to different ASK price level |
+| `migrateBidPosition()` | Move position to different BID price level |
+
+### Accumulator Model
+
+Uses LP units + reward debt pattern to fairly distribute proceeds:
+- **Late joiner protection**: New depositors don't claim proceeds from fills before they joined
+- **Pro-rata distribution**: Proceeds distributed proportionally to LP share ownership
+- **Gas efficient**: O(1) claim operations regardless of fill history
+
+### Price Discovery
+
+```solidity
+// Get best ask (lowest sell price with liquidity)
+(uint256 bestAsk, uint256 depth) = router.getBestAsk(marketId, true);
+
+// Get best bid (highest buy price with liquidity)
+(uint256 bestBid, uint256 depth) = router.getBestBid(marketId, true);
+
+// Get spread
+(uint256 bid, uint256 ask, uint256 spread) = router.getSpread(marketId, true);
+
+// Get full orderbook at specific prices
+router.getOrderbook(marketId, true, pricesArray);
+```
+
+### Multicall
+
+Batch multiple operations in a single transaction:
+
+```solidity
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(router.mintAndPool, (marketId, 1 ether, true, 4000, recipient));
+calls[1] = abi.encodeCall(router.createBidPool, (marketId, 1 ether, false, 6000, recipient));
+router.multicall{value: 2 ether}(calls);
+```
+
+### Functions
+
+```solidity
+// ASK Pool (sell orders)
+mintAndPool(marketId, collateralIn, keepYes, priceInBps, to) → poolId
+depositSharesToPool(marketId, isYes, sharesIn, priceInBps, to) → poolId
+claimProceeds(marketId, isYes, priceInBps, to) → collateralClaimed
+withdrawFromPool(marketId, isYes, priceInBps, sharesToWithdraw, to) → withdrawn
+migrateAskPosition(marketId, isYes, fromPrice, toPrice, to) → (sharesWithdrawn, collateralClaimed, newPoolId)
+
+// BID Pool (buy orders)
+createBidPool(marketId, collateralIn, buyYes, priceInBps, to) → bidPoolId
+claimBidShares(marketId, isYes, priceInBps, to) → sharesClaimed
+withdrawFromBidPool(marketId, buyYes, priceInBps, collateralToWithdraw, to) → withdrawn
+migrateBidPosition(marketId, buyYes, fromPrice, toPrice, to) → (collateralWithdrawn, sharesClaimed, newBidPoolId)
+
+// Smart Routing
+buy(marketId, buyYes, collateralIn, minSharesOut, poolPriceInBps, to, deadline) → (totalSharesOut, sources)
+buyWithSweep(marketId, buyYes, collateralIn, minSharesOut, maxPriceBps, to, deadline) → (totalSharesOut, poolSharesOut, poolLevelsFilled, sources)
+sell(marketId, sellYes, sharesIn, minCollateralOut, bidPoolPriceInBps, to, deadline) → (totalCollateralOut, sources)
+sellWithSweep(marketId, sellYes, sharesIn, minCollateralOut, minPriceBps, to, deadline) → (totalCollateralOut, poolCollateralOut, poolLevelsFilled, sources)
+
+// Vault Integration
+mintAndVault(marketId, collateralIn, keepYes, to) → (sharesKept, vaultShares)
+mintAndSellOther(marketId, collateralIn, keepYes, minPriceBps, to, deadline) → (sharesKept, collateralRecovered)
+provideLiquidity(marketId, collateralAmount, vaultYesShares, vaultNoShares, ammLPShares, minAmount0, minAmount1, to, deadline) → (yesVaultSharesMinted, noVaultSharesMinted, ammLiquidity)
+
+// View Functions
+getPoolId(marketId, isYes, priceInBps) → poolId
+getBidPoolId(marketId, buyYes, priceInBps) → bidPoolId
+getUserPosition(marketId, isYes, priceInBps, user) → (scaled, withdrawableShares, pendingCollateral, debt)
+getBidPosition(marketId, buyYes, priceInBps, user) → (scaled, withdrawableCollateral, pendingShares, debt)
+getBestAsk(marketId, isYes) → (priceInBps, depth)
+getBestBid(marketId, buyYes) → (priceInBps, depth)
+getSpread(marketId, isYes) → (bestBid, bestAsk, spreadBps)
+getOrderbook(marketId, isYes, pricesInBps[]) → (askDepths[], bidDepths[])
+
+// Utilities
+multicall(data[]) → results[]
+permit(token, owner, value, deadline, v, r, s)
+permitDAI(owner, value, nonce, deadline, v, r, s)
 ```
 
 ---

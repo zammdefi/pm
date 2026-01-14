@@ -35,16 +35,6 @@ interface IPMHookRouter {
         uint256 deadline
     ) external returns (uint256 vaultShares);
 
-    function withdrawFromVault(
-        uint256 marketId,
-        bool isYes,
-        uint256 vaultSharesToRedeem,
-        address receiver,
-        uint256 deadline
-    ) external returns (uint256 sharesReturned, uint256 feesEarned);
-
-    function harvestVaultFees(uint256 marketId, bool isYes) external returns (uint256 feesEarned);
-
     function provideLiquidity(
         uint256 marketId,
         uint256 collateralAmount,
@@ -77,24 +67,6 @@ interface IPMHookRouter {
         address to,
         uint256 deadline
     ) external returns (uint256 collateralOut, bytes4 source);
-
-    // View functions
-    function totalYesVaultShares(uint256 marketId) external view returns (uint256);
-    function totalNoVaultShares(uint256 marketId) external view returns (uint256);
-    function vaultPositions(uint256 marketId, address user)
-        external
-        view
-        returns (
-            uint112 yesVaultShares,
-            uint112 noVaultShares,
-            uint256 yesDebt,
-            uint256 noDebt,
-            uint64 lastDepositTime
-        );
-    function canonicalPoolId(uint256 marketId) external view returns (uint256);
-    function canonicalFeeOrHook(uint256 marketId) external view returns (uint256);
-    function accYesCollateralPerShare(uint256 marketId) external view returns (uint256);
-    function accNoCollateralPerShare(uint256 marketId) external view returns (uint256);
 }
 
 /// @title MasterRouter - Complete Abstraction Layer
@@ -973,10 +945,6 @@ contract MasterRouter {
                     } else {
                         toSell = remaining;
                         toReceive = mulDivUp(toSell, price, BPS_DENOM);
-                        if (toReceive > depth) {
-                            toReceive = depth;
-                            toSell = mulDiv(toReceive, BPS_DENOM, price);
-                        }
                     }
 
                     if (toSell == 0) continue;
@@ -1095,7 +1063,8 @@ contract MasterRouter {
             }
 
             // Track balance before PMHookRouter call to detect refunds
-            uint256 balanceBefore = collateral == ETH ? address(this).balance : 0;
+            uint256 balanceBefore =
+                collateral == ETH ? address(this).balance : _getBalance(collateral, address(this));
             uint256 poolSharesOut = totalSharesOut; // Capture pool shares before PMHookRouter
 
             (uint256 additionalShares, bytes4 pmSource,) = PM_HOOK_ROUTER.buyWithBootstrap{
@@ -1111,12 +1080,19 @@ contract MasterRouter {
 
             totalSharesOut += additionalShares;
 
-            // Refund any ETH returned by PMHookRouter
-            if (collateral == ETH) {
-                uint256 balanceAfter = address(this).balance;
+            // Refund any collateral returned by PMHookRouter
+            {
+                uint256 balanceAfter = collateral == ETH
+                    ? address(this).balance
+                    : _getBalance(collateral, address(this));
                 uint256 expectedBalance = balanceBefore - remainingCollateral;
                 if (balanceAfter > expectedBalance) {
-                    _refundETHToCaller(balanceAfter - expectedBalance);
+                    uint256 refund = balanceAfter - expectedBalance;
+                    if (collateral == ETH) {
+                        _refundETHToCaller(refund);
+                    } else {
+                        _safeTransfer(collateral, msg.sender, refund);
+                    }
                 }
             }
 
@@ -1247,7 +1223,8 @@ contract MasterRouter {
                 _ensureApproval(collateral, address(PM_HOOK_ROUTER));
             }
 
-            uint256 balanceBefore = collateral == ETH ? address(this).balance : 0;
+            uint256 balanceBefore =
+                collateral == ETH ? address(this).balance : _getBalance(collateral, address(this));
 
             (uint256 additionalShares, bytes4 pmSource,) = PM_HOOK_ROUTER.buyWithBootstrap{
                 value: collateral == ETH ? remainingCollateral : 0
@@ -1262,12 +1239,19 @@ contract MasterRouter {
 
             totalSharesOut += additionalShares;
 
-            // Refund any ETH returned by PMHookRouter
-            if (collateral == ETH) {
-                uint256 balanceAfter = address(this).balance;
+            // Refund any collateral returned by PMHookRouter
+            {
+                uint256 balanceAfter = collateral == ETH
+                    ? address(this).balance
+                    : _getBalance(collateral, address(this));
                 uint256 expectedBalance = balanceBefore - remainingCollateral;
                 if (balanceAfter > expectedBalance) {
-                    _refundETHToCaller(balanceAfter - expectedBalance);
+                    uint256 refund = balanceAfter - expectedBalance;
+                    if (collateral == ETH) {
+                        _refundETHToCaller(refund);
+                    } else {
+                        _safeTransfer(collateral, msg.sender, refund);
+                    }
                 }
             }
 
@@ -1325,12 +1309,8 @@ contract MasterRouter {
 
                 if (sharesToSell > 0) {
                     uint256 collateralToSpend = mulDivUp(sharesToSell, bidPoolPriceInBps, BPS_DENOM);
-                    if (collateralToSpend > bidPool.totalCollateral) {
-                        collateralToSpend = bidPool.totalCollateral;
-                        sharesToSell = mulDiv(collateralToSpend, BPS_DENOM, bidPoolPriceInBps);
-                    }
 
-                    if (sharesToSell > 0 && collateralToSpend > 0) {
+                    if (collateralToSpend > 0) {
                         // Fill bid pool
                         _fillBidPool(bidPool, sharesToSell, collateralToSpend);
 
@@ -1478,11 +1458,6 @@ contract MasterRouter {
                         // Partial fill
                         sharesToSell = remainingShares;
                         collateralToReceive = mulDivUp(sharesToSell, price, BPS_DENOM);
-                        // Cap at available collateral
-                        if (collateralToReceive > collateralDepth) {
-                            collateralToReceive = collateralDepth;
-                            sharesToSell = mulDiv(collateralToReceive, BPS_DENOM, price);
-                        }
                     }
 
                     if (sharesToSell == 0 || collateralToReceive == 0) continue;
@@ -1684,10 +1659,6 @@ contract MasterRouter {
 
         sharesSold = sharesWanted;
         collateralReceived = mulDivUp(sharesWanted, priceInBps, BPS_DENOM);
-        if (collateralReceived > bidPool.totalCollateral) {
-            collateralReceived = bidPool.totalCollateral;
-            sharesSold = mulDiv(collateralReceived, BPS_DENOM, priceInBps);
-        }
         if (collateralReceived == 0) _revert(ERR_VALIDATION, 5);
         if (minCollateral != 0 && collateralReceived < minCollateral) _revert(ERR_VALIDATION, 9);
 
@@ -2278,9 +2249,6 @@ contract MasterRouter {
         }
     }
 
-    // NOTE: getActiveLevels, getUserActivePositions, getUserPositionsBatch moved to PMHookQuoter
-    // to keep MasterRouter under bytecode limit
-
     /*//////////////////////////////////////////////////////////////
                           INTERNAL HELPERS
     //////////////////////////////////////////////////////////////*/
@@ -2428,6 +2396,17 @@ contract MasterRouter {
                 mstore(0x04, 2)
                 revert(0x00, 0x24)
             }
+        }
+    }
+
+    function _getBalance(address token, address account) internal view returns (uint256 bal) {
+        assembly ("memory-safe") {
+            mstore(0x14, account)
+            mstore(0x00, 0x70a08231000000000000000000000000)
+            bal := mul(
+                mload(0x20),
+                and(gt(returndatasize(), 0x1f), staticcall(gas(), token, 0x10, 0x24, 0x20, 0x20))
+            )
         }
     }
 

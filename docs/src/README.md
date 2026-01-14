@@ -4,6 +4,8 @@ Minimal onchain mechanisms for binary prediction markets:
 
 - **PAMM** — Collateral vault minting fully-collateralized YES/NO conditional tokens (ERC6909). Prices via ZAMM.
 - **PMRouter** — Limit order router for PAMM markets. CEX-style orderbook trading via ZAMM + market orders via PAMM.
+- **PMHookRouter** — Dynamic fee router with OTC vault, TWAP pricing, and advanced trading features via PMFeeHook.
+- **PMFeeHook** — ZAMM hook providing dynamic fees: bootstrap decay, skew protection, price impact limits, volatility fees.
 - **PM** — Pure parimutuel: buy/sell at par (1 wstETH = 1 share), winners split the pot.
 - **Resolver** — On-chain oracle resolver for PAMM markets using arbitrary `staticcall` reads.
 - **GasPM** — Gas price TWAP oracle with prediction market factory for "will gas exceed X gwei?" markets.
@@ -20,6 +22,9 @@ Minimal onchain mechanisms for binary prediction markets:
 | [Resolver](https://contractscan.xyz/contract/0x00000000002205020E387b6a378c05639047BcFB) | `0x00000000002205020E387b6a378c05639047BcFB` |
 | [ZAMM](https://contractscan.xyz/contract/0x000000000000040470635EB91b7CE4D132D616eD) | `0x000000000000040470635EB91b7CE4D132D616eD` |
 | [GasPM](https://contractscan.xyz/contract/0x0000000000ee3d4294438093EaA34308f47Bc0b4) | `0x0000000000ee3d4294438093EaA34308f47Bc0b4` |
+| [PMFeeHook](https://contractscan.xyz/contract/0x0000000000Cc736804447C7E1dC8d3683a37f1a9) | `0x0000000000Cc736804447C7E1dC8d3683a37f1a9` |
+| [PMHookRouter](https://contractscan.xyz/contract/0x0000000000BADa259Cb860c12ccD9500d9496B3e) | `0x0000000000BADa259Cb860c12ccD9500d9496B3e` |
+| [MasterRouter](https://contractscan.xyz/contract/0x000000000055CdB14b66f37B96a571108FFEeA5C) | `0x000000000055CdB14b66f37B96a571108FFEeA5C` |
 | wstETH | `0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0` |
 | ZSTETH | `0x000000000077B216105413Dc45Dc6F6256577c7B` |
 
@@ -618,6 +623,357 @@ For a buy order at 0.60:
 - **Deadline semantics:** Swap functions treat `deadline == 0` as `block.timestamp`
 - **Partial fill rounding:** ZAMM uses floor division, max dust is N units for N fills
 - **fillOrder()** checks `tradingOpen` to prevent fills after early market resolution
+
+---
+
+## PMFeeHook — Dynamic Fee Hook
+
+A ZAMM hook that provides dynamic, market-aware fees for prediction market pools. Requires EIP-1153 (transient storage).
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Bootstrap Decay** | Higher fees at market start, decaying over time (linear/cubic/sqrt/ease-in curves) |
+| **Skew Protection** | Increased fees when market is imbalanced (linear/quadratic/cubic/quartic curves) |
+| **Asymmetric Fees** | Linear fee component based on market imbalance |
+| **Price Impact Limits** | Reverts trades that move probability too much (protects TWAP) |
+| **Volatility Fees** | Extra fees during high price volatility |
+| **Close Window Modes** | Configurable behavior near market close (halt/fixed fee/min fee/dynamic) |
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           PMFeeHook                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  beforeAction()                      afterAction()                      │
+│  ┌─────────────────────────┐        ┌─────────────────────────┐        │
+│  │ • Validate pool active  │        │ • Check price impact    │        │
+│  │ • Enforce market open   │        │ • Record volatility     │        │
+│  │ • Compute dynamic fee   │        │ • Clear transient cache │        │
+│  │ • Cache reserves (tstore)│       └─────────────────────────┘        │
+│  └─────────────────────────┘                                            │
+│                                                                         │
+│  Fee Components:                                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ totalFee = bootstrap + skew + asymmetric + volatility           │   │
+│  │ returnedFee = min(totalFee, feeCapBps)                          │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Default Configuration
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `minFeeBps` | 10 (0.10%) | Steady-state fee after bootstrap |
+| `maxFeeBps` | 75 (0.75%) | Starting fee during bootstrap |
+| `maxSkewFeeBps` | 80 (0.80%) | Max skew fee at 90/10 imbalance |
+| `feeCapBps` | 300 (3.00%) | Total fee ceiling |
+| `skewRefBps` | 4000 | Skew threshold (90/10 split) |
+| `bootstrapWindow` | 2 days | Bootstrap decay duration |
+| `maxPriceImpactBps` | 1200 (12%) | Max probability change per trade |
+| `closeWindow` | 1 hour | Close window duration |
+| `closeWindowFeeBps` | 40 (0.40%) | Fixed fee in close window (mode 1) |
+
+### Close Window Modes
+
+| Mode | Behavior |
+|------|----------|
+| 0 | Halt trading (revert) |
+| 1 | Fixed `closeWindowFeeBps` |
+| 2 | Use `minFeeBps` |
+| 3 | Continue dynamic calculation |
+
+### Security
+
+- **Registered pools only**: Unregistered pools revert on swaps
+- **Shadow pool protection**: After-only hooks (without beforeAction) are blocked
+- **Reentrancy guard**: Uses transient storage (EIP-1153)
+- **LP operations allowed**: Add/remove liquidity works even for unregistered/resolved pools
+
+---
+
+## PMHookRouter — Dynamic Fee Trading Router
+
+A feature-rich router for prediction markets using PMFeeHook. Provides OTC vault trading, TWAP-based pricing, and advanced order types.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          PMHookRouter                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │
+│  │   OTC Vault     │  │   AMM Trading   │  │   Bid Pools     │         │
+│  │                 │  │                 │  │                 │         │
+│  │ • Vault shares  │  │ • buyWithAMM    │  │ • Limit bids    │         │
+│  │ • TWAP pricing  │  │ • sellWithAMM   │  │ • Auto-fill     │         │
+│  │ • Rebalancing   │  │ • swapShares    │  │ • Sweep orders  │         │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘         │
+│           │                    │                    │                   │
+│           └────────────────────┼────────────────────┘                   │
+│                                │                                        │
+│                                ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                      Core Operations                            │   │
+│  │  • bootstrapMarket() - create market + pool + initial liquidity │   │
+│  │  • mintAndVault()    - split collateral, deposit to vault       │   │
+│  │  • redeemAndMerge()  - withdraw from vault, merge to collateral │   │
+│  │  • settlementClaim() - claim winnings after resolution          │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │
+            ┌───────────────────┼───────────────────┐
+            │                   │                   │
+            ▼                   ▼                   ▼
+┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+│    PMFeeHook      │  │       ZAMM        │  │       PAMM        │
+│  • Dynamic fees   │  │  • AMM pools      │  │  • Split/merge    │
+│  • Price impact   │  │  • TWAP oracle    │  │  • YES/NO tokens  │
+│  • Close window   │  │  • LP positions   │  │  • Collateral     │
+└───────────────────┘  └───────────────────┘  └───────────────────┘
+```
+
+### Key Features
+
+#### OTC Vault System
+The router maintains a vault of YES/NO shares per market, enabling:
+- **Better pricing**: Trades from vault inventory avoid AMM slippage
+- **TWAP-based spreads**: Dynamic bid/ask spreads based on ZAMM TWAP
+- **Automatic rebalancing**: Vault rebalances via AMM when imbalanced
+
+#### Trading Functions
+
+| Function | Description |
+|----------|-------------|
+| `buy()` | Buy shares (vault first, then AMM) |
+| `sell()` | Sell shares (vault first, then AMM) |
+| `buyWithAMM()` | Buy directly from AMM only |
+| `sellWithAMM()` | Sell directly to AMM only |
+| `buyWithBootstrap()` | Buy during bootstrap (elevated fees) |
+
+#### Vault Operations
+
+| Function | Description |
+|----------|-------------|
+| `mintAndVault()` | Split collateral → deposit shares to vault |
+| `redeemAndMerge()` | Withdraw shares from vault → merge to collateral |
+| `depositToVault()` | Deposit existing shares to vault |
+| `withdrawFromVault()` | Withdraw shares from vault |
+
+#### Market Lifecycle
+
+| Function | Description |
+|----------|-------------|
+| `bootstrapMarket()` | Create market + register hook + add initial liquidity |
+| `settlementClaim()` | Claim collateral for winning shares after resolution |
+
+### TWAP Integration
+
+The router uses ZAMM's built-in TWAP oracle for:
+- **Vault pricing**: OTC trades use TWAP ± spread instead of spot price
+- **Manipulation resistance**: TWAP smooths out short-term price spikes
+- **Fair value**: Provides better execution for large trades
+
+```solidity
+// TWAP observation (call periodically for accurate pricing)
+router.updateTWAPObservation(marketId);
+
+// Get current TWAP price
+uint256 twapBps = router.getTWAPPrice(marketId);
+```
+
+### Bid Pools
+
+Passive limit orders that get filled when others sell:
+
+```solidity
+// Create bid pool: willing to buy YES at 60% (6000 bps)
+router.createBidPool(marketId, collateralAmount, true, 6000, recipient);
+
+// Seller sweeps bid pools
+router.sellWithSweep(marketId, isYes, shares, minOut, minPriceBps, recipient, deadline);
+```
+
+---
+
+## MasterRouter — Pooled Orderbook Router
+
+Complete abstraction layer with pooled orderbook + vault integration. Enables limit orders via on-chain liquidity pools with accumulator-based accounting to prevent late joiner theft.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          MasterRouter                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │
+│  │   ASK Pools     │  │   BID Pools     │  │ Vault Integration│         │
+│  │  (Sell Orders)  │  │  (Buy Orders)   │  │                 │         │
+│  │                 │  │                 │  │                 │         │
+│  │ • mintAndPool   │  │ • createBidPool │  │ • mintAndVault  │         │
+│  │ • depositShares │  │ • sellToPool    │  │ • mintAndSell   │         │
+│  │ • claimProceeds │  │ • claimShares   │  │ • provideLiquidity│        │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘         │
+│           │                    │                    │                   │
+│           └────────────────────┼────────────────────┘                   │
+│                                │                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                      Smart Routing                              │   │
+│  │  • buy()         - Pool first, then PMHookRouter fallback       │   │
+│  │  • buyWithSweep() - Sweep multiple ASK price levels             │   │
+│  │  • sell()        - Pool first, then PMHookRouter fallback       │   │
+│  │  • sellWithSweep() - Sweep multiple BID price levels            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                │                                        │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │
+            ┌───────────────────┼───────────────────┐
+            │                   │                   │
+            ▼                   ▼                   ▼
+┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+│   PMHookRouter    │  │       ZAMM        │  │       PAMM        │
+│  • Vault trading  │  │  • AMM pools      │  │  • Split/merge    │
+│  • Bootstrap      │  │  • Price discovery│  │  • YES/NO tokens  │
+└───────────────────┘  └───────────────────┘  └───────────────────┘
+```
+
+### Key Features
+
+#### Pooled Orderbook (ASK Pools)
+Passive sell orders that get filled when others buy:
+
+```solidity
+// Mint 1 ETH worth of shares, keep YES, pool NO at 40% (4000 bps)
+router.mintAndPool(marketId, 1 ether, true, 4000, recipient);
+
+// Or deposit existing shares to a pool
+router.depositSharesToPool(marketId, false, shares, 4000, recipient);
+
+// Claim collateral when your shares get bought
+router.claimProceeds(marketId, false, 4000, recipient);
+```
+
+#### Bid Pools (Buy Orders)
+Passive buy orders that get filled when others sell:
+
+```solidity
+// Create bid pool: willing to buy YES at 60% (6000 bps)
+router.createBidPool(marketId, 1 ether, true, 6000, recipient);
+
+// Claim shares when your bid gets filled
+router.claimBidShares(marketId, true, 6000, recipient);
+```
+
+#### Smart Routing
+
+| Function | Description |
+|----------|-------------|
+| `buy()` | Buy from specific ASK pool price, then PMHookRouter |
+| `buyWithSweep()` | Sweep ASK pools from lowest price up to max price |
+| `sell()` | Sell to specific BID pool price, then PMHookRouter |
+| `sellWithSweep()` | Sweep BID pools from highest price down to min price |
+
+#### Vault Integration
+
+| Function | Description |
+|----------|-------------|
+| `mintAndVault()` | Split collateral → keep one side, deposit other to vault |
+| `mintAndSellOther()` | Split → keep one side, sell other via pools + PMHookRouter |
+| `provideLiquidity()` | Add liquidity to vault + AMM in one transaction |
+
+#### Pool Management
+
+| Function | Description |
+|----------|-------------|
+| `withdrawFromPool()` | Withdraw unsold shares from ASK pool |
+| `withdrawFromBidPool()` | Withdraw unused collateral from BID pool |
+| `migrateAskPosition()` | Move position to different ASK price level |
+| `migrateBidPosition()` | Move position to different BID price level |
+
+### Accumulator Model
+
+Uses LP units + reward debt pattern to fairly distribute proceeds:
+- **Late joiner protection**: New depositors don't claim proceeds from fills before they joined
+- **Pro-rata distribution**: Proceeds distributed proportionally to LP share ownership
+- **Gas efficient**: O(1) claim operations regardless of fill history
+
+### Price Discovery
+
+```solidity
+// Get best ask (lowest sell price with liquidity)
+(uint256 bestAsk, uint256 depth) = router.getBestAsk(marketId, true);
+
+// Get best bid (highest buy price with liquidity)
+(uint256 bestBid, uint256 depth) = router.getBestBid(marketId, true);
+
+// Get spread
+(uint256 bid, uint256 ask, uint256 spread) = router.getSpread(marketId, true);
+
+// Get full orderbook at specific prices
+router.getOrderbook(marketId, true, pricesArray);
+```
+
+### Multicall
+
+Batch multiple operations in a single transaction:
+
+```solidity
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(router.mintAndPool, (marketId, 1 ether, true, 4000, recipient));
+calls[1] = abi.encodeCall(router.createBidPool, (marketId, 1 ether, false, 6000, recipient));
+router.multicall{value: 2 ether}(calls);
+```
+
+### Functions
+
+```solidity
+// ASK Pool (sell orders)
+mintAndPool(marketId, collateralIn, keepYes, priceInBps, to) → poolId
+depositSharesToPool(marketId, isYes, sharesIn, priceInBps, to) → poolId
+claimProceeds(marketId, isYes, priceInBps, to) → collateralClaimed
+withdrawFromPool(marketId, isYes, priceInBps, sharesToWithdraw, to) → withdrawn
+migrateAskPosition(marketId, isYes, fromPrice, toPrice, to) → (sharesWithdrawn, collateralClaimed, newPoolId)
+
+// BID Pool (buy orders)
+createBidPool(marketId, collateralIn, buyYes, priceInBps, to) → bidPoolId
+claimBidShares(marketId, isYes, priceInBps, to) → sharesClaimed
+withdrawFromBidPool(marketId, buyYes, priceInBps, collateralToWithdraw, to) → withdrawn
+migrateBidPosition(marketId, buyYes, fromPrice, toPrice, to) → (collateralWithdrawn, sharesClaimed, newBidPoolId)
+
+// Smart Routing
+buy(marketId, buyYes, collateralIn, minSharesOut, poolPriceInBps, to, deadline) → (totalSharesOut, sources)
+buyWithSweep(marketId, buyYes, collateralIn, minSharesOut, maxPriceBps, to, deadline) → (totalSharesOut, poolSharesOut, poolLevelsFilled, sources)
+sell(marketId, sellYes, sharesIn, minCollateralOut, bidPoolPriceInBps, to, deadline) → (totalCollateralOut, sources)
+sellWithSweep(marketId, sellYes, sharesIn, minCollateralOut, minPriceBps, to, deadline) → (totalCollateralOut, poolCollateralOut, poolLevelsFilled, sources)
+
+// Vault Integration
+mintAndVault(marketId, collateralIn, keepYes, to) → (sharesKept, vaultShares)
+mintAndSellOther(marketId, collateralIn, keepYes, minPriceBps, to, deadline) → (sharesKept, collateralRecovered)
+provideLiquidity(marketId, collateralAmount, vaultYesShares, vaultNoShares, ammLPShares, minAmount0, minAmount1, to, deadline) → (yesVaultSharesMinted, noVaultSharesMinted, ammLiquidity)
+
+// View Functions
+getPoolId(marketId, isYes, priceInBps) → poolId
+getBidPoolId(marketId, buyYes, priceInBps) → bidPoolId
+getUserPosition(marketId, isYes, priceInBps, user) → (scaled, withdrawableShares, pendingCollateral, debt)
+getBidPosition(marketId, buyYes, priceInBps, user) → (scaled, withdrawableCollateral, pendingShares, debt)
+getBestAsk(marketId, isYes) → (priceInBps, depth)
+getBestBid(marketId, buyYes) → (priceInBps, depth)
+getSpread(marketId, isYes) → (bestBid, bestAsk, spreadBps)
+getOrderbook(marketId, isYes, pricesInBps[]) → (askDepths[], bidDepths[])
+
+// Utilities
+multicall(data[]) → results[]
+permit(token, owner, value, deadline, v, r, s)
+permitDAI(owner, value, nonce, deadline, v, r, s)
+```
 
 ---
 

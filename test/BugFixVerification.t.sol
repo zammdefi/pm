@@ -48,7 +48,7 @@ contract BugFixVerificationTest is Test {
         assertEq(pendingAfter, 25 ether, "Pending should be preserved after deposit");
     }
 
-    /// @notice Verify ASK pool withdrawal preserves pending
+    /// @notice Verify ASK pool withdrawal auto-claims pending (not lost)
     function test_fix_askPool_withdrawPreservesPending() public {
         address alice = address(0x1);
         address taker = address(0x2);
@@ -63,14 +63,21 @@ contract BugFixVerificationTest is Test {
         (,, uint256 pendingBefore,) = router.getUserPosition(marketId, false, 5000, alice);
         assertEq(pendingBefore, 25 ether);
 
-        // Alice withdraws 25 shares (50% of remaining 50 shares)
-        vm.prank(alice);
-        router.withdrawFromPool(marketId, false, 5000, 25 ether, alice);
+        uint256 aliceBalBefore = alice.balance;
 
+        // Alice withdraws 25 shares (50% of remaining 50 shares)
+        // withdrawFromPool auto-claims all pending to prevent loss
+        vm.prank(alice);
+        (uint256 sharesWithdrawn, uint256 collateralClaimed) =
+            router.withdrawFromPool(marketId, false, 5000, 25 ether, alice);
+
+        assertEq(sharesWithdrawn, 25 ether, "Should withdraw requested shares");
+        assertEq(collateralClaimed, 25 ether, "Should auto-claim all pending");
+        assertEq(alice.balance - aliceBalBefore, 25 ether, "Should receive claimed collateral");
+
+        // Pending is now 0 because it was claimed (not lost)
         (,, uint256 pendingAfter,) = router.getUserPosition(marketId, false, 5000, alice);
-        // After withdrawing 50% of remaining shares, ~50% of pending remains
-        assertGt(pendingAfter, 10 ether, "Should preserve proportional pending");
-        assertLt(pendingAfter, 15 ether, "Proportional reduction");
+        assertEq(pendingAfter, 0, "Pending claimed on withdrawal");
     }
 
     /// @notice Verify BID pool deposit preserves pending shares
@@ -101,7 +108,7 @@ contract BugFixVerificationTest is Test {
         assertEq(pendingAfter, 50 ether, "Pending shares should be preserved");
     }
 
-    /// @notice Verify BID pool withdrawal preserves pending shares
+    /// @notice Verify BID pool withdrawal auto-claims pending shares (not lost)
     function test_fix_bidPool_withdrawPreservesPending() public {
         address alice = address(0x1);
         address seller = address(0x2);
@@ -121,13 +128,24 @@ contract BugFixVerificationTest is Test {
         (,, uint256 pendingBefore,) = router.getBidPosition(marketId, true, 5000, alice);
         assertEq(pendingBefore, 50 ether);
 
-        // Alice withdraws 25 ETH (33% of remaining 75 ETH collateral)
-        vm.prank(alice);
-        router.withdrawFromBidPool(marketId, true, 5000, 25 ether, alice);
+        uint256 aliceSharesBefore = pamm.balanceOf(alice, marketId);
 
+        // Alice withdraws 25 ETH (33% of remaining 75 ETH collateral)
+        // withdrawFromBidPool auto-claims all pending shares to prevent loss
+        vm.prank(alice);
+        (uint256 collateralWithdrawn, uint256 sharesClaimed) =
+            router.withdrawFromBidPool(marketId, true, 5000, 25 ether, alice);
+
+        assertEq(collateralWithdrawn, 25 ether, "Should withdraw requested collateral");
+        assertEq(sharesClaimed, 50 ether, "Should auto-claim all pending shares");
+        assertEq(
+            pamm.balanceOf(alice, marketId) - aliceSharesBefore,
+            50 ether,
+            "Should receive claimed shares"
+        );
+
+        // Pending is now 0 because it was claimed (not lost)
         (,, uint256 pendingAfter,) = router.getBidPosition(marketId, true, 5000, alice);
-        // Remaining ~66% of scaled units, so ~66% of 50 pending = ~33 shares
-        assertGt(pendingAfter, 30 ether, "Should preserve most pending shares");
-        assertLt(pendingAfter, 40 ether, "Proportional reduction");
+        assertEq(pendingAfter, 0, "Pending claimed on withdrawal");
     }
 }

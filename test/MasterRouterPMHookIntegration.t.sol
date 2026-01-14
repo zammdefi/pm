@@ -20,12 +20,36 @@ interface IPAMMExtended is IPAMM {
 /// @notice Simulates PMHookRouter's vault and trading functionality
 contract MockPMHookRouter {
     IPAMM constant PAMM = IPAMM(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
+    address constant ETH = address(0);
 
     // Track vault deposits per market/side
     mapping(uint256 => mapping(bool => uint256)) public vaultBalances;
     mapping(uint256 => mapping(bool => mapping(address => uint256))) public userVaultShares;
 
     receive() external payable {}
+
+    function _getCollateral(uint256 marketId) internal view returns (address collateral) {
+        (,,,,, collateral,) = PAMM.markets(marketId);
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 amount) internal {
+        (bool success,) = token.call(
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", from, to, amount)
+        );
+        require(success, "transferFrom failed");
+    }
+
+    function _safeTransfer(address token, address to, uint256 amount) internal {
+        (bool success,) =
+            token.call(abi.encodeWithSignature("transfer(address,uint256)", to, amount));
+        require(success, "transfer failed");
+    }
+
+    function _safeApprove(address token, address spender, uint256 amount) internal {
+        (bool success,) =
+            token.call(abi.encodeWithSignature("approve(address,uint256)", spender, amount));
+        require(success, "approve failed");
+    }
 
     function depositToVault(
         uint256 marketId,
@@ -58,6 +82,14 @@ contract MockPMHookRouter {
         address to,
         uint256 /*deadline*/
     ) external payable returns (uint256 sharesOut, bytes4 source, uint256 vaultSharesMinted) {
+        address collateral = _getCollateral(marketId);
+
+        // Take collateral from caller (for ERC20)
+        if (collateral != ETH) {
+            _safeTransferFrom(collateral, msg.sender, address(this), collateralIn);
+            _safeApprove(collateral, address(PAMM), collateralIn);
+        }
+
         // Check if we have vault liquidity on the opposite side
         bool sellSide = !buyYes;
         uint256 available = vaultBalances[marketId][sellSide];
@@ -71,18 +103,32 @@ contract MockPMHookRouter {
             uint256 tokenId = buyYes ? marketId : _getNoId(marketId);
 
             // Mint new shares for the buyer (simplified - in reality would use vault shares)
-            PAMM.split{value: sharesOut}(marketId, sharesOut, address(this));
+            if (collateral == ETH) {
+                PAMM.split{value: sharesOut}(marketId, sharesOut, address(this));
+            } else {
+                PAMM.split(marketId, sharesOut, address(this));
+            }
             PAMM.transfer(to, tokenId, sharesOut);
 
             source = bytes4(0x6f746300); // "otc\0"
 
-            // Refund excess
-            if (msg.value > sharesOut) {
-                payable(msg.sender).transfer(msg.value - sharesOut);
+            // Refund excess collateral to msg.sender (MasterRouter)
+            uint256 refund = collateralIn - sharesOut;
+            if (refund > 0) {
+                if (collateral == ETH) {
+                    payable(msg.sender).transfer(refund);
+                } else {
+                    // ERC20 refund - this is what we're testing!
+                    _safeTransfer(collateral, msg.sender, refund);
+                }
             }
         } else {
             // No vault liquidity - mint new shares
-            PAMM.split{value: collateralIn}(marketId, collateralIn, address(this));
+            if (collateral == ETH) {
+                PAMM.split{value: collateralIn}(marketId, collateralIn, address(this));
+            } else {
+                PAMM.split(marketId, collateralIn, address(this));
+            }
 
             uint256 tokenId = buyYes ? marketId : _getNoId(marketId);
             PAMM.transfer(to, tokenId, collateralIn);
@@ -106,6 +152,8 @@ contract MockPMHookRouter {
         address to,
         uint256 /*deadline*/
     ) external returns (uint256 collateralOut, bytes4 source) {
+        address collateral = _getCollateral(marketId);
+
         // Transfer shares from seller
         uint256 tokenId = sellYes ? marketId : _getNoId(marketId);
         PAMM.transferFrom(msg.sender, address(this), tokenId, sharesIn);
@@ -120,7 +168,11 @@ contract MockPMHookRouter {
             collateralOut = sharesIn; // Simplified 1:1
 
             // Send collateral to seller
-            payable(to).transfer(collateralOut);
+            if (collateral == ETH) {
+                payable(to).transfer(collateralOut);
+            } else {
+                _safeTransfer(collateral, to, collateralOut);
+            }
             source = bytes4(0x6f746300); // "otc\0"
         } else {
             // Deposit to vault instead
@@ -1112,5 +1164,271 @@ contract MasterRouterPMHookIntegrationTest is Test {
         // Measure gas for sweep
         vm.prank(alice);
         router.sellWithSweep(marketId, true, 10 ether, 0, 5000, alice, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    ERC20 REFUND REGRESSION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Regression test: buy() ERC20 refund from PMHookRouter
+    /// @dev Tests the fix for ERC20 refunds getting stuck in MasterRouter
+    ///      PMHookRouter.buyWithBootstrap refunds unused collateral to msg.sender (MasterRouter)
+    ///      MasterRouter must detect and forward this refund to the original caller
+    function test_regression_buyERC20RefundFromPMHookRouter() public {
+        // Use USDC as ERC20 collateral
+        address USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+
+        // Create ERC20 market
+        (uint256 usdcMarketId,) = pamm.createMarket(
+            "USDC Refund Test Market",
+            address(this), // resolver
+            USDC,
+            uint64(block.timestamp + 30 days),
+            false
+        );
+
+        // Get USDC for alice and bob from whale
+        address usdcWhale = 0x28C6c06298d514Db089934071355E5743bf21d60;
+        uint256 aliceAmount = 100e6; // 100 USDC
+        uint256 bobAmount = 200e6; // 200 USDC
+
+        vm.prank(usdcWhale);
+        (bool success,) =
+            USDC.call(abi.encodeWithSignature("transfer(address,uint256)", alice, aliceAmount));
+        require(success, "USDC transfer to alice failed");
+
+        vm.prank(usdcWhale);
+        (success,) = USDC.call(abi.encodeWithSignature("transfer(address,uint256)", bob, bobAmount));
+        require(success, "USDC transfer to bob failed");
+
+        // Alice creates vault liquidity (only 50 USDC worth)
+        // This limits how much OTC can fill
+        vm.startPrank(alice);
+        (success,) = USDC.call(
+            abi.encodeWithSignature("approve(address,uint256)", address(router), type(uint256).max)
+        );
+        require(success, "Alice approve failed");
+
+        // mintAndVault with keepYes=true deposits NO shares to vault
+        router.mintAndVault(usdcMarketId, 50e6, true, alice);
+        vm.stopPrank();
+
+        // Bob approves router
+        vm.startPrank(bob);
+        (success,) = USDC.call(
+            abi.encodeWithSignature("approve(address,uint256)", address(router), type(uint256).max)
+        );
+        require(success, "Bob approve failed");
+
+        // Get Bob's USDC balance before
+        (, bytes memory data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", bob));
+        uint256 bobBalanceBefore = abi.decode(data, (uint256));
+
+        // Get Router's USDC balance before (should be 0 or minimal)
+        (, data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", address(router)));
+        uint256 routerBalanceBefore = abi.decode(data, (uint256));
+
+        // Bob tries to buy YES with 100 USDC
+        // Mock PMHookRouter has only 50 USDC vault liquidity
+        // It will do OTC for 50 USDC, refund 50 USDC back to MasterRouter
+        // MasterRouter must forward that 50 USDC refund to Bob
+        (uint256 sharesOut,) = router.buy(
+            usdcMarketId,
+            true, // buyYes
+            100e6, // 100 USDC
+            0, // minSharesOut
+            0, // poolPriceInBps (skip pools)
+            bob,
+            0
+        );
+        vm.stopPrank();
+
+        // Get balances after
+        (, data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", bob));
+        uint256 bobBalanceAfter = abi.decode(data, (uint256));
+
+        (, data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", address(router)));
+        uint256 routerBalanceAfter = abi.decode(data, (uint256));
+
+        // Verify: Bob should only have spent what was actually used
+        // With the fix: refund is forwarded, Bob spends less
+        // Without fix: refund stuck in router, Bob loses it
+
+        // Router should NOT be holding Bob's refund
+        assertLe(
+            routerBalanceAfter,
+            routerBalanceBefore + 1e6, // Allow 1 USDC tolerance for any dust
+            "Router should not hold significant ERC20 refund - fix not working"
+        );
+
+        // Bob should have received shares
+        assertGt(sharesOut, 0, "Bob should have received shares");
+    }
+
+    /// @notice Regression test: buyWithSweep() ERC20 refund from PMHookRouter
+    /// @dev Same as above but for buyWithSweep path
+    function test_regression_buyWithSweepERC20RefundFromPMHookRouter() public {
+        // Use USDC as ERC20 collateral
+        address USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+
+        // Create ERC20 market
+        (uint256 usdcMarketId,) = pamm.createMarket(
+            "USDC Sweep Refund Test", address(this), USDC, uint64(block.timestamp + 30 days), false
+        );
+
+        // Get USDC for test accounts
+        address usdcWhale = 0x28C6c06298d514Db089934071355E5743bf21d60;
+
+        vm.prank(usdcWhale);
+        (bool success,) =
+            USDC.call(abi.encodeWithSignature("transfer(address,uint256)", alice, 100e6));
+        require(success);
+
+        vm.prank(usdcWhale);
+        (success,) = USDC.call(abi.encodeWithSignature("transfer(address,uint256)", bob, 200e6));
+        require(success);
+
+        // Alice creates limited vault liquidity
+        vm.startPrank(alice);
+        (success,) = USDC.call(
+            abi.encodeWithSignature("approve(address,uint256)", address(router), type(uint256).max)
+        );
+        require(success);
+        router.mintAndVault(usdcMarketId, 30e6, true, alice);
+        vm.stopPrank();
+
+        // Bob approves and calls buyWithSweep
+        vm.startPrank(bob);
+        (success,) = USDC.call(
+            abi.encodeWithSignature("approve(address,uint256)", address(router), type(uint256).max)
+        );
+        require(success);
+
+        (, bytes memory data) =
+            USDC.call(abi.encodeWithSignature("balanceOf(address)", address(router)));
+        uint256 routerBalanceBefore = abi.decode(data, (uint256));
+
+        // Buy with sweep - no pools, will route to PMHookRouter
+        router.buyWithSweep(
+            usdcMarketId,
+            true, // buyYes
+            100e6, // 100 USDC
+            0, // minSharesOut
+            0, // maxPriceBps (skip pools)
+            bob,
+            0
+        );
+        vm.stopPrank();
+
+        // Verify router doesn't hold the refund
+        (, data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", address(router)));
+        uint256 routerBalanceAfter = abi.decode(data, (uint256));
+
+        assertLe(
+            routerBalanceAfter,
+            routerBalanceBefore + 1e6,
+            "buyWithSweep: Router should not hold ERC20 refund"
+        );
+    }
+
+    /// @notice Explicit test for _getBalance() correctness with ERC20 refunds
+    /// @dev This test validates that the Solady-style _getBalance() assembly pattern
+    ///      correctly reads ERC20 balances, which is critical for refund detection.
+    ///      The pattern: mstore(0x14, account); mstore(0x00, 0x70a08231...); staticcall(0x10, 0x24, ...)
+    function test_getBalance_correctlyDetectsERC20Refund() public {
+        // Use USDC as ERC20 collateral
+        address USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+
+        // Create ERC20 market
+        (uint256 usdcMarketId,) = pamm.createMarket(
+            "USDC _getBalance Test", address(this), USDC, uint64(block.timestamp + 30 days), false
+        );
+
+        // Get USDC from whale
+        address usdcWhale = 0x28C6c06298d514Db089934071355E5743bf21d60;
+        uint256 aliceAmount = 50e6; // 50 USDC for vault
+        uint256 bobAmount = 100e6; // 100 USDC to spend
+
+        vm.prank(usdcWhale);
+        (bool success,) =
+            USDC.call(abi.encodeWithSignature("transfer(address,uint256)", alice, aliceAmount));
+        require(success, "USDC transfer to alice failed");
+
+        vm.prank(usdcWhale);
+        (success,) = USDC.call(abi.encodeWithSignature("transfer(address,uint256)", bob, bobAmount));
+        require(success, "USDC transfer to bob failed");
+
+        // Alice creates vault with 30 USDC (limits OTC to 30 USDC)
+        vm.startPrank(alice);
+        (success,) = USDC.call(
+            abi.encodeWithSignature("approve(address,uint256)", address(router), type(uint256).max)
+        );
+        require(success);
+        router.mintAndVault(usdcMarketId, 30e6, true, alice);
+        vm.stopPrank();
+
+        // Bob approves router
+        vm.startPrank(bob);
+        (success,) = USDC.call(
+            abi.encodeWithSignature("approve(address,uint256)", address(router), type(uint256).max)
+        );
+        require(success);
+
+        // Record Bob's USDC balance before
+        (, bytes memory data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", bob));
+        uint256 bobUsdcBefore = abi.decode(data, (uint256));
+        assertEq(bobUsdcBefore, bobAmount, "Bob should have 100 USDC");
+
+        // Record router USDC balance before (should be 0)
+        (, data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", address(router)));
+        uint256 routerUsdcBefore = abi.decode(data, (uint256));
+
+        // Bob buys YES with 100 USDC
+        // Mock has 30 USDC OTC liquidity -> fills 30, should refund 70
+        (uint256 sharesOut,) = router.buy(
+            usdcMarketId,
+            true, // buyYes
+            100e6, // 100 USDC
+            0, // minSharesOut
+            0, // poolPriceInBps (skip pools, use PMHookRouter)
+            bob,
+            0
+        );
+        vm.stopPrank();
+
+        // Record balances after
+        (, data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", bob));
+        uint256 bobUsdcAfter = abi.decode(data, (uint256));
+
+        (, data) = USDC.call(abi.encodeWithSignature("balanceOf(address)", address(router)));
+        uint256 routerUsdcAfter = abi.decode(data, (uint256));
+
+        // Verify Bob got shares
+        assertGt(sharesOut, 0, "Bob should have received shares");
+        assertEq(pamm.balanceOf(bob, usdcMarketId), sharesOut, "Bob should have YES tokens");
+
+        // CRITICAL: Router should NOT be holding Bob's refund
+        // If _getBalance() is broken, refund detection fails and USDC gets stuck
+        assertLe(
+            routerUsdcAfter,
+            routerUsdcBefore,
+            "CRITICAL: Router is holding ERC20 refund - _getBalance() may be broken"
+        );
+
+        // Verify Bob's net spend is reasonable (30 USDC for OTC, not 100)
+        uint256 bobSpent = bobUsdcBefore - bobUsdcAfter;
+        assertLe(
+            bobSpent,
+            35e6, // Allow some tolerance for mock behavior
+            "Bob should have received refund - spent too much USDC"
+        );
+
+        // Log for debugging
+        emit log_named_uint("Bob USDC before", bobUsdcBefore);
+        emit log_named_uint("Bob USDC after", bobUsdcAfter);
+        emit log_named_uint("Bob USDC spent", bobSpent);
+        emit log_named_uint("Router USDC before", routerUsdcBefore);
+        emit log_named_uint("Router USDC after", routerUsdcAfter);
+        emit log_named_uint("Shares received", sharesOut);
     }
 }
