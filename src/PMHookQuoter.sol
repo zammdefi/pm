@@ -2,14 +2,6 @@
 pragma solidity ^0.8.31;
 
 interface IZAMM {
-    struct PoolKey {
-        uint256 id0;
-        uint256 id1;
-        address token0;
-        address token1;
-        uint256 feeOrHook;
-    }
-
     function pools(uint256 poolId)
         external
         view
@@ -49,21 +41,6 @@ interface IPMFeeHook {
 }
 
 interface IPMHookRouterView {
-    struct BootstrapVault {
-        uint112 yesShares;
-        uint112 noShares;
-        uint32 lastActivity;
-    }
-
-    struct TWAPObservations {
-        uint32 timestamp0;
-        uint32 timestamp1;
-        uint32 cacheBlockNum;
-        uint32 cachedTwapBps;
-        uint256 cumulative0;
-        uint256 cumulative1;
-    }
-
     function canonicalPoolId(uint256 marketId) external view returns (uint256);
     function canonicalFeeOrHook(uint256 marketId) external view returns (uint256);
     function bootstrapVaults(uint256 marketId) external view returns (uint112, uint112, uint32);
@@ -90,8 +67,8 @@ interface IPMHookRouterView {
 
 /// @notice MasterRouter interface for pool data access
 interface IMasterRouter {
-    function pools(bytes32 poolId) external view returns (uint256, uint256, uint256, address);
-    function bidPools(bytes32 bidPoolId) external view returns (uint256, uint256, uint256, address);
+    function pools(bytes32 poolId) external view returns (uint256, uint256, uint256, uint256);
+    function bidPools(bytes32 bidPoolId) external view returns (uint256, uint256, uint256, uint256);
     function priceBitmap(bytes32 key, uint256 bucket) external view returns (uint256);
     function getPoolId(uint256 marketId, bool isYes, uint256 priceInBps)
         external
@@ -115,16 +92,13 @@ interface IMasterRouter {
 /// @notice View-only quoter for PMHookRouter and MasterRouter buy/sell operations
 /// @dev Separate contract to keep routers under bytecode limit
 contract PMHookQuoter {
-    bytes4 constant ERR_COMPUTATION = 0x05832717;
-    uint256 constant FLAG_BEFORE = 1 << 255;
-    uint256 constant FLAG_AFTER = 1 << 254;
+    uint256 constant FLAGS = (1 << 255) | (1 << 254);
     uint256 constant DEFAULT_FEE_BPS = 30;
-    uint256 constant MIN_TWAP_UPDATE_INTERVAL = 5 minutes;
-    uint256 constant BOOTSTRAP_WINDOW = 7 days;
-    uint256 constant MIN_ABSOLUTE_SPREAD_BPS = 10;
+    uint256 constant MIN_TWAP_UPDATE_INTERVAL = 30 minutes;
+    uint256 constant BOOTSTRAP_WINDOW = 4 hours;
+    uint256 constant MIN_ABSOLUTE_SPREAD_BPS = 20;
     uint256 constant MAX_SPREAD_BPS = 500;
     uint256 constant MAX_COLLATERAL_IN = type(uint256).max / 10_000;
-    uint256 constant MAX_UINT112 = 0xffffffffffffffffffffffffffff;
 
     IZAMM constant ZAMM = IZAMM(0x000000000000040470635EB91b7CE4D132D616eD);
     IPAMMView constant PAMM = IPAMMView(0x000000000044bfe6c2BBFeD8862973E0612f07C0);
@@ -133,18 +107,12 @@ contract PMHookQuoter {
     IMasterRouter constant MASTER_ROUTER =
         IMasterRouter(0x000000000055CdB14b66f37B96a571108FFEeA5C);
 
-    // ============ Market View Functions ============
-
-    /// @notice Get TWAP price for a market (pYes in basis points)
-    /// @param marketId The market to query
-    /// @return twapBps TWAP price of YES in basis points (0-10000), 0 if unavailable
+    /// @notice Get TWAP price for a market (pYes in bps)
     function getTWAPPrice(uint256 marketId) external view returns (uint256 twapBps) {
         return _getTWAPPrice(marketId);
     }
 
-    /// @notice Get consolidated market summary in a single call
-    /// @dev Reduces multicall overhead for dapps by combining AMM, vault, and timing data
-    /// @param marketId The market to query
+    /// @notice Get consolidated market summary
     function getMarketSummary(uint256 marketId)
         external
         view
@@ -164,27 +132,25 @@ contract PMHookQuoter {
             bool inCloseWindow
         )
     {
-        // AMM state
         uint256 poolId = ROUTER.canonicalPoolId(marketId);
         if (poolId != 0) {
-            (ammYesReserve, ammNoReserve,,,,,) = ZAMM.pools(poolId);
-            if (ammYesReserve != 0 || ammNoReserve != 0) {
-                uint256 total = uint256(ammYesReserve) + uint256(ammNoReserve);
-                ammPriceYesBps = (uint256(ammNoReserve) * 10000) / total;
+            (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
+            if ((r0 | r1) != 0) {
+                uint256 noId = _getNoId(marketId);
+                assembly ("memory-safe") {
+                    let yesIsId0 := lt(marketId, noId)
+                    ammYesReserve := xor(r1, mul(xor(r1, r0), yesIsId0))
+                    ammNoReserve := xor(r0, mul(xor(r0, r1), yesIsId0))
+                    ammPriceYesBps := div(mul(ammNoReserve, 10000), add(r0, r1))
+                }
             }
             feeBps = _getPoolFeeBps(ROUTER.canonicalFeeOrHook(marketId), poolId);
         }
-
-        // Vault state
         (vaultYesShares, vaultNoShares,) = ROUTER.bootstrapVaults(marketId);
         totalYesVaultLP = ROUTER.totalYesVaultShares(marketId);
         totalNoVaultLP = ROUTER.totalNoVaultShares(marketId);
         vaultBudget = ROUTER.rebalanceCollateralBudget(marketId);
-
-        // TWAP
         twapPriceYesBps = _getTWAPPrice(marketId);
-
-        // Market timing
         (, resolved,,, closeTime,,) = PAMM.markets(marketId);
         inCloseWindow = _isInCloseWindow(marketId);
     }
@@ -238,70 +204,88 @@ contract PMHookQuoter {
         view
         returns (
             // Vault OTC
-            uint256 vaultOtcShares,        // Shares available via OTC (30% of opposite side)
-            uint256 vaultOtcPriceBps,      // Effective price after spread
-            bool vaultOtcAvailable,        // Whether OTC is currently available
+            uint256 vaultOtcShares, // Shares available via OTC (30% of same side)
+            uint256 vaultOtcPriceBps, // Effective price after spread
+            bool vaultOtcAvailable, // Whether OTC is currently available
             // AMM
             uint112 ammYesReserve,
             uint112 ammNoReserve,
-            uint256 ammSpotPriceBps,       // Current spot price
-            uint256 ammMaxImpactBps,       // Max allowed price impact
+            uint256 ammSpotPriceBps, // Current spot price
+            uint256 ammMaxImpactBps, // Max allowed price impact
             // Pools (top 5 levels summary)
-            uint256 poolAskDepth,          // Total shares in ask pools up to 5 levels
-            uint256 poolBestAskBps,        // Best ask price
-            uint256 poolBidDepth,          // Total collateral in bid pools up to 5 levels
-            uint256 poolBestBidBps         // Best bid price
+            uint256 poolAskDepth, // Total shares in ask pools up to 5 levels
+            uint256 poolBestAskBps, // Best ask price
+            uint256 poolBidDepth, // Total collateral in bid pools up to 5 levels
+            uint256 poolBestBidBps // Best bid price
         )
     {
         uint256 poolId = ROUTER.canonicalPoolId(marketId);
         if (poolId == 0) return (0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0);
 
-        // Get vault state
         (uint112 vaultYes, uint112 vaultNo,) = ROUTER.bootstrapVaults(marketId);
+        uint256 twap;
 
-        // Vault OTC availability: must have opposite side shares and not in close window
-        uint256 oppositeShares = buyYes ? vaultNo : vaultYes;
-        vaultOtcAvailable = oppositeShares > 0 && !_isInCloseWindow(marketId);
-
-        if (vaultOtcAvailable) {
-            // Max 30% of opposite side available
-            vaultOtcShares = (oppositeShares * 3000) / 10000;
-
-            // Get TWAP and calculate effective price with spread
-            uint256 twap = _getTWAPPrice(marketId);
-            if (twap > 0) {
-                uint256 basePrice = buyYes ? twap : (10000 - twap);
-                (, , , , uint64 closeTime, ,) = PAMM.markets(marketId);
-                uint256 spreadBps = _calculateDynamicSpread(vaultYes, vaultNo, buyYes, closeTime);
-                vaultOtcPriceBps = basePrice + spreadBps; // Buyer pays more
-                if (vaultOtcPriceBps > 9999) vaultOtcPriceBps = 9999;
+        // Vault OTC: same-side shares, not in close window, TWAP available
+        assembly ("memory-safe") {
+            let avail := xor(vaultNo, mul(xor(vaultNo, vaultYes), buyYes))
+            if avail {
+                vaultOtcShares := div(mul(avail, 3000), 10000)
             }
         }
+        if (vaultOtcShares > 0 && !_isInCloseWindow(marketId)) {
+            twap = _getTWAPPrice(marketId);
+            if (twap > 0) {
+                vaultOtcAvailable = true;
+                (,,,, uint64 close,,) = PAMM.markets(marketId);
+                uint256 rel = _calculateDynamicSpread(vaultYes, vaultNo, buyYes, close);
+                assembly ("memory-safe") {
+                    let base := xor(sub(10000, twap), mul(xor(sub(10000, twap), twap), buyYes))
+                    let abs := div(mul(base, rel), 10000)
+                    if lt(abs, 20) { abs := 20 }
+                    vaultOtcPriceBps := add(base, abs)
+                    if gt(vaultOtcPriceBps, 9999) { vaultOtcPriceBps := 9999 }
+                }
+            }
+        }
+        if (!vaultOtcAvailable) vaultOtcShares = 0;
 
-        // AMM state
-        (ammYesReserve, ammNoReserve,,,,,) = ZAMM.pools(poolId);
-        if (ammYesReserve > 0 && ammNoReserve > 0) {
-            uint256 total = uint256(ammYesReserve) + uint256(ammNoReserve);
-            uint256 pYes = (uint256(ammNoReserve) * 10000) / total;
-            ammSpotPriceBps = buyYes ? pYes : (10000 - pYes);
+        // AMM state with correct YES/NO ordering
+        {
+            (uint112 r0, uint112 r1,,,,,) = ZAMM.pools(poolId);
+            uint256 noId = _getNoId(marketId);
+            assembly ("memory-safe") {
+                let yesIsId0 := lt(marketId, noId)
+                ammYesReserve := xor(r1, mul(xor(r1, r0), yesIsId0))
+                ammNoReserve := xor(r0, mul(xor(r0, r1), yesIsId0))
+            }
+            if (ammYesReserve > 0 && ammNoReserve > 0) {
+                assembly ("memory-safe") {
+                    let total := add(ammYesReserve, ammNoReserve)
+                    let pYes := div(mul(ammNoReserve, 10000), total)
+                    ammSpotPriceBps := xor(
+                        sub(10000, pYes),
+                        mul(xor(sub(10000, pYes), pYes), buyYes)
+                    )
+                }
+            }
         }
         ammMaxImpactBps = _getMaxPriceImpactBps(marketId);
 
-        // Pool depths (scan top 5 levels)
-        (uint256[] memory askPrices, uint256[] memory askDepths,
-         uint256[] memory bidPrices, uint256[] memory bidDepths) =
+        // Pool depths
+        (uint256[] memory ap, uint256[] memory ad, uint256[] memory bp, uint256[] memory bd) =
             this.getActiveLevels(marketId, buyYes, 5);
-
-        for (uint256 i = 0; i < 5; i++) {
-            if (askDepths[i] > 0) {
-                poolAskDepth += askDepths[i];
-                if (poolBestAskBps == 0) poolBestAskBps = askPrices[i];
+        for (uint256 i; i < ad.length;) {
+            poolAskDepth += ad[i];
+            if (poolBestAskBps == 0) poolBestAskBps = ap[i];
+            unchecked {
+                ++i;
             }
-            if (bidDepths[i] > 0) {
-                poolBidDepth += bidDepths[i];
-                if (poolBestBidBps == 0 || bidPrices[i] > poolBestBidBps) {
-                    poolBestBidBps = bidPrices[i];
-                }
+        }
+        for (uint256 i; i < bd.length;) {
+            poolBidDepth += bd[i];
+            if (poolBestBidBps == 0 || bp[i] > poolBestBidBps) poolBestBidBps = bp[i];
+            unchecked {
+                ++i;
             }
         }
     }
@@ -464,6 +448,9 @@ contract PMHookQuoter {
         uint256 poolId = ROUTER.canonicalPoolId(marketId);
         if (poolId == 0) return (0, bytes4(0));
 
+        (, bool resolved,,, uint64 close,,) = PAMM.markets(marketId);
+        if (resolved || block.timestamp >= close) return (0, bytes4(0));
+
         uint256 remaining = sharesIn;
         uint8 venueCount;
 
@@ -483,7 +470,7 @@ contract PMHookQuoter {
             if (pYes != 0) {
                 uint256 price = sellYes ? pYes : (10000 - pYes);
                 uint256 spread = price / 50; // 2% spread for sells
-                if (spread < MIN_ABSOLUTE_SPREAD_BPS) spread = MIN_ABSOLUTE_SPREAD_BPS;
+                if (spread < 10) spread = 10; // 10 bps minimum for sells (matches router)
                 price = price > spread ? price - spread : 0;
 
                 if (price != 0) {
@@ -539,7 +526,6 @@ contract PMHookQuoter {
     }
 
     /// @dev Quote AMM sell: swap partial shares to balance, then merge to collateral
-    /// Mirrors the router's fixed implementation that swaps only enough to balance for merge
     function _quoteAMMSell(uint256 marketId, bool sellYes, uint256 sharesIn)
         internal
         view
@@ -559,84 +545,71 @@ contract PMHookQuoter {
         uint256 rIn = zeroForOne ? uint256(r0) : uint256(r1);
         uint256 rOut = zeroForOne ? uint256(r1) : uint256(r0);
 
-        // Calculate optimal swap amount to balance for merge
         uint256 swapAmount = _calcSwapAmountForMerge(sharesIn, rIn, rOut, feeBps);
         if (swapAmount == 0 || swapAmount >= sharesIn) return 0;
 
         unchecked {
-            // Quote the swap output
-            // Safe: feeBps < 10000 checked in _calcSwapAmountForMerge
             uint256 amountInWithFee = swapAmount * (10000 - feeBps);
             uint256 swapOut = (amountInWithFee * rOut) / (rIn * 10000 + amountInWithFee);
-
-            // Kept shares after swap
-            // Safe: swapAmount < sharesIn checked above
             uint256 keptShares = sharesIn - swapAmount;
-
-            // Merge min(keptShares, swapOut) to collateral
             collateralOut = keptShares < swapOut ? keptShares : swapOut;
         }
     }
 
     /// @dev Calculate optimal swap amount to balance shares for merge
-    /// Solves: sharesIn - X = X * rOut * fm / (rIn * 10000 + X * fm)
-    /// where fm = 10000 - feeBps
     function _calcSwapAmountForMerge(uint256 sharesIn, uint256 rIn, uint256 rOut, uint256 feeBps)
         internal
         pure
         returns (uint256 swapAmount)
     {
-        if (sharesIn == 0 || rIn == 0 || rOut == 0 || feeBps >= 10000) return 0;
+        if (
+            sharesIn == 0 || sharesIn > type(uint112).max || rIn == 0 || rOut == 0
+                || feeBps >= 10000
+        ) {
+            return 0;
+        }
 
-        // Quadratic formula solution for optimal swap amount
-        // a*X^2 + b*X + c = 0 where:
-        // a = fm, b = rIn*10000 + fm*(rOut - sharesIn), c = -sharesIn*rIn*10000
         uint256 fm;
         uint256 rIn10k;
         unchecked {
-            fm = 10000 - feeBps; // Safe: feeBps < 10000 checked above
+            fm = 10000 - feeBps;
             rIn10k = rIn * 10000;
         }
 
-        // Calculate b (can be negative if sharesIn > rOut)
         bool bPositive;
         uint256 b;
         unchecked {
             if (rOut > sharesIn) {
-                b = rIn10k + fm * (rOut - sharesIn); // Safe: rOut > sharesIn
+                b = rIn10k + fm * (rOut - sharesIn);
                 bPositive = true;
             } else {
-                uint256 fmDiff = fm * (sharesIn - rOut); // Safe: sharesIn >= rOut
+                uint256 fmDiff = fm * (sharesIn - rOut);
                 if (fmDiff > rIn10k) {
-                    b = fmDiff - rIn10k; // Safe: fmDiff > rIn10k
+                    b = fmDiff - rIn10k;
                     bPositive = false;
                 } else {
-                    b = rIn10k - fmDiff; // Safe: rIn10k >= fmDiff
+                    b = rIn10k - fmDiff;
                     bPositive = true;
                 }
             }
         }
 
-        // discriminant = b^2 + 4*fm*sharesIn*rIn*10000
         uint256 absC = sharesIn * rIn10k;
         uint256 discriminant = b * b + 4 * fm * absC;
-
-        // sqrt via Newton's method
         uint256 sqrtD = _sqrt(discriminant);
 
-        // X = (-b + sqrtD) / (2*fm)
         uint256 numerator;
         unchecked {
             if (bPositive) {
-                numerator = sqrtD > b ? sqrtD - b : 0; // Safe: sqrtD > b checked
+                numerator = sqrtD > b ? sqrtD - b : 0;
             } else {
-                numerator = sqrtD + b; // Safe: bounded by discriminant
+                numerator = sqrtD + b;
             }
         }
 
         uint256 denominator;
         unchecked {
-            denominator = 2 * fm; // Safe: fm <= 10000, so 2*fm <= 20000
+            denominator = 2 * fm;
         }
         if (denominator == 0) return 0;
 
@@ -658,8 +631,13 @@ contract PMHookQuoter {
 
     // ============ Internal Helpers ============
 
+    /// @dev Compute noId from marketId
     function _getNoId(uint256 marketId) internal pure returns (uint256 noId) {
-        assembly { noId := or(marketId, shl(255, 1)) }
+        assembly ("memory-safe") {
+            mstore(0x00, 0x504d41524b45543a4e4f00000000000000000000000000000000000000000000)
+            mstore(0x0a, marketId)
+            noId := keccak256(0x00, 0x2a)
+        }
     }
 
     function _getReserves(uint256 poolId) internal view returns (uint112 r0, uint112 r1) {
@@ -671,7 +649,7 @@ contract PMHookQuoter {
         view
         returns (uint256 feeBps)
     {
-        bool isHook = (feeOrHook & (FLAG_BEFORE | FLAG_AFTER)) != 0;
+        bool isHook = (feeOrHook & FLAGS) != 0;
         if (isHook) {
             try IPMFeeHook(address(uint160(feeOrHook))).getCurrentFeeBps(canonical) returns (
                 uint256 fee
@@ -688,7 +666,7 @@ contract PMHookQuoter {
 
     function _getMaxPriceImpactBps(uint256 marketId) internal view returns (uint256) {
         uint256 feeOrHook = ROUTER.canonicalFeeOrHook(marketId);
-        if ((feeOrHook & (FLAG_BEFORE | FLAG_AFTER)) == 0) return 0;
+        if ((feeOrHook & FLAGS) == 0) return 0;
         try IPMFeeHook(address(uint160(feeOrHook))).getMaxPriceImpactBps(marketId) returns (
             uint256 maxImpact
         ) {
@@ -705,7 +683,7 @@ contract PMHookQuoter {
 
         uint256 closeWindow = 3600; // Default 1 hour
         uint256 feeOrHook = ROUTER.canonicalFeeOrHook(marketId);
-        if ((feeOrHook & (FLAG_BEFORE | FLAG_AFTER)) != 0) {
+        if ((feeOrHook & FLAGS) != 0) {
             try IPMFeeHook(address(uint160(feeOrHook))).getCloseWindow(marketId) returns (
                 uint256 w
             ) {
@@ -745,7 +723,6 @@ contract PMHookQuoter {
             }
         }
 
-        // Time-based spread boost (increases as close approaches)
         if (block.timestamp < close) {
             uint256 timeToClose = close - block.timestamp;
             if (timeToClose < 86400) {
@@ -788,12 +765,15 @@ contract PMHookQuoter {
             bool yesIsId0 = marketId < noId;
             uint256 poolCum = yesIsId0 ? p0Cum : p1Cum;
 
+            if (uint32(block.timestamp) < lastTs) return 0;
             uint32 elapsed = uint32(block.timestamp) - lastTs;
             if (elapsed > 0) {
                 uint256 yesRes = yesIsId0 ? r0 : r1;
                 uint256 noRes = yesIsId0 ? r1 : r0;
                 uint256 currentPrice = (noRes << 112) / yesRes;
-                poolCum += currentPrice * elapsed;
+                unchecked {
+                    poolCum += currentPrice * elapsed;
+                }
             }
 
             if (poolCum < c1) return 0;
@@ -819,54 +799,56 @@ contract PMHookQuoter {
         uint256 collateralIn,
         uint256 pYesTwapBps
     ) internal view returns (uint256 sharesOut, uint256 collateralUsed, bool filled) {
-        if (collateralIn == 0 || pYesTwapBps == 0) return (0, 0, false);
-
-        // Block vault OTC during close window (protects TWAP-based pricing near close)
-        if (_isInCloseWindow(marketId)) return (0, 0, false);
+        if (collateralIn == 0 || pYesTwapBps == 0 || _isInCloseWindow(marketId)) {
+            return (0, 0, false);
+        }
 
         (uint112 yesShares, uint112 noShares,) = ROUTER.bootstrapVaults(marketId);
-        uint256 availableShares = buyYes ? yesShares : noShares;
+        uint256 availableShares;
+        assembly ("memory-safe") {
+            availableShares := xor(noShares, mul(xor(noShares, yesShares), buyYes))
+        }
         if (availableShares == 0) return (0, 0, false);
 
         uint256 poolId = ROUTER.canonicalPoolId(marketId);
         (uint112 r0, uint112 r1) = _getReserves(poolId);
-        if (r0 == 0 || r1 == 0) return (0, 0, false);
+        if (uint256(r0) * r1 == 0) return (0, 0, false);
 
-        // Check spot deviation from TWAP
         uint256 noId = _getNoId(marketId);
-        bool yesIsId0 = marketId < noId;
-        uint256 yesRes = yesIsId0 ? r0 : r1;
-        uint256 noRes = yesIsId0 ? r1 : r0;
-        uint256 spotPYesBps = (noRes * 10000) / (yesRes + noRes);
-        if (spotPYesBps == 0) spotPYesBps = 1;
+        bool ok;
+        assembly ("memory-safe") {
+            let yesIsId0 := lt(marketId, noId)
+            let yesRes := xor(r1, mul(xor(r1, r0), yesIsId0))
+            let noRes := xor(r0, mul(xor(r0, r1), yesIsId0))
+            let spot := div(mul(noRes, 10000), add(yesRes, noRes))
+            if iszero(spot) { spot := 1 }
+            let dev := sub(spot, pYesTwapBps)
+            if gt(pYesTwapBps, spot) { dev := sub(pYesTwapBps, spot) }
+            ok := lt(dev, 501)
+        }
+        if (!ok) return (0, 0, false);
 
-        uint256 deviation =
-            spotPYesBps > pYesTwapBps ? spotPYesBps - pYesTwapBps : pYesTwapBps - spotPYesBps;
-        if (deviation > 500) return (0, 0, false);
-
-        // Calculate dynamic spread based on vault imbalance and time to close
         (,,,, uint64 close,,) = PAMM.markets(marketId);
-        uint256 relativeSpreadBps = _calculateDynamicSpread(yesShares, noShares, buyYes, close);
-
-        uint256 sharePriceBps = buyYes ? pYesTwapBps : (10000 - pYesTwapBps);
-        uint256 spreadBps = (sharePriceBps * relativeSpreadBps) / 10000;
-        if (spreadBps < MIN_ABSOLUTE_SPREAD_BPS) spreadBps = MIN_ABSOLUTE_SPREAD_BPS;
-
-        uint256 effectivePriceBps = sharePriceBps + spreadBps;
-        if (effectivePriceBps > 10000) effectivePriceBps = 10000;
+        uint256 rel = _calculateDynamicSpread(yesShares, noShares, buyYes, close);
+        uint256 effectivePriceBps;
+        assembly ("memory-safe") {
+            let base :=
+                xor(sub(10000, pYesTwapBps), mul(xor(sub(10000, pYesTwapBps), pYesTwapBps), buyYes))
+            let spread := div(mul(base, rel), 10000)
+            if lt(spread, 20) { spread := 20 }
+            effectivePriceBps := add(base, spread)
+            if gt(effectivePriceBps, 10000) { effectivePriceBps := 10000 }
+        }
 
         uint256 rawShares = (collateralIn * 10000) / effectivePriceBps;
-        uint256 maxSharesFromVault = (availableShares * 3000) / 10000; // 30% max
-
+        uint256 maxFromVault = (availableShares * 3000) / 10000;
         sharesOut = rawShares;
-        if (sharesOut > maxSharesFromVault) sharesOut = maxSharesFromVault;
+        if (sharesOut > maxFromVault) sharesOut = maxFromVault;
         if (sharesOut > availableShares) sharesOut = availableShares;
-
         collateralUsed = collateralIn;
         if (sharesOut != rawShares) {
             collateralUsed = (sharesOut * effectivePriceBps + 9999) / 10000;
         }
-
         filled = sharesOut > 0;
     }
 
@@ -889,7 +871,6 @@ contract PMHookQuoter {
         uint256 rIn = zeroForOne ? r0 : r1;
         uint256 rOut = zeroForOne ? r1 : r0;
         uint256 swapped = (amountInWithFee * rOut) / (rIn * 10000 + amountInWithFee);
-        // Only return non-zero if swap actually produces output
         if (swapped != 0 && swapped < rOut) {
             totalShares = collateralIn + swapped;
         }
@@ -899,16 +880,12 @@ contract PMHookQuoter {
         (,,,, uint64 close,,) = PAMM.markets(marketId);
         if (close < block.timestamp + BOOTSTRAP_WINDOW) return false;
 
-        (uint112 yesShares, uint112 noShares,) = ROUTER.bootstrapVaults(marketId);
-        if ((yesShares | noShares) == 0) return true;
-        if (yesShares == 0) return !buyYes;
-        if (noShares == 0) return buyYes;
-
-        uint256 larger = yesShares > noShares ? yesShares : noShares;
-        uint256 smaller = yesShares > noShares ? noShares : yesShares;
-        if (larger > smaller * 2) return false;
-        if (yesShares == noShares) return true;
-        return buyYes != (yesShares < noShares);
+        (uint112 y, uint112 n,) = ROUTER.bootstrapVaults(marketId);
+        if ((y | n) == 0) return true;
+        if (y == 0) return !buyYes;
+        if (n == 0) return buyYes;
+        if ((y > n ? y : n) > (y > n ? n : y) * 2) return false;
+        return y == n || buyYes != (y < n);
     }
 
     function _findMaxAMMUnderImpact(
@@ -932,10 +909,10 @@ contract PMHookQuoter {
         uint256 feeMult = 10000 - feeBps;
 
         // Binary search for max collateral under impact limit
-        uint256 lo = 0;
+        uint256 lo;
         uint256 hi = maxCollateral;
 
-        for (uint256 i = 0; i < 16; ++i) {
+        for (uint256 i; i < 10; ++i) {
             uint256 mid = (lo + hi + 1) / 2;
             uint256 impact = _calcPriceImpact(mid, buyYes, yesRes, noRes, pBefore, feeMult);
             if (impact <= maxImpactBps) {
@@ -963,7 +940,6 @@ contract PMHookQuoter {
 
         if (swapOut >= rOut) return 10001;
 
-        // After swap: buying side reserve decreases by swapOut, selling side increases by coll
         uint256 yAfter = buyYes ? yesRes - swapOut : yesRes + coll;
         uint256 nAfter = buyYes ? noRes + coll : noRes - swapOut;
         uint256 pAfter = (nAfter * 10000) / (yAfter + nAfter);
@@ -999,7 +975,7 @@ contract PMHookQuoter {
             bytes4 pmSource
         )
     {
-        if (collateralIn == 0) {
+        if (collateralIn == 0 || collateralIn > MAX_COLLATERAL_IN) {
             return (0, 0, 0, 0, bytes4(0));
         }
 
@@ -1007,7 +983,7 @@ contract PMHookQuoter {
 
         // Step 1: Quote pool fills from lowest price up to maxPriceBps
         if (maxPriceBps > 0 && maxPriceBps < 10000) {
-            bytes32 bitmapKey = keccak256(abi.encode(marketId, buyYes, true));
+            bytes32 bitmapKey = _getBitmapKey(marketId, buyYes, true);
 
             for (uint256 bucket; bucket < 40 && remainingCollateral > 0; ++bucket) {
                 uint256 word = MASTER_ROUTER.priceBitmap(bitmapKey, bucket);
@@ -1080,7 +1056,7 @@ contract PMHookQuoter {
             bytes4 pmSource
         )
     {
-        if (sharesIn == 0) {
+        if (sharesIn == 0 || sharesIn > MAX_COLLATERAL_IN) {
             return (0, 0, 0, 0, bytes4(0));
         }
 
@@ -1088,7 +1064,7 @@ contract PMHookQuoter {
 
         // Step 1: Quote pool fills from highest price down to minPriceBps
         if (minPriceBps > 0 && minPriceBps < 10000) {
-            bytes32 bitmapKey = keccak256(abi.encode(marketId, sellYes, false)); // false = BID
+            bytes32 bitmapKey = _getBitmapKey(marketId, sellYes, false);
 
             for (uint256 b; b < 40 && remainingShares > 0; ++b) {
                 uint256 bucket = 39 - b;
@@ -1113,7 +1089,7 @@ contract PMHookQuoter {
                         collateralReceived = collateralDepth;
                     } else {
                         sharesToSell = remainingShares;
-                        collateralReceived = (remainingShares * price + 9999) / 10000;
+                        collateralReceived = (remainingShares * price) / 10000; // floor for sells
                     }
 
                     poolCollateralOut += collateralReceived;
@@ -1331,6 +1307,32 @@ contract PMHookQuoter {
         }
     }
 
+    /// @notice Get all limit orders for a user across both YES and NO sides
+    function getUserAllLimitOrders(uint256 marketId, address user)
+        external
+        view
+        returns (
+            uint256[] memory yesAskPrices,
+            uint256[] memory yesAskShares,
+            uint256[] memory yesAskPending,
+            uint256[] memory yesBidPrices,
+            uint256[] memory yesBidCollateral,
+            uint256[] memory yesBidPending,
+            uint256[] memory noAskPrices,
+            uint256[] memory noAskShares,
+            uint256[] memory noAskPending,
+            uint256[] memory noBidPrices,
+            uint256[] memory noBidCollateral,
+            uint256[] memory noBidPending
+        )
+    {
+        (
+            yesAskPrices, yesAskShares, yesAskPending, yesBidPrices, yesBidCollateral, yesBidPending
+        ) = getUserActivePositions(marketId, true, user);
+        (noAskPrices, noAskShares, noAskPending, noBidPrices, noBidCollateral, noBidPending) =
+            getUserActivePositions(marketId, false, user);
+    }
+
     /// @notice Batch query user positions at specific prices
     function getUserPositionsBatch(
         uint256 marketId,
@@ -1383,12 +1385,17 @@ contract PMHookQuoter {
     function _getBitmapKey(uint256 marketId, bool isYes, bool isAsk)
         internal
         pure
-        returns (bytes32)
+        returns (bytes32 key)
     {
-        return keccak256(abi.encode(marketId, isYes, isAsk));
+        assembly ("memory-safe") {
+            let p := mload(0x40)
+            mstore(p, marketId)
+            mstore(add(p, 0x20), isYes)
+            mstore(add(p, 0x40), isAsk)
+            key := keccak256(p, 0x60)
+        }
     }
 
-    /// @dev Full precision multiply-divide (handles intermediate overflow)
     function fullMulDiv(uint256 x, uint256 y, uint256 d) internal pure returns (uint256 z) {
         assembly ("memory-safe") {
             z := mul(x, y)
@@ -1398,11 +1405,7 @@ contract PMHookQuoter {
                     let p1 := sub(mm, add(z, lt(mm, z)))
                     let r := mulmod(x, y, d)
                     let t := and(d, sub(0, d))
-                    if iszero(gt(d, p1)) {
-                        mstore(0x00, ERR_COMPUTATION)
-                        mstore(0x04, 1)
-                        revert(0x00, 0x24)
-                    }
+                    if iszero(gt(d, p1)) { revert(0, 0) }
                     d := div(d, t)
                     let inv := xor(2, mul(3, d))
                     inv := mul(inv, sub(2, mul(d, inv)))

@@ -1,0 +1,2117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ethPM — Docs</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        button, input { font: inherit; }
+        :root { --bg: #fff; --fg: #000; --dim: #888; }
+        [data-theme="dark"] { --bg: #000; --fg: #fff; --dim: #666; }
+
+        body {
+            font: bold 15px Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            min-height: 100vh;
+            padding: 20px;
+            transition: background 0.2s, color 0.2s;
+            line-height: 1.5;
+        }
+
+        .corner {
+            position: fixed;
+            font-size: 14px;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: var(--fg);
+            z-index: 1000;
+        }
+        .corner:hover { opacity: 0.5; }
+        #theme { top: 20px; right: 20px; text-decoration-color: #F0F; }
+        #top { bottom: 20px; right: 20px; text-decoration-color: #0FF; }
+
+        .logo {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            font-size: clamp(32px, 8vw, 48px);
+            letter-spacing: -2px;
+            z-index: 1000;
+        }
+        .logo a { text-decoration: underline; text-underline-offset: 4px; text-decoration-color: #627EEA; color: var(--fg); }
+        .logo a:hover { opacity: 0.5; }
+        .logo span { color: var(--dim); }
+
+        /* NAVIGATION */
+        nav {
+            background: var(--bg);
+            border-bottom: 3px solid var(--fg);
+            padding: 16px 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            margin-bottom: 40px;
+        }
+        nav ul {
+            list-style: none;
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        nav a {
+            color: var(--fg);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-color: var(--dim);
+            font-size: 13px;
+            transition: opacity 0.2s;
+        }
+        nav a:hover { opacity: 0.5; }
+
+        /* MAIN CONTENT */
+        main {
+            max-width: 900px;
+            margin: 0 auto 120px;
+            padding: 0 20px;
+        }
+
+        /* SECTIONS */
+        section {
+            margin-bottom: 60px;
+        }
+        section > h2 {
+            font-size: clamp(22px, 5vw, 32px);
+            letter-spacing: -1px;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid var(--fg);
+        }
+        section > h2 u { text-decoration-color: #0F0; text-decoration-thickness: 3px; text-underline-offset: 4px; }
+
+        /* TYPOGRAPHY */
+        h3 {
+            font-size: 18px;
+            margin: 32px 0 16px 0;
+            text-decoration: underline;
+            text-underline-offset: 4px;
+            text-decoration-color: #F0F;
+        }
+        h3:first-child { margin-top: 0; }
+
+        h4 {
+            font-size: 15px;
+            margin: 24px 0 12px 0;
+            color: var(--dim);
+        }
+
+        p {
+            margin-bottom: 14px;
+            font-weight: normal;
+        }
+
+        /* CODE BLOCKS */
+        pre {
+            background: var(--fg);
+            color: var(--bg);
+            padding: 16px;
+            overflow-x: auto;
+            font: normal 12px monospace;
+            line-height: 1.6;
+            margin: 16px 0;
+            border: 2px solid var(--fg);
+        }
+        code { font-family: monospace; }
+        .inline-code {
+            background: var(--fg);
+            color: var(--bg);
+            padding: 2px 6px;
+            font: normal 13px monospace;
+        }
+
+        /* DIAGRAMS */
+        .diagram-container {
+            border: 3px solid var(--fg);
+            padding: 24px;
+            margin: 24px 0;
+            overflow-x: auto;
+            background: var(--bg);
+        }
+        .diagram-container svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+        .diagram-title {
+            font-size: 12px;
+            text-align: center;
+            margin-bottom: 20px;
+            color: var(--dim);
+        }
+
+        /* SVG dark mode */
+        [data-theme="dark"] .diagram-container svg rect[fill="#fff"],
+        [data-theme="dark"] .diagram-container svg rect[fill="#ffffff"] { fill: #111; }
+        [data-theme="dark"] .diagram-container svg rect[fill="#f5f5f5"] { fill: #1a1a1a; }
+        [data-theme="dark"] .diagram-container svg rect[fill="#000"],
+        [data-theme="dark"] .diagram-container svg rect[fill="#000000"] { fill: #fff; }
+        [data-theme="dark"] .diagram-container svg rect[fill="#171717"] { fill: #222; }
+        [data-theme="dark"] .diagram-container svg text[fill="#000"],
+        [data-theme="dark"] .diagram-container svg text[fill="#000000"] { fill: #fff; }
+        [data-theme="dark"] .diagram-container svg text[fill="#fff"],
+        [data-theme="dark"] .diagram-container svg text[fill="#ffffff"] { fill: #000; }
+        [data-theme="dark"] .diagram-container svg text[fill="#525252"],
+        [data-theme="dark"] .diagram-container svg text[fill="#737373"] { fill: #888; }
+        [data-theme="dark"] .diagram-container svg text[fill="#a3a3a3"] { fill: #666; }
+        [data-theme="dark"] .diagram-container svg line[stroke="#000"] { stroke: #fff; }
+        [data-theme="dark"] .diagram-container svg path[stroke="#000"] { stroke: #fff; }
+        [data-theme="dark"] .diagram-container svg circle[stroke="#000"] { stroke: #fff; }
+        [data-theme="dark"] .diagram-container svg circle[fill="#fff"] { fill: #111; }
+        [data-theme="dark"] .diagram-container svg circle[fill="#000"] { fill: #fff; }
+        [data-theme="dark"] .diagram-container svg polygon[fill="#000"] { fill: #fff; }
+        [data-theme="dark"] .diagram-container svg rect[stroke="#000"] { stroke: #fff; }
+        [data-theme="dark"] .diagram-container svg rect[stroke="#737373"] { stroke: #555; }
+        [data-theme="dark"] .diagram-container svg pattern path { stroke: #333; }
+
+        /* TABLES */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 13px;
+            font-weight: normal;
+        }
+        th {
+            background: var(--fg);
+            color: var(--bg);
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--dim);
+            vertical-align: top;
+        }
+        tr:hover td { background: color-mix(in srgb, var(--fg) 5%, var(--bg)); }
+
+        /* FUNCTION SIGNATURES */
+        .func-sig {
+            background: var(--fg);
+            color: var(--bg);
+            padding: 12px 16px;
+            margin: 16px 0;
+            font: normal 12px monospace;
+            border-left: 4px solid #0FF;
+        }
+        .func-sig .keyword { opacity: 0.6; }
+        .func-sig .name { font-weight: 700; color: #0F0; }
+
+        /* CALLOUT BOXES */
+        .callout {
+            border: 3px solid var(--fg);
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .callout.warning { border-left: 6px solid #F00; }
+        .callout.info { border-left: 6px solid #0FF; }
+        .callout-title {
+            font-size: 12px;
+            margin-bottom: 8px;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-color: #FF0;
+        }
+        .callout p { margin-bottom: 0; }
+
+        /* GRID LAYOUTS */
+        .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        @media (max-width: 700px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+        /* CARDS */
+        .card {
+            border: 3px solid var(--fg);
+            padding: 16px;
+        }
+        .card h5 {
+            font-size: 14px;
+            margin-bottom: 8px;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-color: #0F0;
+        }
+        .card p { font-size: 13px; color: var(--dim); margin-bottom: 0; }
+
+        /* LISTS */
+        ul, ol { margin: 14px 0 14px 20px; font-weight: normal; }
+        li { margin-bottom: 6px; }
+
+        /* ADDRESS/CONTRACT REFS */
+        .address {
+            font: normal 11px monospace;
+            background: var(--fg);
+            color: var(--bg);
+            padding: 3px 6px;
+            word-break: break-all;
+        }
+        .address a {
+            color: var(--bg);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            text-decoration-color: #0FF;
+        }
+        .address a:hover { opacity: 0.7; }
+
+        /* HEADER LINKS */
+        .header-links {
+            margin: 20px 0 40px;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .header-links a {
+            color: var(--fg);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            font-size: 13px;
+            transition: opacity 0.2s;
+        }
+        .header-links a:hover { opacity: 0.5; }
+        .header-links a:nth-child(1) { text-decoration-color: #0F0; }
+        .header-links a:nth-child(2) { text-decoration-color: #0FF; }
+        .header-links a:nth-child(3) { text-decoration-color: #F0F; }
+
+        /* FOOTER */
+        footer {
+            border-top: 3px solid var(--fg);
+            padding: 20px 0;
+            margin-top: 40px;
+            font-weight: normal;
+            font-size: 12px;
+            color: var(--dim);
+        }
+        footer a { color: var(--fg); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: #0FF; }
+        footer a:hover { opacity: 0.5; }
+
+        /* PAGE TITLE */
+        .page-title {
+            font-size: clamp(36px, 10vw, 56px);
+            letter-spacing: -2px;
+            margin-bottom: 8px;
+        }
+        .page-title u { text-decoration-color: #627EEA; text-decoration-thickness: 4px; text-underline-offset: 6px; }
+        .subtitle { color: var(--dim); font-weight: normal; margin-bottom: 8px; }
+        .version { font-size: 12px; color: var(--dim); font-weight: normal; }
+
+        @media print {
+            section { page-break-inside: avoid; }
+            .diagram-container { page-break-inside: avoid; }
+            .corner, .logo { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<button class="corner" id="theme" onclick="toggleTheme()">dark</button>
+<button class="corner" id="top" onclick="window.scrollTo({top:0,behavior:'smooth'})">top</button>
+
+<div class="logo"><a href="https://ethpm.eth.limo">eth</a><span>PM</span></div>
+
+<main>
+    <h1 class="page-title"><u>eth</u>PM</h1>
+    <p class="subtitle">Deterministic Prediction Markets Protocol</p>
+    <p class="version">V1.0 // Technical Documentation</p>
+
+    <div class="header-links">
+        <a href="https://ethpm.eth.limo" target="_blank">Launch Dapp</a>
+        <a href="https://zamm.finance" target="_blank">zamm.finance</a>
+        <a href="https://github.com/zammdefi/pm" target="_blank">GitHub</a>
+    </div>
+
+    <nav>
+        <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#architecture">Architecture</a></li>
+            <li><a href="#pamm">PAMM</a></li>
+            <li><a href="#pmfeehook">PMFeeHook</a></li>
+            <li><a href="#pmhookrouter">PMHookRouter</a></li>
+            <li><a href="#pmhookquoter">PMHookQuoter</a></li>
+            <li><a href="#resolver">Resolver</a></li>
+            <li><a href="#masterrouter">MasterRouter</a></li>
+            <li><a href="#gaspm">GasPM</a></li>
+            <li><a href="#deployment">Deployment</a></li>
+        </ul>
+    </nav>
+
+        <!-- OVERVIEW SECTION -->
+        <section id="overview">
+            <h2>00 // Protocol Overview</h2>
+            <div class="section-content">
+                <p>ethPM enables deterministic, on-chain prediction markets that resolve based on arbitrary smart contract state. Markets can bet on any verifiable on-chain data: TVL, token prices, trading activity, governance votes—without human resolvers.</p>
+                
+                <h3>Core Principles</h3>
+                <div class="grid-3">
+                    <div class="card">
+                        <h5>Deterministic</h5>
+                        <p>Resolution via staticcall to any on-chain data source. No oracle dependency or human intervention.</p>
+                    </div>
+                    <div class="card">
+                        <h5>Composable</h5>
+                        <p>ERC6909 shares integrate with any DeFi primitive. Modular hook system for custom fee logic.</p>
+                    </div>
+                    <div class="card">
+                        <h5>Immutable</h5>
+                        <p>Core contracts deployed without upgrade patterns. Markets persist independently of protocol governance.</p>
+                    </div>
+                </div>
+                
+                <h3>Contract Addresses</h3>
+                <table>
+                    <tr>
+                        <th>Contract</th>
+                        <th>Address</th>
+                        <th>Network</th>
+                    </tr>
+                    <tr>
+                        <td>PAMM.sol</td>
+                        <td class="address"><a href="https://etherscan.io/address/0x000000000044bfe6c2BBFeD8862973E0612f07C0" target="_blank">0x000000000044bfe6c2BBFeD8862973E0612f07C0</a></td>
+                        <td>Ethereum</td>
+                    </tr>
+                    <tr>
+                        <td>ZAMM.sol</td>
+                        <td class="address"><a href="https://etherscan.io/address/0x000000000000040470635EB91b7CE4D132D616eD" target="_blank">0x000000000000040470635EB91b7CE4D132D616eD</a></td>
+                        <td>Ethereum</td>
+                    </tr>
+                    <tr>
+                        <td>PMHookRouter.sol</td>
+                        <td class="address"><a href="https://etherscan.io/address/0x0000000000BADa259Cb860c12ccD9500d9496B3e" target="_blank">0x0000000000BADa259Cb860c12ccD9500d9496B3e</a></td>
+                        <td>Ethereum</td>
+                    </tr>
+                    <tr>
+                        <td>PMHookQuoter.sol</td>
+                        <td class="address"><a href="https://etherscan.io/address/0x0000000000f0bf4ea3a43560324376e62fe390bc" target="_blank">0x0000000000f0bf4ea3a43560324376e62fe390bc</a></td>
+                        <td>Ethereum</td>
+                    </tr>
+                    <tr>
+                        <td>Resolver.sol</td>
+                        <td class="address"><a href="https://etherscan.io/address/0x00000000002205020E387b6a378c05639047BcFB" target="_blank">0x00000000002205020E387b6a378c05639047BcFB</a></td>
+                        <td>Ethereum</td>
+                    </tr>
+                    <tr>
+                        <td>MasterRouter.sol</td>
+                        <td class="address"><a href="https://etherscan.io/address/0x000000000055CdB14b66f37B96a571108FFEeA5C" target="_blank">0x000000000055CdB14b66f37B96a571108FFEeA5C</a></td>
+                        <td>Ethereum</td>
+                    </tr>
+                    <tr>
+                        <td>GasPM.sol</td>
+                        <td class="address"><a href="https://etherscan.io/address/0x0000000000ee3d4294438093EaA34308f47Bc0b4" target="_blank">0x0000000000ee3d4294438093EaA34308f47Bc0b4</a></td>
+                        <td>Ethereum</td>
+                    </tr>
+                    <tr>
+                        <td>PMFeeHook.sol</td>
+                        <td class="address">Deployed per market instance</td>
+                        <td>Ethereum</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- ARCHITECTURE SECTION -->
+        <section id="architecture">
+            <h2>01 // System Architecture</h2>
+            <div class="section-content">
+                <p>The ethPM stack consists of five interconnected layers, each responsible for a specific domain of functionality.</p>
+                
+                <div class="diagram-container">
+                    <div class="diagram-title">System Architecture Overview</div>
+                    <svg viewBox="0 0 900 600" width="900" height="600" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background grid -->
+    <defs>
+        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="600" fill="url(#grid)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">ETHPM PROTOCOL STACK</text>
+
+    <!-- Layer 5: User Interface -->
+    <rect x="50" y="50" width="800" height="70" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="70" y="75" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">LAYER 5</text>
+    <text x="70" y="95" font-family="Space Mono, monospace" font-size="14" font-weight="700">USER INTERFACE</text>
+    <text x="300" y="90" font-family="JetBrains Mono, monospace" font-size="11" fill="#525252">Frontend / IPFS / PMHookQuoter.sol</text>
+
+    <!-- Layer 4: Order Routing -->
+    <rect x="50" y="140" width="800" height="90" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="70" y="165" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">LAYER 4</text>
+    <text x="70" y="185" font-family="Space Mono, monospace" font-size="14" font-weight="700">ORDER ROUTING</text>
+
+    <rect x="300" y="155" width="160" height="55" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="380" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">PMHookRouter</text>
+    <text x="380" y="195" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Vault OTC + AMM</text>
+
+    <rect x="490" y="155" width="160" height="55" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="570" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">MasterRouter</text>
+    <text x="570" y="195" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Limit Orders</text>
+
+    <!-- Layer 3: Fee Policy -->
+    <rect x="50" y="250" width="800" height="90" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="70" y="275" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">LAYER 3</text>
+    <text x="70" y="295" font-family="Space Mono, monospace" font-size="14" font-weight="700">FEE POLICY</text>
+
+    <rect x="300" y="265" width="350" height="55" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="475" y="290" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">PMFeeHook.sol</text>
+    <text x="475" y="305" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Bootstrap Decay • Skew Protection • Price Impact Limits</text>
+
+    <!-- Layer 2: AMM -->
+    <rect x="50" y="360" width="800" height="90" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="70" y="385" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">LAYER 2</text>
+    <text x="70" y="405" font-family="Space Mono, monospace" font-size="14" font-weight="700">LIQUIDITY</text>
+
+    <rect x="300" y="375" width="350" height="55" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="475" y="400" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">zAMM</text>
+    <text x="475" y="415" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Full Range XYK • TWAP Oracle • LP Hooks</text>
+
+    <!-- Layer 1: Core -->
+    <rect x="50" y="470" width="800" height="90" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="70" y="495" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">LAYER 1</text>
+    <text x="70" y="515" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#fff">CORE VAULT</text>
+
+    <rect x="300" y="485" width="230" height="55" fill="#171717" stroke="#fff" stroke-width="1"/>
+    <text x="415" y="510" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" fill="#fff">PAMM.sol</text>
+    <text x="415" y="525" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">ERC6909 YES/NO Shares</text>
+
+    <rect x="560" y="485" width="170" height="55" fill="#171717" stroke="#fff" stroke-width="1"/>
+    <text x="645" y="510" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" fill="#fff">Resolver.sol</text>
+    <text x="645" y="525" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">Deterministic Oracle</text>
+
+    <!-- Vertical connectors -->
+    <line x1="380" y1="120" x2="380" y2="155" stroke="#000" stroke-width="1" marker-end="url(#arrowhead)"/>
+    <line x1="380" y1="210" x2="380" y2="265" stroke="#000" stroke-width="1" marker-end="url(#arrowhead)"/>
+    <line x1="475" y1="320" x2="475" y2="375" stroke="#000" stroke-width="1" marker-end="url(#arrowhead)"/>
+    <line x1="415" y1="430" x2="415" y2="485" stroke="#000" stroke-width="1" marker-end="url(#arrowhead)"/>
+
+    <!-- Labels on right -->
+    <text x="720" y="90" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">View-only quotes</text>
+    <text x="720" y="200" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Best execution</text>
+    <text x="720" y="310" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Dynamic fees</text>
+    <text x="720" y="420" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Price discovery</text>
+    <text x="750" y="530" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">Collateral</text>
+</svg>
+                </div>
+                
+                <h3>Data Flow</h3>
+                <p>User interactions flow through the stack as follows:</p>
+                <ol>
+                    <li><strong>Trade Request:</strong> User submits collateral with desired position (YES/NO)</li>
+                    <li><strong>Routing:</strong> PMHookRouter evaluates Vault OTC vs AMM pricing</li>
+                    <li><strong>Fee Calculation:</strong> PMFeeHook computes dynamic fee based on market state</li>
+                    <li><strong>Execution:</strong> zAMM executes swap or PAMM mints new shares</li>
+                    <li><strong>Settlement:</strong> User receives conditional tokens</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- PAMM SECTION -->
+        <section id="pamm">
+            <h2>02 // PAMM.sol</h2>
+            <div class="section-content">
+                <p>PAMM (Prediction AMM) is the core collateral vault that mints and manages ERC6909 conditional tokens (YES/NO shares). Each market is fully collateralized—1 share = 1 wei of collateral.</p>
+                
+                <div class="callout info">
+                    <div class="callout-title">Key Insight</div>
+                    <p>PAMM is hyperoptimized for zAMM integration. The ERC6909 singleton design enables operator approvals for single-tx share operations and reduces gas costs through warm storage access patterns.</p>
+                </div>
+                
+                <h3>Token ID Derivation</h3>
+                <div class="diagram-container">
+                    <div class="diagram-title">Market ID Generation</div>
+                    <svg viewBox="0 0 800 200" width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+    <rect width="800" height="200" fill="#f5f5f5"/>
+
+    <defs>
+        <marker id="arrowhead2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+
+    <!-- Input boxes -->
+    <rect x="30" y="60" width="140" height="50" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="100" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">description</text>
+    <text x="100" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">string</text>
+
+    <rect x="190" y="60" width="140" height="50" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="260" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">resolver</text>
+    <text x="260" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">address</text>
+
+    <rect x="350" y="60" width="140" height="50" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="420" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">collateral</text>
+    <text x="420" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">address</text>
+
+    <!-- Arrow to hash -->
+    <line x1="510" y1="85" x2="540" y2="85" stroke="#000" stroke-width="2" marker-end="url(#arrowhead2)"/>
+
+    <!-- Hash function -->
+    <rect x="550" y="50" width="100" height="70" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="600" y="85" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" fill="#fff" font-weight="700">keccak256</text>
+    <text x="600" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">"PMARKET:YES"</text>
+
+    <!-- Output -->
+    <line x1="650" y1="85" x2="680" y2="85" stroke="#000" stroke-width="2" marker-end="url(#arrowhead2)"/>
+
+    <rect x="690" y="60" width="80" height="50" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="730" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">marketId</text>
+    <text x="730" y="98" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">uint256</text>
+
+    <!-- NO ID derivation -->
+    <rect x="550" y="140" width="100" height="40" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="600" y="162" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" fill="#fff" font-weight="700">keccak256</text>
+
+    <line x1="650" y1="160" x2="680" y2="160" stroke="#000" stroke-width="2" marker-end="url(#arrowhead2)"/>
+
+    <rect x="690" y="140" width="80" height="40" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="730" y="162" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">noId</text>
+
+    <line x1="730" y1="110" x2="730" y2="125" stroke="#000" stroke-width="1"/>
+    <line x1="730" y1="125" x2="540" y2="125" stroke="#000" stroke-width="1"/>
+    <line x1="540" y1="125" x2="540" y2="160" stroke="#000" stroke-width="1"/>
+    <line x1="540" y1="160" x2="550" y2="160" stroke="#000" stroke-width="1" marker-end="url(#arrowhead2)"/>
+
+    <text x="440" y="150" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">"PMARKET:NO"</text>
+    <text x="440" y="165" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">+ marketId</text>
+</svg>
+                </div>
+                
+                <h3>Market Lifecycle</h3>
+                <div class="diagram-container">
+                    <div class="diagram-title">State Machine</div>
+                    <svg viewBox="0 0 800 280" width="800" height="280" xmlns="http://www.w3.org/2000/svg">
+    <rect width="800" height="280" fill="#f5f5f5"/>
+
+    <defs>
+        <marker id="arrowhead3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+
+    <!-- States -->
+    <circle cx="100" cy="140" r="50" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="100" y="135" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700">OPEN</text>
+    <text x="100" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">trading</text>
+
+    <circle cx="300" cy="140" r="50" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="300" y="135" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700">CLOSED</text>
+    <text x="300" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">awaiting</text>
+
+    <circle cx="500" cy="140" r="50" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="500" y="135" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700" fill="#fff">RESOLVED</text>
+    <text x="500" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">final</text>
+
+    <!-- Transitions -->
+    <line x1="150" y1="140" x2="240" y2="140" stroke="#000" stroke-width="2" marker-end="url(#arrowhead3)"/>
+    <text x="195" y="165" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9">block.timestamp</text>
+    <text x="195" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9">&gt;= close</text>
+
+    <line x1="350" y1="140" x2="440" y2="140" stroke="#000" stroke-width="2" marker-end="url(#arrowhead3)"/>
+    <text x="395" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9">resolve()</text>
+    <text x="395" y="130" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9">by resolver</text>
+
+    <!-- Early close path -->
+    <path d="M 130 95 Q 200 30 270 95" fill="none" stroke="#000" stroke-width="1" stroke-dasharray="4"/>
+    <text x="200" y="20" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9">closeMarket()</text>
+    <text x="200" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">if canClose</text>
+
+    <!-- Actions box -->
+    <rect x="600" y="50" width="180" height="180" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="610" y="70" font-family="JetBrains Mono, monospace" font-size="10" font-weight="700">ALLOWED ACTIONS</text>
+
+    <text x="610" y="95" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">OPEN:</text>
+    <text x="620" y="110" font-family="JetBrains Mono, monospace" font-size="9">split() merge()</text>
+    <text x="620" y="125" font-family="JetBrains Mono, monospace" font-size="9">buyYes() buyNo()</text>
+    <text x="620" y="140" font-family="JetBrains Mono, monospace" font-size="9">sellYes() sellNo()</text>
+
+    <text x="610" y="165" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">CLOSED:</text>
+    <text x="620" y="180" font-family="JetBrains Mono, monospace" font-size="9">merge()</text>
+
+    <text x="610" y="205" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">RESOLVED:</text>
+    <text x="620" y="220" font-family="JetBrains Mono, monospace" font-size="9">claim()</text>
+</svg>
+                </div>
+                
+                <h3>Core Functions</h3>
+                
+                <h4>Market Creation</h4>
+                <div class="func-sig">
+                    <span class="keyword">function</span> <span class="name">createMarket</span>(string calldata description, address resolver, address collateral, uint64 close, bool canClose) <span class="keyword">external returns</span> (uint256 marketId, uint256 noId)
+                </div>
+                <p>Creates a new prediction market. The <code class="inline-code">resolver</code> address has exclusive authority to call <code class="inline-code">resolve()</code> and optionally <code class="inline-code">closeMarket()</code>.</p>
+                
+                <h4>Split (Collateral → Shares)</h4>
+                <div class="func-sig">
+                    <span class="keyword">function</span> <span class="name">split</span>(uint256 marketId, uint256 collateralIn, address to) <span class="keyword">external payable returns</span> (uint256 shares, uint256 used)
+                </div>
+                <p>Locks collateral and mints equal amounts of YES and NO shares. For ETH markets, send ETH with the call.</p>
+                
+                <h4>Merge (Shares → Collateral)</h4>
+                <div class="func-sig">
+                    <span class="keyword">function</span> <span class="name">merge</span>(uint256 marketId, uint256 shares, address to) <span class="keyword">external returns</span> (uint256 merged, uint256 collateralOut)
+                </div>
+                <p>Burns equal amounts of YES and NO shares to unlock collateral. Allowed until market resolution.</p>
+                
+                <h4>Claim (After Resolution)</h4>
+                <div class="func-sig">
+                    <span class="keyword">function</span> <span class="name">claim</span>(uint256 marketId, address to) <span class="keyword">external returns</span> (uint256 shares, uint256 payout)
+                </div>
+                <p>Burns winning shares for collateral minus resolver fee (0-10% configurable).</p>
+                
+                <h3>Storage Layout</h3>
+                <table>
+                    <tr>
+                        <th>Slot</th>
+                        <th>Field</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td>Market.0</td>
+                        <td>resolver + resolved + outcome + canClose + close</td>
+                        <td>packed 31 bytes</td>
+                        <td>Market metadata</td>
+                    </tr>
+                    <tr>
+                        <td>Market.1</td>
+                        <td>collateral</td>
+                        <td>address</td>
+                        <td>Collateral token (0x0 = ETH)</td>
+                    </tr>
+                    <tr>
+                        <td>Market.2</td>
+                        <td>collateralLocked</td>
+                        <td>uint256</td>
+                        <td>Total collateral in market</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- PMFEEHOOK SECTION -->
+        <section id="pmfeehook">
+            <h2>03 // PMFeeHook.sol</h2>
+            <div class="section-content">
+                <p>PMFeeHook is a policy layer that sits between zAMM and PAMM, implementing dynamic swap fees and market protection mechanisms. It uses EIP-1153 transient storage for gas optimization.</p>
+                
+                <h3>Fee Components</h3>
+                <div class="diagram-container">
+                    <div class="diagram-title">Dynamic Fee Calculation</div>
+                    <svg viewBox="0 0 800 350" width="800" height="350" xmlns="http://www.w3.org/2000/svg">
+    <rect width="800" height="350" fill="#f5f5f5"/>
+
+    <!-- Title -->
+    <text x="400" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700">TOTAL FEE = min(SUM, feeCap)</text>
+
+    <!-- Fee components -->
+    <rect x="50" y="60" width="160" height="100" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="130" y="85" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700">BOOTSTRAP</text>
+    <text x="130" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">max → min decay</text>
+    <line x1="70" y1="125" x2="190" y2="125" stroke="#000" stroke-width="1"/>
+    <text x="130" y="142" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">0.75% → 0.10%</text>
+    <text x="130" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">over 2 days</text>
+
+    <rect x="230" y="60" width="160" height="100" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="310" y="85" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700">SKEW</text>
+    <text x="310" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">imbalance penalty</text>
+    <line x1="250" y1="125" x2="370" y2="125" stroke="#000" stroke-width="1"/>
+    <text x="310" y="142" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">0% → 0.80%</text>
+    <text x="310" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">at 90/10 skew</text>
+
+    <rect x="410" y="60" width="160" height="100" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="490" y="85" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700">ASYMMETRIC</text>
+    <text x="490" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">directional fee</text>
+    <line x1="430" y1="125" x2="550" y2="125" stroke="#000" stroke-width="1"/>
+    <text x="490" y="142" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">0% → 0.20%</text>
+    <text x="490" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">linear scaling</text>
+
+    <rect x="590" y="60" width="160" height="100" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="670" y="85" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700">VOLATILITY</text>
+    <text x="670" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">price variance</text>
+    <line x1="610" y1="125" x2="730" y2="125" stroke="#000" stroke-width="1"/>
+    <text x="670" y="142" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">optional</text>
+    <text x="670" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">10 snapshots</text>
+
+    <!-- Plus signs -->
+    <text x="220" y="115" text-anchor="middle" font-family="Space Mono, monospace" font-size="20" font-weight="700">+</text>
+    <text x="400" y="115" text-anchor="middle" font-family="Space Mono, monospace" font-size="20" font-weight="700">+</text>
+    <text x="580" y="115" text-anchor="middle" font-family="Space Mono, monospace" font-size="20" font-weight="700">+</text>
+
+    <!-- Fee cap -->
+    <rect x="300" y="190" width="200" height="50" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="400" y="215" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700" fill="#fff">FEE CAP: 3%</text>
+    <text x="400" y="232" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">feeCapBps = 300</text>
+
+    <!-- Close window modes -->
+    <text x="400" y="275" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">CLOSE WINDOW MODES</text>
+
+    <rect x="80" y="295" width="140" height="40" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="150" y="320" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">0: HALT</text>
+
+    <rect x="240" y="295" width="140" height="40" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="310" y="320" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">1: FIXED FEE</text>
+
+    <rect x="400" y="295" width="140" height="40" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="470" y="320" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">2: MIN FEE</text>
+
+    <rect x="560" y="295" width="140" height="40" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="630" y="320" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">3: DYNAMIC</text>
+</svg>
+                </div>
+                
+                <h3>Configuration Parameters</h3>
+                <table>
+                    <tr>
+                        <th>Field</th>
+                        <th>Type</th>
+                        <th>Default</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td>minFeeBps</td>
+                        <td>uint16</td>
+                        <td>10</td>
+                        <td>Steady-state fee (0.10%)</td>
+                    </tr>
+                    <tr>
+                        <td>maxFeeBps</td>
+                        <td>uint16</td>
+                        <td>75</td>
+                        <td>Bootstrap starting fee (0.75%)</td>
+                    </tr>
+                    <tr>
+                        <td>maxSkewFeeBps</td>
+                        <td>uint16</td>
+                        <td>80</td>
+                        <td>Max skew penalty (0.80%)</td>
+                    </tr>
+                    <tr>
+                        <td>feeCapBps</td>
+                        <td>uint16</td>
+                        <td>300</td>
+                        <td>Absolute fee ceiling (3%)</td>
+                    </tr>
+                    <tr>
+                        <td>skewRefBps</td>
+                        <td>uint16</td>
+                        <td>4000</td>
+                        <td>Skew threshold (90/10 = 40%)</td>
+                    </tr>
+                    <tr>
+                        <td>bootstrapWindow</td>
+                        <td>uint32</td>
+                        <td>172800</td>
+                        <td>Decay duration (2 days)</td>
+                    </tr>
+                    <tr>
+                        <td>closeWindow</td>
+                        <td>uint16</td>
+                        <td>3600</td>
+                        <td>Pre-close window (1 hour)</td>
+                    </tr>
+                    <tr>
+                        <td>maxPriceImpactBps</td>
+                        <td>uint16</td>
+                        <td>1200</td>
+                        <td>Max single-trade impact (12%)</td>
+                    </tr>
+                </table>
+                
+                <h3>Flag Bits</h3>
+                <pre>
+flags (uint16):
+  bit 0: FLAG_SKEW          (0x01) - Enable skew fee
+  bit 1: FLAG_BOOTSTRAP     (0x02) - Enable bootstrap decay
+  bit 2-3: closeWindowMode  (0x0C) - 0=halt, 1=fixed, 2=min, 3=dynamic
+  bit 4: FLAG_ASYMMETRIC    (0x10) - Enable directional fee
+  bit 5: FLAG_PRICE_IMPACT  (0x20) - Enable impact check
+  bit 6: FLAG_VOLATILITY    (0x40) - Enable volatility fee
+
+extraFlags (uint16):
+  bit 0-1: skewCurve        - 0=linear, 1=quadratic, 2=cubic, 3=quartic
+  bit 2-3: decayMode        - 0=linear, 1=cubic, 2=sqrt, 3=ease-in
+
+Default flags: 0x37 (skew + bootstrap + closeMode=1 + asymmetric + priceImpact)
+Default extraFlags: 0x01 (quadratic skew, linear decay)</pre>
+            </div>
+        </section>
+
+        <!-- PMHOOKROUTER SECTION -->
+        <section id="pmhookrouter">
+            <h2>04 // PMHookRouter.sol</h2>
+            <div class="section-content">
+                <p>PMHookRouter provides smart order routing with integrated vault market-making. It creates a "waterfall" effect for best-execution across three venues: Vault OTC, AMM, and Mint fallback.</p>
+                
+                <h3>Order Routing Flow</h3>
+                <div class="diagram-container">
+                    <div class="diagram-title">Buy Order Execution Waterfall</div>
+                    <svg viewBox="0 0 800 400" width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+    <rect width="800" height="400" fill="#f5f5f5"/>
+
+    <defs>
+        <marker id="arrowhead5" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+
+    <!-- Input -->
+    <rect x="320" y="20" width="160" height="50" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="400" y="45" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700" fill="#fff">COLLATERAL IN</text>
+    <text x="400" y="60" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">buyWithBootstrap()</text>
+
+    <line x1="400" y1="70" x2="400" y2="100" stroke="#000" stroke-width="2" marker-end="url(#arrowhead5)"/>
+
+    <!-- Quote comparison -->
+    <rect x="280" y="110" width="240" height="50" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="400" y="135" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">QUOTE COMPARISON</text>
+    <text x="400" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Vault OTC vs AMM</text>
+
+    <!-- Vault OTC box -->
+    <rect x="100" y="200" width="200" height="80" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="200" y="220" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">VAULT OTC</text>
+    <text x="200" y="238" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">TWAP-based pricing</text>
+    <text x="200" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">1% base + 4% imbalance</text>
+    <text x="200" y="266" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">30% max per fill</text>
+
+    <!-- AMM box -->
+    <rect x="500" y="200" width="200" height="80" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="600" y="220" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">zAMM SWAP</text>
+    <text x="600" y="238" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">split + swap opposite</text>
+    <text x="600" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">hook enforces impact</text>
+    <text x="600" y="266" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">binary search cap</text>
+
+    <!-- Arrows from comparison -->
+    <line x1="340" y1="160" x2="200" y2="200" stroke="#000" stroke-width="1" marker-end="url(#arrowhead5)"/>
+    <line x1="460" y1="160" x2="600" y2="200" stroke="#000" stroke-width="1" marker-end="url(#arrowhead5)"/>
+
+    <!-- Mint fallback -->
+    <rect x="320" y="320" width="160" height="50" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="400" y="345" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" fill="#fff">MINT FALLBACK</text>
+    <text x="400" y="360" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#a3a3a3">if conditions met</text>
+
+    <line x1="200" y1="280" x2="200" y2="310" stroke="#000" stroke-width="1" stroke-dasharray="4"/>
+    <line x1="200" y1="310" x2="320" y2="340" stroke="#000" stroke-width="1" stroke-dasharray="4" marker-end="url(#arrowhead5)"/>
+
+    <line x1="600" y1="280" x2="600" y2="310" stroke="#000" stroke-width="1" stroke-dasharray="4"/>
+    <line x1="600" y1="310" x2="480" y2="340" stroke="#000" stroke-width="1" stroke-dasharray="4" marker-end="url(#arrowhead5)"/>
+
+    <!-- Source tags -->
+    <rect x="50" y="30" width="100" height="80" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="100" y="50" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">SOURCE TAGS</text>
+    <text x="100" y="70" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">"otc" = vault</text>
+    <text x="100" y="85" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">"amm" = swap</text>
+    <text x="100" y="100" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">"mint" = split</text>
+</svg>
+                </div>
+                
+                <h3>Key Parameters</h3>
+                <table>
+                    <tr>
+                        <th>Constant</th>
+                        <th>Value</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td>MIN_ABSOLUTE_SPREAD_BPS</td>
+                        <td>20</td>
+                        <td>0.2% minimum spread</td>
+                    </tr>
+                    <tr>
+                        <td>MAX_SPREAD_BPS</td>
+                        <td>500</td>
+                        <td>5% maximum spread cap</td>
+                    </tr>
+                    <tr>
+                        <td>LP_FEE_SPLIT_BPS_BALANCED</td>
+                        <td>9000</td>
+                        <td>90% to LPs when balanced</td>
+                    </tr>
+                    <tr>
+                        <td>LP_FEE_SPLIT_BPS_IMBALANCED</td>
+                        <td>7000</td>
+                        <td>70% to LPs when imbalanced</td>
+                    </tr>
+                    <tr>
+                        <td>BOOTSTRAP_WINDOW</td>
+                        <td>14400</td>
+                        <td>4h mint path disabled before close</td>
+                    </tr>
+                    <tr>
+                        <td>MIN_TWAP_UPDATE_INTERVAL</td>
+                        <td>1800</td>
+                        <td>30 minute TWAP window</td>
+                    </tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- PMHOOKQUOTER SECTION -->
+        <section id="pmhookquoter">
+            <h2>05 // PMHookQuoter.sol</h2>
+            <div class="section-content">
+                <p>View-only quoter contract providing consolidated market data and execution quotes. Separated from routers to keep them under bytecode limit while enabling efficient frontend queries.</p>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">Fully On-Chain Market Infrastructure</div>
+                    <svg viewBox="0 0 950 600" width="950" height="600" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridPM3" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowPM3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="950" height="600" fill="url(#gridPM3)"/>
+
+    <!-- Title -->
+    <text x="475" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">FULLY ON-CHAIN MARKET INFRASTRUCTURE</text>
+    <text x="475" y="50" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">IPFS/dApp frontends can run entirely on-chain with PMHookRouter + Quoter</text>
+
+    <!-- IPFS Frontend -->
+    <rect x="50" y="80" width="200" height="100" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="150" y="105" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">IPFS FRONTEND</text>
+    <text x="150" y="125" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Static HTML/JS</text>
+    <text x="150" y="140" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">No backend needed</text>
+    <text x="150" y="155" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">Censorship resistant</text>
+    <text x="150" y="170" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">Fully decentralized</text>
+
+    <!-- dApp -->
+    <rect x="700" y="80" width="200" height="100" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="800" y="105" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">dAPP FRONTEND</text>
+    <text x="800" y="125" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">React/Next.js</text>
+    <text x="800" y="140" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">RPC calls only</text>
+    <text x="800" y="155" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">No indexer required</text>
+    <text x="800" y="170" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">All data on-chain</text>
+
+    <!-- Arrows to on-chain -->
+    <line x1="150" y1="180" x2="150" y2="210" stroke="#000" stroke-width="1"/>
+    <line x1="800" y1="180" x2="800" y2="210" stroke="#000" stroke-width="1"/>
+    <line x1="150" y1="210" x2="800" y2="210" stroke="#000" stroke-width="1"/>
+    <line x1="475" y1="210" x2="475" y2="240" stroke="#000" stroke-width="2" marker-end="url(#arrowPM3)"/>
+    <text x="475" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">eth_call (view functions)</text>
+
+    <!-- On-chain contracts box -->
+    <rect x="150" y="250" width="650" height="310" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="150" y="250" width="650" height="35" fill="#000"/>
+    <text x="475" y="272" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700" fill="#fff">ON-CHAIN DATA LAYER</text>
+
+    <!-- PMHookRouter view functions -->
+    <rect x="170" y="300" width="290" height="240" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="315" y="320" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700">PMHookRouter (State)</text>
+
+    <text x="185" y="345" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" fill="#525252">MARKET STATE</text>
+    <text x="185" y="360" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">canonicalPoolId[marketId]</text>
+    <text x="185" y="375" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">bootstrapVaults[marketId]</text>
+    <text x="185" y="390" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">rebalanceCollateralBudget[id]</text>
+
+    <text x="185" y="415" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" fill="#525252">USER POSITIONS</text>
+    <text x="185" y="430" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">vaultPositions[id][user]</text>
+    <text x="185" y="445" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">  .yesVaultShares</text>
+    <text x="185" y="460" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">  .noVaultShares</text>
+    <text x="185" y="475" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">  .yesRewardDebt</text>
+    <text x="185" y="490" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">  .noRewardDebt</text>
+
+    <text x="185" y="515" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" fill="#525252">TWAP ORACLE</text>
+    <text x="185" y="530" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">twapObservations[marketId]</text>
+
+    <!-- Quoter functions -->
+    <rect x="490" y="300" width="290" height="240" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="635" y="320" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700">PMHookQuoter (View)</text>
+
+    <text x="505" y="345" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" fill="#525252">QUOTE FUNCTIONS</text>
+    <text x="505" y="360" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">quoteBuy(marketId, buyYes, coll)</text>
+    <text x="505" y="375" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">quoteSell(marketId, sellYes, shares)</text>
+    <text x="505" y="390" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">→ returns expected output</text>
+
+    <text x="505" y="415" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" fill="#525252">MARKET INFO</text>
+    <text x="505" y="430" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">getMarketInfo(marketId)</text>
+    <text x="505" y="445" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">getVaultDepth(marketId)</text>
+    <text x="505" y="460" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">getTWAPPrice(marketId)</text>
+
+    <text x="505" y="485" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" fill="#525252">USER POSITION</text>
+    <text x="505" y="500" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">getUserPosition(marketId, user)</text>
+    <text x="505" y="515" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">getPendingFees(marketId, user)</text>
+    <text x="505" y="530" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">getShareBalances(marketId, user)</text>
+
+    <!-- Benefits callout -->
+    <rect x="50" y="200" width="80" height="350" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="90" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" transform="rotate(-90, 90, 375)">NO OFF-CHAIN DEPENDENCIES</text>
+
+    <rect x="820" y="200" width="80" height="350" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="860" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" transform="rotate(90, 860, 375)">FULLY DETERMINISTIC EXECUTION</text>
+</svg>
+                </div>
+
+                <h3>Market View Functions</h3>
+                <table>
+                    <tr>
+                        <th>Function</th>
+                        <th>Returns</th>
+                        <th>Purpose</th>
+                    </tr>
+                    <tr>
+                        <td>getMarketSummary()</td>
+                        <td>AMM reserves, fees, vault data, TWAP, timing</td>
+                        <td>Single-call market overview for dapps</td>
+                    </tr>
+                    <tr>
+                        <td>getUserFullPosition()</td>
+                        <td>Share balances, vault LP, pending rewards</td>
+                        <td>Complete user position in one call</td>
+                    </tr>
+                    <tr>
+                        <td>getLiquidityBreakdown()</td>
+                        <td>Vault OTC, AMM, pool depths</td>
+                        <td>Liquidity across all venues</td>
+                    </tr>
+                    <tr>
+                        <td>getTWAPPrice()</td>
+                        <td>pYes in basis points (0-10000)</td>
+                        <td>Time-weighted average price</td>
+                    </tr>
+                </table>
+
+                <h3>Quote Functions</h3>
+                <div class="grid-2">
+                    <div class="card">
+                        <h5>PMHookRouter Quotes</h5>
+                        <p>Simulate vault OTC + AMM execution waterfall.</p>
+                        <pre>quoteBootstrapBuy(marketId, buyYes, collateralIn, minOut)
+→ (totalShares, usesVault, source, vaultLP)
+
+quoteSellWithBootstrap(marketId, sellYes, sharesIn)
+→ (collateralOut, source)</pre>
+                    </div>
+                    <div class="card">
+                        <h5>MasterRouter Quotes</h5>
+                        <p>Simulate pool sweep + PMHookRouter fallback.</p>
+                        <pre>quoteBuyWithSweep(marketId, buyYes, collateralIn, maxPrice)
+→ (totalShares, poolShares, levels, pmShares, pmSource)
+
+quoteSellWithSweep(marketId, sellYes, sharesIn, minPrice)
+→ (totalCollateral, poolColl, levels, pmColl, pmSource)</pre>
+                    </div>
+                </div>
+
+                <h3>Orderbook View Functions</h3>
+                <table>
+                    <tr>
+                        <th>Function</th>
+                        <th>Returns</th>
+                        <th>Purpose</th>
+                    </tr>
+                    <tr>
+                        <td>getActiveLevels()</td>
+                        <td>Ask/bid prices and depths</td>
+                        <td>Orderbook UI display</td>
+                    </tr>
+                    <tr>
+                        <td>getUserActivePositions()</td>
+                        <td>All positions on a market side</td>
+                        <td>User's limit orders</td>
+                    </tr>
+                    <tr>
+                        <td>getUserAllLimitOrders()</td>
+                        <td>YES and NO positions combined</td>
+                        <td>Complete user order view</td>
+                    </tr>
+                    <tr>
+                        <td>getUserPositionsBatch()</td>
+                        <td>Positions at specific prices</td>
+                        <td>Efficient batch queries</td>
+                    </tr>
+                </table>
+
+                <h3>Source Identifiers</h3>
+                <p>Quote functions return a <code>source</code> indicating the execution path:</p>
+                <table>
+                    <tr>
+                        <th>Source</th>
+                        <th>Meaning</th>
+                    </tr>
+                    <tr>
+                        <td><code>"otc"</code></td>
+                        <td>Filled via vault OTC</td>
+                    </tr>
+                    <tr>
+                        <td><code>"amm"</code></td>
+                        <td>Filled via AMM swap</td>
+                    </tr>
+                    <tr>
+                        <td><code>"mint"</code></td>
+                        <td>Filled via vault mint (collateral → shares)</td>
+                    </tr>
+                    <tr>
+                        <td><code>"mult"</code></td>
+                        <td>Multiple venues used</td>
+                    </tr>
+                </table>
+
+                <div class="callout">
+                    <div class="callout-title">Design Note</div>
+                    <p>PMHookQuoter exists as a separate contract because PMHookRouter and MasterRouter are near the 24KB bytecode limit. Moving view functions to a dedicated quoter keeps routers deployable while providing comprehensive query capabilities.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- RESOLVER SECTION -->
+        <section id="resolver">
+            <h2>06 // Resolver.sol</h2>
+            <div class="section-content">
+                <p>The deterministic resolver enables markets that resolve based on arbitrary on-chain reads. No human intervention required—resolution is computed via staticcall at close time.</p>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">Resolver Architecture</div>
+                    <svg viewBox="0 0 900 520" width="900" height="520" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridR1" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowR1" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="520" fill="url(#gridR1)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">RESOLVER.SOL — DETERMINISTIC ORACLE</text>
+    <text x="450" y="50" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">On-chain oracle for PAMM markets via arbitrary staticcall reads</text>
+
+    <!-- Resolver (main) -->
+    <rect x="275" y="80" width="350" height="130" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="110" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#fff">Resolver.sol</text>
+    <text x="450" y="130" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">Creates markets + Resolves via staticcall</text>
+
+    <!-- Internal storage -->
+    <rect x="290" y="145" width="150" height="50" fill="#171717" stroke="#525252" stroke-width="1"/>
+    <text x="365" y="165" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff">conditions</text>
+    <text x="365" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">marketId → Condition</text>
+
+    <rect x="460" y="145" width="150" height="50" fill="#171717" stroke="#525252" stroke-width="1"/>
+    <text x="535" y="165" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff">Op enum</text>
+    <text x="535" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">LT GT LTE GTE EQ NEQ</text>
+
+    <!-- PAMM -->
+    <rect x="350" y="270" width="200" height="80" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="450" y="300" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">PAMM</text>
+    <text x="450" y="320" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">0x0000...07C0</text>
+    <text x="450" y="335" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Market creation + Resolution</text>
+
+    <!-- Arrows from Resolver to PAMM -->
+    <line x1="450" y1="210" x2="450" y2="270" stroke="#000" stroke-width="2" marker-end="url(#arrowR1)"/>
+    <text x="465" y="245" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">createMarket()</text>
+    <text x="465" y="258" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">resolve() closeMarket()</text>
+
+    <!-- Target Contracts (left) -->
+    <rect x="50" y="270" width="180" height="80" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="140" y="295" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700">TARGET A</text>
+    <text x="140" y="315" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Any contract with</text>
+    <text x="140" y="330" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">view/pure functions</text>
+    <text x="140" y="345" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">or EOA for balance</text>
+
+    <!-- Target B (right) -->
+    <rect x="670" y="270" width="180" height="80" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="760" y="295" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700">TARGET B</text>
+    <text x="760" y="315" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Optional (for ratio)</text>
+    <text x="760" y="330" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">value = A × 1e18 / B</text>
+
+    <!-- Arrows from Resolver to targets -->
+    <line x1="275" y1="150" x2="140" y2="270" stroke="#000" stroke-width="1" stroke-dasharray="4" marker-end="url(#arrowR1)"/>
+    <line x1="625" y1="150" x2="760" y2="270" stroke="#000" stroke-width="1" stroke-dasharray="4" marker-end="url(#arrowR1)"/>
+    <text x="180" y="200" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">staticcall</text>
+    <text x="680" y="200" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">staticcall</text>
+
+    <!-- Key functions -->
+    <rect x="50" y="80" width="180" height="130" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="60" y="100" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">CREATION</text>
+    <text x="60" y="120" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">createNumericMarket()</text>
+    <text x="60" y="135" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">createRatioMarket()</text>
+    <text x="60" y="150" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">*AndSeed()</text>
+    <text x="60" y="165" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">*SeedAndBuy()</text>
+    <text x="60" y="185" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">RESOLUTION</text>
+    <text x="60" y="200" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">resolveMarket()</text>
+
+    <!-- Resolution semantics -->
+    <rect x="670" y="80" width="180" height="130" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="680" y="100" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">RESOLUTION RULES</text>
+    <text x="680" y="120" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">condition TRUE →</text>
+    <text x="690" y="135" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">YES wins</text>
+    <text x="680" y="155" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">condition FALSE →</text>
+    <text x="690" y="170" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">NO wins (after close)</text>
+    <text x="680" y="190" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">canClose = true →</text>
+    <text x="690" y="205" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">early resolution OK</text>
+
+    <!-- Flow summary -->
+    <rect x="150" y="390" width="600" height="110" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="450" y="415" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">DETERMINISTIC RESOLUTION FLOW</text>
+
+    <text x="180" y="445" font-family="JetBrains Mono, monospace" font-size="9">1. resolveMarket(marketId) called by anyone</text>
+    <text x="180" y="463" font-family="JetBrains Mono, monospace" font-size="9">2. value = staticcall(target, callData) → decode as uint256</text>
+    <text x="180" y="481" font-family="JetBrains Mono, monospace" font-size="9">3. outcome = compare(value, op, threshold) → YES or NO</text>
+</svg>
+                </div>
+
+                <h3>Resolution Modes</h3>
+                <div class="grid-2">
+                    <div class="card">
+                        <h5>Scalar Mode</h5>
+                        <p>Single staticcall decoded as uint256. Compare result against threshold using operator.</p>
+                        <pre>target.staticcall(data) → uint256 value
+value [op] threshold → YES/NO</pre>
+                    </div>
+                    <div class="card">
+                        <h5>Ratio Mode</h5>
+                        <p>Two staticcalls with result computed as A * 1e18 / B. Compare ratio against threshold.</p>
+                        <pre>targetA.staticcall(dataA) → A
+targetB.staticcall(dataB) → B
+(A * 1e18 / B) [op] threshold</pre>
+                    </div>
+                </div>
+                
+                <h3>Comparison Operators</h3>
+                <table>
+                    <tr>
+                        <th>Op</th>
+                        <th>Symbol</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr><td>0</td><td>&lt;</td><td>Less than</td></tr>
+                    <tr><td>1</td><td>&gt;</td><td>Greater than</td></tr>
+                    <tr><td>2</td><td>≤</td><td>Less or equal</td></tr>
+                    <tr><td>3</td><td>≥</td><td>Greater or equal</td></tr>
+                    <tr><td>4</td><td>==</td><td>Equal</td></tr>
+                    <tr><td>5</td><td>≠</td><td>Not equal</td></tr>
+                </table>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">Comparison Operators (Op enum)</div>
+                    <svg viewBox="0 0 900 400" width="900" height="400" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridR4" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+    </defs>
+    <rect width="900" height="400" fill="url(#gridR4)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">COMPARISON OPERATORS (Op enum)</text>
+
+    <!-- Op table -->
+    <rect x="150" y="60" width="600" height="250" fill="#fff" stroke="#000" stroke-width="2"/>
+
+    <!-- Header -->
+    <rect x="150" y="60" width="600" height="35" fill="#000"/>
+    <text x="200" y="82" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">OP</text>
+    <text x="300" y="82" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">SYMBOL</text>
+    <text x="450" y="82" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">MEANING</text>
+    <text x="650" y="82" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">EXAMPLE</text>
+
+    <!-- LT -->
+    <text x="200" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">0 (LT)</text>
+    <text x="300" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="700">&lt;</text>
+    <text x="450" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Less than</text>
+    <text x="650" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#525252">price &lt; 1000</text>
+    <line x1="170" y1="125" x2="730" y2="125" stroke="#e5e5e5" stroke-width="1"/>
+
+    <!-- GT -->
+    <text x="200" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">1 (GT)</text>
+    <text x="300" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="700">&gt;</text>
+    <text x="450" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Greater than</text>
+    <text x="650" y="150" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#525252">tvl &gt; 1000000</text>
+    <line x1="170" y1="160" x2="730" y2="160" stroke="#e5e5e5" stroke-width="1"/>
+
+    <!-- LTE -->
+    <text x="200" y="185" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">2 (LTE)</text>
+    <text x="300" y="185" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="700">≤</text>
+    <text x="450" y="185" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Less or equal</text>
+    <text x="650" y="185" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#525252">supply ≤ cap</text>
+    <line x1="170" y1="195" x2="730" y2="195" stroke="#e5e5e5" stroke-width="1"/>
+
+    <!-- GTE -->
+    <text x="200" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">3 (GTE)</text>
+    <text x="300" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="700">≥</text>
+    <text x="450" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Greater or equal</text>
+    <text x="650" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#525252">balance ≥ 100e18</text>
+    <line x1="170" y1="230" x2="730" y2="230" stroke="#e5e5e5" stroke-width="1"/>
+
+    <!-- EQ -->
+    <text x="200" y="255" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">4 (EQ)</text>
+    <text x="300" y="255" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="700">==</text>
+    <text x="450" y="255" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Equal</text>
+    <text x="650" y="255" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#525252">isActive == 1 (true)</text>
+    <line x1="170" y1="265" x2="730" y2="265" stroke="#e5e5e5" stroke-width="1"/>
+
+    <!-- NEQ -->
+    <text x="200" y="290" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10">5 (NEQ)</text>
+    <text x="300" y="290" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="700">≠</text>
+    <text x="450" y="290" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Not equal</text>
+    <text x="650" y="290" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#525252">status != 0</text>
+
+    <!-- Boolean support note -->
+    <rect x="150" y="330" width="600" height="55" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="170" y="350" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">BOOLEAN SUPPORT</text>
+    <text x="170" y="368" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Functions returning bool work natively (ABI encodes as uint256: false=0, true=1)</text>
+    <text x="170" y="380" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">Use Op.EQ with threshold=1 for "is true", threshold=0 for "is false"</text>
+</svg>
+                </div>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">Data Sources & Special Cases</div>
+                    <svg viewBox="0 0 900 480" width="900" height="480" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridR6" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowR6" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="480" fill="url(#gridR6)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">DATA SOURCES &amp; SPECIAL CASES</text>
+
+    <!-- _readUint logic -->
+    <rect x="250" y="60" width="400" height="100" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="85" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">_readUint(target, callData)</text>
+    <text x="270" y="110" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">if callData.length == 0:</text>
+    <text x="280" y="125" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff">return target.balance  // ETH balance</text>
+    <text x="270" y="145" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">else:</text>
+    <text x="280" y="155" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff">return staticcall → decode uint256</text>
+
+    <!-- Three data source types -->
+    <rect x="50" y="190" width="250" height="130" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="50" y="190" width="250" height="30" fill="#000"/>
+    <text x="175" y="210" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">CONTRACT READS</text>
+    <text x="70" y="240" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">• token.totalSupply()</text>
+    <text x="70" y="255" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">• oracle.latestAnswer()</text>
+    <text x="70" y="270" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">• pool.getReserves()</text>
+    <text x="70" y="285" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">• governor.proposalCount()</text>
+    <text x="70" y="300" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">• nft.balanceOf(address)</text>
+
+    <rect x="325" y="190" width="250" height="130" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="325" y="190" width="250" height="30" fill="#000"/>
+    <text x="450" y="210" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">ETH BALANCE</text>
+    <text x="345" y="240" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Pass empty callData ("")</text>
+    <text x="345" y="255" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">target = address to check</text>
+    <line x1="345" y1="270" x2="555" y2="270" stroke="#e5e5e5" stroke-width="1"/>
+    <text x="345" y="290" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">Example conditions:</text>
+    <text x="355" y="305" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">• wallet.balance &gt; 100 ETH</text>
+
+    <rect x="600" y="190" width="250" height="130" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="600" y="190" width="250" height="30" fill="#000"/>
+    <text x="725" y="210" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">BOOLEAN FUNCTIONS</text>
+    <text x="620" y="240" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">ABI encodes bool as uint256</text>
+    <text x="620" y="255" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">false → 0, true → 1</text>
+    <line x1="620" y1="270" x2="830" y2="270" stroke="#e5e5e5" stroke-width="1"/>
+    <text x="620" y="290" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">Example conditions:</text>
+    <text x="630" y="305" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">• isActive() == 1 (true)</text>
+
+    <!-- Special cases -->
+    <rect x="50" y="350" width="800" height="110" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="450" y="375" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">SPECIAL CASES &amp; EDGE HANDLING</text>
+
+    <rect x="70" y="395" width="230" height="50" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="185" y="415" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">RATIO: B == 0</text>
+    <text x="185" y="432" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">→ value = uint256.max</text>
+
+    <rect x="335" y="395" width="230" height="50" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="450" y="415" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">STATICCALL FAILS</text>
+    <text x="450" y="432" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">→ revert TargetCallFailed()</text>
+
+    <rect x="600" y="395" width="230" height="50" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="715" y="415" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">DATA &lt; 32 BYTES</text>
+    <text x="715" y="432" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">→ revert TargetCallFailed()</text>
+</svg>
+                </div>
+
+                <div class="callout warning">
+                    <div class="callout-title">Important</div>
+                    <p>The target contract must be immutable or the data being read must be manipulation-resistant. Markets on mutable contracts can be exploited by changing state before resolution.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- MASTERROUTER SECTION -->
+        <section id="masterrouter">
+            <h2>07 // MasterRouter.sol</h2>
+            <div class="section-content">
+                <p>MasterRouter provides pooled limit orders for prediction markets. ASK pools sell shares at fixed prices; BID pools buy shares at fixed prices.</p>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">MasterRouter System Overview</div>
+                    <svg viewBox="0 0 900 500" width="900" height="500" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridMR" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowheadMR" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+        <marker id="arrowheadMR-white" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fff"/>
+        </marker>
+    </defs>
+    <rect width="900" height="500" fill="url(#gridMR)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">MASTERROUTER SYSTEM OVERVIEW</text>
+
+    <!-- User -->
+    <rect x="375" y="50" width="150" height="50" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="450" y="80" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700">USER</text>
+
+    <!-- MasterRouter (main) -->
+    <rect x="275" y="140" width="350" height="120" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="170" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#fff">MasterRouter.sol</text>
+    <text x="450" y="190" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">Pooled Orderbook + Vault Integration</text>
+
+    <!-- Internal components -->
+    <rect x="290" y="205" width="100" height="40" fill="#171717" stroke="#525252" stroke-width="1"/>
+    <text x="340" y="228" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff">ASK Pools</text>
+
+    <rect x="400" y="205" width="100" height="40" fill="#171717" stroke="#525252" stroke-width="1"/>
+    <text x="450" y="228" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff">BID Pools</text>
+
+    <rect x="510" y="205" width="100" height="40" fill="#171717" stroke="#525252" stroke-width="1"/>
+    <text x="560" y="228" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#fff">Price Bitmap</text>
+
+    <!-- Arrow from User to MasterRouter -->
+    <line x1="450" y1="100" x2="450" y2="140" stroke="#000" stroke-width="2" marker-end="url(#arrowheadMR)"/>
+
+    <!-- PMHookRouter -->
+    <rect x="100" y="320" width="200" height="80" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="200" y="350" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">PMHookRouter</text>
+    <text x="200" y="370" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">0x0000...496B3e</text>
+    <text x="200" y="385" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Vault OTC + AMM routing</text>
+
+    <!-- PAMM -->
+    <rect x="600" y="320" width="200" height="80" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="700" y="350" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700">PAMM</text>
+    <text x="700" y="370" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">0x0000...07C0</text>
+    <text x="700" y="385" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">ERC6909 YES/NO Shares</text>
+
+    <!-- Arrows from MasterRouter -->
+    <line x1="350" y1="260" x2="200" y2="320" stroke="#000" stroke-width="1" marker-end="url(#arrowheadMR)"/>
+    <line x1="550" y1="260" x2="700" y2="320" stroke="#000" stroke-width="1" marker-end="url(#arrowheadMR)"/>
+
+    <!-- Labels on arrows -->
+    <text x="180" y="285" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">buyWithBootstrap()</text>
+    <text x="180" y="298" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">sellWithBootstrap()</text>
+
+    <text x="640" y="285" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">split() transfer()</text>
+    <text x="640" y="298" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">transferFrom()</text>
+
+    <!-- Constructor note -->
+    <rect x="350" y="430" width="200" height="50" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="450" y="450" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">CONSTRUCTOR</text>
+    <text x="450" y="465" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">setOperator(PMHookRouter, true)</text>
+
+    <!-- Dashed line from constructor -->
+    <line x1="450" y1="400" x2="450" y2="430" stroke="#000" stroke-width="1" stroke-dasharray="4"/>
+
+    <!-- Key functions list -->
+    <rect x="50" y="50" width="150" height="130" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="60" y="70" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">KEY FUNCTIONS</text>
+    <text x="60" y="90" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">buyWithSweep()</text>
+    <text x="60" y="105" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">sellWithSweep()</text>
+    <text x="60" y="120" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">mintAndPool()</text>
+    <text x="60" y="135" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">mintAndVault()</text>
+    <text x="60" y="150" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">createBidPool()</text>
+    <text x="60" y="165" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">multicall()</text>
+
+    <!-- Constants -->
+    <rect x="700" y="50" width="150" height="100" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="710" y="70" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">CONSTANTS</text>
+    <text x="710" y="90" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">ETH = address(0)</text>
+    <text x="710" y="105" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">BPS_DENOM = 10000</text>
+    <text x="710" y="120" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">ACC = 1e18</text>
+    <text x="710" y="135" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Bitmap: 40 x uint256</text>
+</svg>
+                </div>
+
+                <h3>Order Book Architecture</h3>
+                <ul>
+                    <li><strong>ASK Pools:</strong> Sell shares at fixed price, filled lowest-first by buyWithSweep()</li>
+                    <li><strong>BID Pools:</strong> Buy shares at fixed price, filled highest-first by sellWithSweep()</li>
+                    <li><strong>Price Bitmap:</strong> 40 uint256s per market/side for O(1) best bid/ask discovery</li>
+                    <li><strong>Accumulator LP:</strong> Prevents late-joiner exploitation of pending fills</li>
+                </ul>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">Pooled Orderbook Architecture</div>
+                    <svg viewBox="0 0 900 550" width="900" height="550" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridMR2" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowMR2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="550" fill="url(#gridMR2)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">POOLED ORDERBOOK ARCHITECTURE</text>
+
+    <!-- ASK Side (left) -->
+    <rect x="50" y="60" width="350" height="220" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="50" y="60" width="350" height="35" fill="#000"/>
+    <text x="225" y="82" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700" fill="#fff">ASK POOLS (Selling Shares)</text>
+
+    <!-- ASK Pool structure -->
+    <text x="70" y="115" font-family="JetBrains Mono, monospace" font-size="10" font-weight="700">Pool Struct</text>
+    <text x="80" y="135" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">totalShares: uint256</text>
+    <text x="80" y="150" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">totalScaled: uint256 (LP units)</text>
+    <text x="80" y="165" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">accCollPerScaled: uint256</text>
+    <text x="80" y="180" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">collateralEarned: uint256</text>
+
+    <line x1="70" y1="195" x2="380" y2="195" stroke="#e5e5e5" stroke-width="1"/>
+
+    <text x="70" y="215" font-family="JetBrains Mono, monospace" font-size="10" font-weight="700">UserPosition</text>
+    <text x="80" y="235" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">scaled: uint256 (LP units owned)</text>
+    <text x="80" y="250" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">collDebt: uint256 (reward debt)</text>
+
+    <!-- BID Side (right) -->
+    <rect x="500" y="60" width="350" height="220" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="500" y="60" width="350" height="35" fill="#000"/>
+    <text x="675" y="82" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700" fill="#fff">BID POOLS (Buying Shares)</text>
+
+    <!-- BID Pool structure -->
+    <text x="520" y="115" font-family="JetBrains Mono, monospace" font-size="10" font-weight="700">BidPool Struct</text>
+    <text x="530" y="135" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">totalCollateral: uint256</text>
+    <text x="530" y="150" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">totalScaled: uint256 (LP units)</text>
+    <text x="530" y="165" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">accSharesPerScaled: uint256</text>
+    <text x="530" y="180" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">sharesAcquired: uint256</text>
+
+    <line x1="520" y1="195" x2="830" y2="195" stroke="#e5e5e5" stroke-width="1"/>
+
+    <text x="520" y="215" font-family="JetBrains Mono, monospace" font-size="10" font-weight="700">BidPosition</text>
+    <text x="530" y="235" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">scaled: uint256 (LP units owned)</text>
+    <text x="530" y="250" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">sharesDebt: uint256 (reward debt)</text>
+
+    <!-- Pool ID derivation -->
+    <rect x="50" y="300" width="350" height="60" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="225" y="325" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">poolId = keccak256(marketId, isYes, priceInBps)</text>
+    <text x="225" y="345" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Unique ID per market/side/price</text>
+
+    <rect x="500" y="300" width="350" height="60" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="675" y="325" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">bidPoolId = keccak256("BID", marketId, buyYes, price)</text>
+    <text x="675" y="345" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Prefixed to avoid collision with ASK</text>
+
+    <!-- Price Bitmap -->
+    <rect x="150" y="390" width="600" height="140" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="420" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" font-weight="700" fill="#fff">PRICE BITMAP</text>
+    <text x="450" y="440" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">O(1) Best Bid/Ask Discovery</text>
+
+    <!-- Bitmap visualization -->
+    <rect x="170" y="455" width="560" height="55" fill="#171717" stroke="#525252" stroke-width="1"/>
+    <text x="200" y="475" font-family="JetBrains Mono, monospace" font-size="8" fill="#fff">mapping(bytes32 =&gt; uint256[40]) priceBitmap</text>
+    <text x="200" y="492" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">key = keccak256(marketId, isYes, isAsk)</text>
+
+    <!-- Bitmap buckets -->
+    <rect x="500" y="460" width="30" height="20" fill="#525252" stroke="#737373" stroke-width="1"/>
+    <rect x="535" y="460" width="30" height="20" fill="#525252" stroke="#737373" stroke-width="1"/>
+    <rect x="570" y="460" width="30" height="20" fill="#525252" stroke="#737373" stroke-width="1"/>
+    <text x="605" y="475" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">...</text>
+    <rect x="630" y="460" width="30" height="20" fill="#525252" stroke="#737373" stroke-width="1"/>
+    <rect x="665" y="460" width="30" height="20" fill="#525252" stroke="#737373" stroke-width="1"/>
+    <rect x="700" y="460" width="20" height="20" fill="#525252" stroke="#737373" stroke-width="1"/>
+
+    <text x="515" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#a3a3a3">[0]</text>
+    <text x="550" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#a3a3a3">[1]</text>
+    <text x="585" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#a3a3a3">[2]</text>
+    <text x="645" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#a3a3a3">[38]</text>
+    <text x="680" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#a3a3a3">[39]</text>
+
+    <!-- Explanation -->
+    <text x="200" y="540" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">bucket = price &gt;&gt; 8 | bit = price &amp; 0xff | Valid range: 1-9999 bps</text>
+</svg>
+                </div>
+
+                <h3>Pooled Orderbook Design</h3>
+                <p>Unlike traditional orderbooks with individual orders, MasterRouter uses pooled limit orders where multiple LPs can deposit into the same price level. This enables gas-efficient fills and fair pro-rata distribution.</p>
+
+                <h4>Accumulator Pattern</h4>
+                <p>The accumulator LP pattern (similar to MasterChef) tracks rewards per unit of liquidity. When fills occur, <code class="inline-code">accCollPerScaled</code> (ASK) or <code class="inline-code">accSharesPerScaled</code> (BID) increases. Each user's pending rewards are calculated as:</p>
+                <pre>pending = (position.scaled * accPerScaled) - position.debt</pre>
+
+                <h4>Price Bitmap</h4>
+                <p>The bitmap enables O(1) discovery of the best available price. Each bit represents a price level (1-9999 bps). Finding the lowest ASK or highest BID requires scanning at most 40 uint256 words using bit manipulation.</p>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">Accumulator LP Model</div>
+                    <svg viewBox="0 0 900 500" width="900" height="500" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridMR3" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowMR3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="500" fill="url(#gridMR3)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">ACCUMULATOR LP MODEL</text>
+    <text x="450" y="50" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Prevents Late Joiner Theft via Reward Debt Pattern</text>
+
+    <!-- Formula box -->
+    <rect x="250" y="70" width="400" height="60" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="95" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#fff">pending = (scaled × accPerScaled / ACC) − debt</text>
+    <text x="450" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#a3a3a3">ACC = 1e18 (precision scalar)</text>
+
+    <!-- ASK Pool Flow (left side) -->
+    <rect x="50" y="150" width="380" height="320" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="50" y="150" width="380" height="35" fill="#000"/>
+    <text x="240" y="172" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">ASK POOL (Shares → Collateral)</text>
+
+    <!-- Deposit -->
+    <rect x="70" y="200" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="145" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_deposit()</text>
+    <text x="145" y="238" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">mint LP units</text>
+    <text x="145" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">set initial debt</text>
+
+    <!-- Fill -->
+    <rect x="260" y="200" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="335" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_fill()</text>
+    <text x="335" y="238" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">remove shares</text>
+    <text x="335" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">accCollPerScaled +=</text>
+
+    <!-- Claim -->
+    <rect x="70" y="290" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="145" y="310" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_claim()</text>
+    <text x="145" y="328" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">calc pending coll</text>
+    <text x="145" y="342" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">update debt</text>
+
+    <!-- Withdraw -->
+    <rect x="260" y="290" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="335" y="310" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_withdraw()</text>
+    <text x="335" y="328" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">burn LP units</text>
+    <text x="335" y="342" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">return shares</text>
+
+    <!-- State vars -->
+    <rect x="70" y="380" width="340" height="70" fill="#171717" stroke="#000" stroke-width="1"/>
+    <text x="90" y="400" font-family="JetBrains Mono, monospace" font-size="8" fill="#fff">Pool: totalShares, totalScaled, accCollPerScaled</text>
+    <text x="90" y="418" font-family="JetBrains Mono, monospace" font-size="8" fill="#fff">User: scaled (LP units), collDebt (reward debt)</text>
+    <text x="90" y="436" font-family="JetBrains Mono, monospace" font-size="8" fill="#a3a3a3">Collateral distributes pro-rata to LP holders</text>
+
+    <!-- BID Pool Flow (right side) -->
+    <rect x="470" y="150" width="380" height="320" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="470" y="150" width="380" height="35" fill="#000"/>
+    <text x="660" y="172" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">BID POOL (Collateral → Shares)</text>
+
+    <!-- Deposit -->
+    <rect x="490" y="200" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="565" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_depositToBidPool()</text>
+    <text x="565" y="238" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">mint LP units</text>
+    <text x="565" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">set initial debt</text>
+
+    <!-- Fill -->
+    <rect x="680" y="200" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="755" y="220" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_fillBidPool()</text>
+    <text x="755" y="238" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">remove collateral</text>
+    <text x="755" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">accSharesPerScaled +=</text>
+
+    <!-- Claim -->
+    <rect x="490" y="290" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="565" y="310" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_claimBidShares()</text>
+    <text x="565" y="328" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">calc pending shares</text>
+    <text x="565" y="342" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">update debt</text>
+
+    <!-- Withdraw -->
+    <rect x="680" y="290" width="150" height="70" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="755" y="310" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">_withdrawFromBidPool()</text>
+    <text x="755" y="328" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">burn LP units</text>
+    <text x="755" y="342" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">return collateral</text>
+
+    <!-- State vars -->
+    <rect x="490" y="380" width="340" height="70" fill="#171717" stroke="#000" stroke-width="1"/>
+    <text x="510" y="400" font-family="JetBrains Mono, monospace" font-size="8" fill="#fff">BidPool: totalCollateral, totalScaled, accSharesPerScaled</text>
+    <text x="510" y="418" font-family="JetBrains Mono, monospace" font-size="8" fill="#fff">User: scaled (LP units), sharesDebt (reward debt)</text>
+    <text x="510" y="436" font-family="JetBrains Mono, monospace" font-size="8" fill="#a3a3a3">Shares distribute pro-rata to LP holders</text>
+</svg>
+                </div>
+
+                <h3>Sweep Operations</h3>
+                <p>The sweep functions (<code class="inline-code">buyWithSweep</code>, <code class="inline-code">sellWithSweep</code>) traverse the price bitmap to fill orders at the best available prices, then fall back to PMHookRouter for any remaining amount.</p>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">sellWithSweep() Execution Flow</div>
+                    <svg viewBox="0 0 900 480" width="900" height="480" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridMR4" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowMR4" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="480" fill="url(#gridMR4)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">sellWithSweep() EXECUTION FLOW</text>
+
+    <!-- Input -->
+    <rect x="350" y="50" width="200" height="55" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="75" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">SHARES IN</text>
+    <text x="450" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#a3a3a3">sharesIn, minPriceBps, minCollateralOut</text>
+
+    <line x1="450" y1="105" x2="450" y2="135" stroke="#000" stroke-width="2" marker-end="url(#arrowMR4)"/>
+
+    <!-- Step 1: Sweep BID Pools -->
+    <rect x="200" y="145" width="500" height="120" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="220" y="170" font-family="Space Mono, monospace" font-size="11" font-weight="700">STEP 1: SWEEP BID POOLS</text>
+    <text x="220" y="190" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Scan bitmap high → low (best price first)</text>
+
+    <!-- Price levels visualization -->
+    <rect x="230" y="205" width="60" height="45" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="260" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700">7500</text>
+    <text x="260" y="240" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">BEST</text>
+
+    <text x="305" y="225" font-family="JetBrains Mono, monospace" font-size="12">→</text>
+
+    <rect x="320" y="205" width="60" height="45" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="350" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9">7000</text>
+    <text x="350" y="240" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">depth</text>
+
+    <text x="395" y="225" font-family="JetBrains Mono, monospace" font-size="12">→</text>
+
+    <rect x="410" y="205" width="60" height="45" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="440" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9">6500</text>
+    <text x="440" y="240" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">depth</text>
+
+    <text x="485" y="225" font-family="JetBrains Mono, monospace" font-size="12">→</text>
+
+    <rect x="500" y="205" width="60" height="45" fill="#e5e5e5" stroke="#737373" stroke-width="1" stroke-dasharray="4"/>
+    <text x="530" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">...</text>
+    <text x="530" y="240" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">minPrice</text>
+
+    <!-- Accumulator note -->
+    <rect x="590" y="205" width="100" height="45" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="640" y="222" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">_fillBidPool()</text>
+    <text x="640" y="238" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">accSharesPerScaled</text>
+    <text x="640" y="248" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">+= shares/LP</text>
+
+    <!-- Arrow to Step 2 -->
+    <line x1="450" y1="265" x2="450" y2="295" stroke="#000" stroke-width="2" marker-end="url(#arrowMR4)"/>
+    <text x="465" y="285" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">remaining?</text>
+
+    <!-- Step 2: PMHookRouter -->
+    <rect x="200" y="305" width="500" height="80" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <text x="220" y="330" font-family="Space Mono, monospace" font-size="11" font-weight="700">STEP 2: PMHOOKROUTER FALLBACK</text>
+    <text x="220" y="350" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">Route remainder through Vault OTC → AMM</text>
+    <text x="220" y="370" font-family="JetBrains Mono, monospace" font-size="8" fill="#525252">PM_HOOK_ROUTER.sellWithBootstrap(remainingShares, ...)</text>
+
+    <!-- Arrow to output -->
+    <line x1="450" y1="385" x2="450" y2="415" stroke="#000" stroke-width="2" marker-end="url(#arrowMR4)"/>
+
+    <!-- Output -->
+    <rect x="300" y="425" width="300" height="45" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="448" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">COLLATERAL OUT + SOURCES</text>
+    <text x="450" y="462" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#a3a3a3">totalCollateralOut, poolCollateralOut, sources[]</text>
+
+    <!-- Side notes -->
+    <rect x="50" y="145" width="130" height="90" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="60" y="165" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">SOURCE TAGS</text>
+    <text x="60" y="185" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">"BIDPOOL" = bids</text>
+    <text x="60" y="200" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">"otc" = vault</text>
+    <text x="60" y="215" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">"amm" = zAMM</text>
+
+    <rect x="720" y="145" width="130" height="90" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="730" y="165" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">SLIPPAGE CHECK</text>
+    <text x="730" y="185" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">totalCollateralOut</text>
+    <text x="730" y="200" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">&gt;= minCollateralOut</text>
+    <text x="730" y="220" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">or revert</text>
+</svg>
+                </div>
+
+                <h3>Mint Operations</h3>
+                <p>MasterRouter provides three mint variants that split collateral into YES/NO shares, keep one side for directional exposure, and route the other side differently based on strategy.</p>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">Mint Operations Comparison</div>
+                    <svg viewBox="0 0 900 520" width="900" height="520" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridMR5" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowMR5" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="520" fill="url(#gridMR5)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">MINT OPERATIONS</text>
+    <text x="450" y="50" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#737373">Split collateral → Keep one side, route other side</text>
+
+    <!-- Shared start: PAMM.split -->
+    <rect x="350" y="70" width="200" height="50" fill="#000" stroke="#000" stroke-width="2"/>
+    <text x="450" y="95" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">PAMM.split()</text>
+    <text x="450" y="110" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#a3a3a3">collateral → YES + NO shares</text>
+
+    <!-- Three branches -->
+    <line x1="350" y1="120" x2="150" y2="160" stroke="#000" stroke-width="1" marker-end="url(#arrowMR5)"/>
+    <line x1="450" y1="120" x2="450" y2="160" stroke="#000" stroke-width="1" marker-end="url(#arrowMR5)"/>
+    <line x1="550" y1="120" x2="750" y2="160" stroke="#000" stroke-width="1" marker-end="url(#arrowMR5)"/>
+
+    <!-- mintAndPool -->
+    <rect x="50" y="170" width="200" height="150" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="50" y="170" width="200" height="30" fill="#000"/>
+    <text x="150" y="190" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">mintAndPool()</text>
+
+    <text x="70" y="220" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">1. Keep one side</text>
+    <text x="70" y="240" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">2. Pool other at price</text>
+    <text x="70" y="260" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">3. Get LP position</text>
+
+    <rect x="70" y="275" width="160" height="30" fill="#f5f5f5" stroke="#737373" stroke-width="1"/>
+    <text x="150" y="295" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8">→ ASK pool + kept shares</text>
+
+    <!-- mintAndVault -->
+    <rect x="350" y="170" width="200" height="150" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="350" y="170" width="200" height="30" fill="#000"/>
+    <text x="450" y="190" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">mintAndVault()</text>
+
+    <text x="370" y="220" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">1. Keep one side</text>
+    <text x="370" y="240" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">2. Deposit other to vault</text>
+    <text x="370" y="260" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">3. Get vault LP shares</text>
+
+    <rect x="370" y="275" width="160" height="30" fill="#f5f5f5" stroke="#737373" stroke-width="1"/>
+    <text x="450" y="295" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8">→ Vault shares + kept shares</text>
+
+    <!-- mintAndSellOther -->
+    <rect x="650" y="170" width="200" height="150" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="650" y="170" width="200" height="30" fill="#000"/>
+    <text x="750" y="190" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700" fill="#fff">mintAndSellOther()</text>
+
+    <text x="670" y="220" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">1. Keep one side</text>
+    <text x="670" y="240" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">2. Sweep bid pools</text>
+    <text x="670" y="260" font-family="JetBrains Mono, monospace" font-size="9" fill="#737373">3. Route via PMHookRouter</text>
+
+    <rect x="670" y="275" width="160" height="30" fill="#f5f5f5" stroke="#737373" stroke-width="1"/>
+    <text x="750" y="295" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8">→ Collateral + kept shares</text>
+
+    <!-- Use cases -->
+    <rect x="50" y="340" width="200" height="80" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="60" y="360" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">USE CASE</text>
+    <text x="60" y="380" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Maker: set limit order</text>
+    <text x="60" y="395" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Earn spread when filled</text>
+    <text x="60" y="410" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Keep directional exposure</text>
+
+    <rect x="350" y="340" width="200" height="80" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="360" y="360" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">USE CASE</text>
+    <text x="360" y="380" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">LP: provide liquidity</text>
+    <text x="360" y="395" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Earn fees from OTC fills</text>
+    <text x="360" y="410" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Keep directional exposure</text>
+
+    <rect x="650" y="340" width="200" height="80" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="660" y="360" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">USE CASE</text>
+    <text x="660" y="380" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Taker: instant exposure</text>
+    <text x="660" y="395" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Recover cost via selling</text>
+    <text x="660" y="410" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Better than pure buy</text>
+
+    <!-- Comparison table -->
+    <rect x="150" y="440" width="600" height="70" fill="#fff" stroke="#000" stroke-width="2"/>
+    <text x="450" y="460" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700">OUTPUT COMPARISON</text>
+    <text x="250" y="485" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8">mintAndPool: LP units</text>
+    <text x="450" y="485" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8">mintAndVault: Vault shares</text>
+    <text x="650" y="485" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8">mintAndSellOther: Collateral</text>
+    <text x="250" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">(passive income)</text>
+    <text x="450" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">(passive income)</text>
+    <text x="650" y="500" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="7" fill="#737373">(immediate)</text>
+</svg>
+                </div>
+            </div>
+        </section>
+
+        <!-- GASPM SECTION -->
+        <section id="gaspm">
+            <h2>08 // GasPM.sol</h2>
+            <div class="section-content">
+                <p>GasPM is a self-contained "infinite market" example built on top of ethPM. It demonstrates a specialized resolver for gas price predictions with built-in oracle infrastructure.</p>
+
+                <div class="diagram-container">
+                    <div class="diagram-title">GasPM Architecture</div>
+                    <svg viewBox="0 0 900 520" width="900" height="520" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="gridGPM" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e5e5" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrowGPM" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#000"/>
+        </marker>
+    </defs>
+    <rect width="900" height="520" fill="url(#gridGPM)"/>
+
+    <!-- Title -->
+    <text x="450" y="30" text-anchor="middle" font-family="Space Mono, monospace" font-size="14" font-weight="700" fill="#000">GASPM: INFINITE GAS PRICE PREDICTION MARKETS</text>
+
+    <!-- Oracle Layer -->
+    <rect x="50" y="60" width="350" height="180" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="50" y="60" width="350" height="30" fill="#000"/>
+    <text x="225" y="80" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">ORACLE LAYER</text>
+
+    <text x="70" y="110" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700" fill="#525252">STATE TRACKING</text>
+    <text x="70" y="128" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">cumulativeBaseFee  // TWAP source</text>
+    <text x="70" y="143" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">lastBaseFee        // Current reading</text>
+    <text x="70" y="158" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">maxBaseFee         // All-time high</text>
+    <text x="70" y="173" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">minBaseFee         // All-time low</text>
+
+    <text x="70" y="198" font-family="JetBrains Mono, monospace" font-size="9" font-weight="700" fill="#525252">PERMISSIONLESS UPDATE</text>
+    <text x="70" y="216" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">update() // Anyone can call</text>
+    <text x="70" y="231" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Optional ETH rewards for updaters</text>
+
+    <!-- Ethereum block.basefee -->
+    <rect x="50" y="260" width="350" height="40" fill="#f5f5f5" stroke="#000" stroke-width="1"/>
+    <text x="225" y="285" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#525252">block.basefee → Native EVM opcode (EIP-1559)</text>
+
+    <!-- Market Types -->
+    <rect x="500" y="60" width="350" height="240" fill="#fff" stroke="#000" stroke-width="2"/>
+    <rect x="500" y="60" width="350" height="30" fill="#000"/>
+    <text x="675" y="80" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">MARKET TYPES</text>
+
+    <text x="520" y="110" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">DIRECTIONAL</text>
+    <text x="640" y="110" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Above/below threshold</text>
+
+    <text x="520" y="130" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">RANGE</text>
+    <text x="640" y="130" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Between lower/upper bounds</text>
+
+    <text x="520" y="150" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">BREAKOUT</text>
+    <text x="640" y="150" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">New all-time high</text>
+
+    <text x="520" y="170" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">PEAK</text>
+    <text x="640" y="170" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">New windowed high</text>
+
+    <text x="520" y="190" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">TROUGH</text>
+    <text x="640" y="190" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">New windowed low</text>
+
+    <text x="520" y="210" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">VOLATILITY</text>
+    <text x="640" y="210" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Max-min spread exceeds X</text>
+
+    <text x="520" y="230" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">STABILITY</text>
+    <text x="640" y="230" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Max-min spread under X</text>
+
+    <text x="520" y="250" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">SPOT</text>
+    <text x="640" y="250" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Exact value (±tolerance)</text>
+
+    <text x="520" y="270" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700">COMPARISON</text>
+    <text x="640" y="270" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">TWAP vs starting TWAP</text>
+
+    <text x="520" y="295" font-family="JetBrains Mono, monospace" font-size="7" fill="#a3a3a3">+ Window variants track metrics since market creation</text>
+
+    <!-- Arrow from Oracle to ethPM -->
+    <line x1="225" y1="300" x2="225" y2="340" stroke="#000" stroke-width="2" marker-end="url(#arrowGPM)"/>
+    <text x="235" y="325" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">view functions</text>
+
+    <!-- Arrow from Market Types to ethPM -->
+    <line x1="675" y1="300" x2="675" y2="340" stroke="#000" stroke-width="2" marker-end="url(#arrowGPM)"/>
+    <text x="685" y="325" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">create markets</text>
+
+    <!-- ethPM Integration -->
+    <rect x="150" y="350" width="600" height="150" fill="#f5f5f5" stroke="#000" stroke-width="2"/>
+    <rect x="150" y="350" width="600" height="30" fill="#000"/>
+    <text x="450" y="370" text-anchor="middle" font-family="Space Mono, monospace" font-size="11" font-weight="700" fill="#fff">ETHPM INTEGRATION</text>
+
+    <rect x="180" y="395" width="240" height="85" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="300" y="415" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700">Resolver.sol</text>
+    <text x="195" y="435" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">GasPM address as target</text>
+    <text x="195" y="450" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">getTwap() / getMax() / etc.</text>
+    <text x="195" y="465" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Deterministic resolution</text>
+
+    <rect x="480" y="395" width="240" height="85" fill="#fff" stroke="#000" stroke-width="1"/>
+    <text x="600" y="415" text-anchor="middle" font-family="Space Mono, monospace" font-size="10" font-weight="700">PAMM.sol</text>
+    <text x="495" y="435" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">YES/NO share minting</text>
+    <text x="495" y="450" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Collateral custody</text>
+    <text x="495" y="465" font-family="JetBrains Mono, monospace" font-size="8" fill="#737373">Resolution & redemption</text>
+</svg>
+                </div>
+
+                <h3>Market Types</h3>
+                <table>
+                    <tr>
+                        <th>Type</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr><td>Directional</td><td>Above/below threshold</td></tr>
+                    <tr><td>Range</td><td>Between bounds</td></tr>
+                    <tr><td>Breakout</td><td>New all-time high</td></tr>
+                    <tr><td>Peak/Trough</td><td>New windowed high/low</td></tr>
+                    <tr><td>Volatility</td><td>Variance-based</td></tr>
+                    <tr><td>Spot</td><td>Exact value (±tolerance)</td></tr>
+                    <tr><td>Comparison</td><td>A vs B</td></tr>
+                </table>
+            </div>
+        </section>
+
+        <!-- DEPLOYMENT SECTION -->
+        <section id="deployment">
+            <h2>09 // Deployment</h2>
+            <div class="section-content">
+                <h3>Prerequisites</h3>
+                <ul>
+                    <li>Solidity ^0.8.30 (PAMM), ^0.8.31 (PMFeeHook, PMHookRouter)</li>
+                    <li>EIP-1153 support (Cancun/Dencun hardfork) for transient storage</li>
+                    <li>Existing zAMM deployment</li>
+                </ul>
+                
+                <h3>Deployment Order</h3>
+                <ol>
+                    <li><strong>PAMM</strong> — Core vault (immutable)</li>
+                    <li><strong>PMFeeHook</strong> — Fee policy (owner-configurable)</li>
+                    <li><strong>PMHookRouter</strong> — Sets PAMM operator, registered as REGISTRAR</li>
+                    <li><strong>Resolver</strong> — Per-market deployment</li>
+                </ol>
+                
+                <h3>Gas Estimates</h3>
+                <table>
+                    <tr>
+                        <th>Operation</th>
+                        <th>Gas (approx)</th>
+                    </tr>
+                    <tr><td>bootstrapMarket()</td><td>~450,000</td></tr>
+                    <tr><td>buyWithBootstrap() [OTC]</td><td>~200,000</td></tr>
+                    <tr><td>buyWithBootstrap() [AMM]</td><td>~280,000</td></tr>
+                    <tr><td>buyWithBootstrap() [Mint]</td><td>~320,000</td></tr>
+                    <tr><td>depositToVault()</td><td>~120,000</td></tr>
+                    <tr><td>rebalanceBootstrapVault()</td><td>~350,000</td></tr>
+                    <tr><td>claim()</td><td>~80,000</td></tr>
+                </table>
+            </div>
+        </section>
+
+    <footer>
+        <p>ethPM Protocol Documentation // Version 1.0</p>
+        <p style="margin-top: 10px;"><a href="https://github.com/zammdefi/pm" target="_blank">GitHub</a> — Source code, tests, and additional documentation</p>
+        <p style="margin-top: 10px;">Smart contracts are unaudited—use at own risk.</p>
+    </footer>
+</main>
+
+<script>
+let dark = localStorage.theme === 'dark' || (!localStorage.theme && matchMedia('(prefers-color-scheme:dark)').matches);
+const $ = id => document.getElementById(id);
+
+if (dark) { document.documentElement.dataset.theme = 'dark'; $('theme').textContent = 'light'; }
+
+function toggleTheme() {
+    dark = !dark;
+    document.documentElement.dataset.theme = dark ? 'dark' : '';
+    $('theme').textContent = dark ? 'light' : 'dark';
+    localStorage.theme = dark ? 'dark' : 'light';
+}
+</script>
+</body>
+</html>

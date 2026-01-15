@@ -1987,6 +1987,9 @@
                 <div style="display:none;gap:1rem;margin-bottom:6px;font-size:11px;">
                     <span style="color:var(--amber);">Vault LP: <span id="tradeModalVault">--</span></span>
                 </div>
+                <div style="display:none;gap:1rem;margin-bottom:6px;font-size:11px;">
+                    <span style="color:var(--text-muted);">Limit Orders: <span id="tradeModalLimitOrders">--</span></span>
+                </div>
                 <div id="positionPnL" style="display:none;padding-top:6px;border-top:1px solid var(--border);">
                     <div style="display:flex;justify-content:space-between;">
                         <span style="color:var(--text-dim);">If <span id="positionOutcome">YES</span> wins</span>
@@ -2502,7 +2505,7 @@
         const PAMM_ADDRESS = '0x000000000044bfe6c2BBFeD8862973E0612f07C0';
         const PMHOOKROUTER_ADDRESS = '0x0000000000BADa259Cb860c12ccD9500d9496B3e';
         const PMFEEHOOK_ADDRESS = '0x0000000000Cc736804447C7E1dC8d3683a37f1a9';
-        const PMHOOKQUOTER_ADDRESS = '0x0000000000000000000000000000000000000000'; // TODO: Deploy and update
+        const PMHOOKQUOTER_ADDRESS = '0x0000000000f0bf4ea3a43560324376e62fe390bc';
         const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
         // Hook address with flags for pool creation
         const HOOK_FEE_OR_HOOK = BigInt(PMFEEHOOK_ADDRESS) | (1n << 255n) | (1n << 254n); // FLAG_BEFORE | FLAG_AFTER
@@ -2598,6 +2601,15 @@
         ];
 
         const PMHOOKQUOTER_ABI = [
+            // Market view functions
+            'function getTWAPPrice(uint256 marketId) view returns (uint256 twapBps)',
+            'function getMarketSummary(uint256 marketId) view returns (uint112 ammYesReserve, uint112 ammNoReserve, uint256 ammPriceYesBps, uint256 feeBps, uint112 vaultYesShares, uint112 vaultNoShares, uint256 totalYesVaultLP, uint256 totalNoVaultLP, uint256 vaultBudget, uint256 twapPriceYesBps, uint64 closeTime, bool resolved, bool inCloseWindow)',
+            'function getUserFullPosition(uint256 marketId, address user) view returns (uint256 yesShareBalance, uint256 noShareBalance, uint112 yesVaultLP, uint112 noVaultLP, uint256 pendingYesCollateral, uint256 pendingNoCollateral, uint256 ammLPBalance)',
+            'function getLiquidityBreakdown(uint256 marketId, bool buyYes) view returns (uint256 vaultOtcShares, uint256 vaultOtcPriceBps, bool vaultOtcAvailable, uint112 ammYesReserve, uint112 ammNoReserve, uint256 ammSpotPriceBps, uint256 ammMaxImpactBps, uint256 poolAskDepth, uint256 poolBestAskBps, uint256 poolBidDepth, uint256 poolBestBidBps)',
+            // Orderbook functions
+            'function getActiveLevels(uint256 marketId, bool isYes, uint256 maxLevels) view returns (uint256[] askPrices, uint256[] askDepths, uint256[] bidPrices, uint256[] bidDepths)',
+            'function getUserActivePositions(uint256 marketId, bool isYes, address user) view returns (uint256[] askPrices, uint256[] askShares, uint256[] askPendingColl, uint256[] bidPrices, uint256[] bidCollateral, uint256[] bidPendingShares)',
+            'function getUserAllLimitOrders(uint256 marketId, address user) view returns (uint256[] yesAskPrices, uint256[] yesAskShares, uint256[] yesAskPending, uint256[] yesBidPrices, uint256[] yesBidCollateral, uint256[] yesBidPending, uint256[] noAskPrices, uint256[] noAskShares, uint256[] noAskPending, uint256[] noBidPrices, uint256[] noBidCollateral, uint256[] noBidPending)',
             // PMHookRouter quote functions
             'function quoteBootstrapBuy(uint256 marketId, bool buyYes, uint256 collateralIn, uint256 minSharesOut) view returns (uint256 totalSharesOut, bool usesVault, bytes4 source, uint256 vaultSharesMinted)',
             'function quoteSellWithBootstrap(uint256 marketId, bool sellYes, uint256 sharesIn) view returns (uint256 collateralOut, bytes4 source)',
@@ -2667,7 +2679,7 @@
         const chartLoaded = new Set(); // track which chart iframes have been loaded
         let currentTrade = { type: null, isYes: true, marketId: null };
         let currentTradeMode = 'buy'; // 'buy' or 'sell'
-        let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n };
+        let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n, vaultYes: 0n, vaultNo: 0n, limitOrders: null };
         let slippageTolerance = 0.5; // 0.5% default slippage tolerance
         let lpSlippageTolerance = 1; // 1% default LP slippage (higher due to split/merge)
 
@@ -5527,67 +5539,81 @@
 
         async function loadUserPosition(marketId) {
             if (!connectedAddress) {
-                currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n, vaultYes: 0n, vaultNo: 0n };
+                currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n, vaultYes: 0n, vaultNo: 0n, limitOrders: null };
                 return;
             }
 
             try {
                 const rpc = provider || await getRpcProvider();
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
-                const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, rpc);
+                const quoterDeployed = PMHOOKQUOTER_ADDRESS !== '0x0000000000000000000000000000000000000000';
 
-                // Use cached metadata or fetch if not available
+                // Cache noId for swap functionality
                 const marketIdStr = marketId.toString();
                 let meta = marketMetaCache.get(marketIdStr);
                 if (!meta) {
-                    const [noId, poolKey] = await Promise.all([
-                        pamm.getNoId(marketId),
-                        pamm.poolKey(marketId, HOOK_FEE_OR_HOOK)
+                    const noId = await pamm.getNoId(marketId);
+                    meta = { noId };
+                    marketMetaCache.set(marketIdStr, meta);
+                }
+                currentTrade.yesId = marketId;
+                currentTrade.noId = meta.noId;
+
+                // Use quoter for all position data in single call (if deployed)
+                if (quoterDeployed) {
+                    const quoter = new ethers.Contract(PMHOOKQUOTER_ADDRESS, PMHOOKQUOTER_ABI, rpc);
+
+                    // Fetch user position and limit orders in parallel
+                    const [position, limitOrders] = await Promise.all([
+                        quoter.getUserFullPosition(marketId, connectedAddress),
+                        quoter.getUserAllLimitOrders(marketId, connectedAddress).catch(() => null)
                     ]);
+
+                    currentUserPosition = {
+                        yesBalance: position.yesShareBalance,
+                        noBalance: position.noShareBalance,
+                        lpBalance: position.ammLPBalance,
+                        vaultYes: BigInt(position.yesVaultLP),
+                        vaultNo: BigInt(position.noVaultLP),
+                        pendingYes: position.pendingYesCollateral,
+                        pendingNo: position.pendingNoCollateral,
+                        limitOrders: limitOrders
+                    };
+                } else {
+                    // Fallback to direct contract calls if quoter not deployed
+                    const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, rpc);
+                    const poolKey = await pamm.poolKey(marketId, HOOK_FEE_OR_HOOK);
                     const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
                         ['uint256', 'uint256', 'address', 'address', 'uint256'],
                         [poolKey.id0, poolKey.id1, poolKey.token0, poolKey.token1, poolKey.feeOrHook]
                     ));
-                    meta = { noId, poolKey, poolId };
-                    marketMetaCache.set(marketIdStr, meta);
+
+                    const [yesBal, noBal, lpBal] = await Promise.all([
+                        pamm.balanceOf(connectedAddress, marketId),
+                        pamm.balanceOf(connectedAddress, meta.noId),
+                        zamm.balanceOf(connectedAddress, poolId)
+                    ]);
+
+                    let vaultYes = 0n, vaultNo = 0n;
+                    try {
+                        const pmRouter = new ethers.Contract(PMHOOKROUTER_ADDRESS, PMHOOKROUTER_ABI, rpc);
+                        const vaultPos = await pmRouter.vaultPositions(marketId, connectedAddress);
+                        vaultYes = BigInt(vaultPos[0]);
+                        vaultNo = BigInt(vaultPos[1]);
+                    } catch (e) {}
+
+                    currentUserPosition = {
+                        yesBalance: yesBal,
+                        noBalance: noBal,
+                        lpBalance: lpBal,
+                        vaultYes,
+                        vaultNo,
+                        limitOrders: null
+                    };
                 }
-
-                // Store yesId and noId in currentTrade for swap functionality
-                currentTrade.yesId = marketId;
-                currentTrade.noId = meta.noId;
-
-                // Fetch share balances and AMM LP
-                const [yesBal, noBal, lpBal, poolData] = await Promise.all([
-                    pamm.balanceOf(connectedAddress, marketId),
-                    pamm.balanceOf(connectedAddress, meta.noId),
-                    zamm.balanceOf(connectedAddress, meta.poolId),
-                    zamm.pools(meta.poolId)
-                ]);
-
-                // Fetch vault positions from PMHookRouter
-                let vaultYes = 0n, vaultNo = 0n;
-                try {
-                    const pmRouter = new ethers.Contract(PMHOOKROUTER_ADDRESS, PMHOOKROUTER_ABI, rpc);
-                    const vaultPos = await pmRouter.vaultPositions(marketId, connectedAddress);
-                    vaultYes = BigInt(vaultPos[0]); // yesVaultShares
-                    vaultNo = BigInt(vaultPos[1]);  // noVaultShares
-                } catch (e) {
-                    // Vault might not exist for this market
-                }
-
-                // poolData: [reserve0, reserve1, blockTimestampLast, price0CumulativeLast, price1CumulativeLast, kLast, supply]
-                currentUserPosition = {
-                    yesBalance: yesBal,
-                    noBalance: noBal,
-                    lpBalance: lpBal,
-                    poolId: meta.poolId,
-                    lpTotalSupply: poolData[6],
-                    vaultYes,
-                    vaultNo
-                };
             } catch (e) {
                 console.error('Failed to load position:', e);
-                currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n, vaultYes: 0n, vaultNo: 0n };
+                currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n, vaultYes: 0n, vaultNo: 0n, limitOrders: null };
             }
 
             // Update modal display
@@ -5595,10 +5621,11 @@
             const noShares = parseFloat(ethers.formatEther(currentUserPosition.noBalance));
             const vaultYesShares = parseFloat(ethers.formatEther(currentUserPosition.vaultYes || 0n));
             const vaultNoShares = parseFloat(ethers.formatEther(currentUserPosition.vaultNo || 0n));
+            const ammLP = parseFloat(ethers.formatEther(currentUserPosition.lpBalance || 0n));
 
             document.getElementById('tradeModalYes').textContent = yesShares.toFixed(4);
             document.getElementById('tradeModalNo').textContent = noShares.toFixed(4);
-            document.getElementById('tradeModalLP').textContent = parseFloat(ethers.formatEther(currentUserPosition.lpBalance)).toFixed(4);
+            document.getElementById('tradeModalLP').textContent = ammLP.toFixed(4);
 
             // Show vault positions if user has any
             const vaultEl = document.getElementById('tradeModalVault');
@@ -5613,8 +5640,58 @@
                 }
             }
 
+            // Show limit orders if user has any
+            updateLimitOrdersDisplay();
+
             // Update position value and P&L display
             updatePositionValue(yesShares, noShares);
+        }
+
+        // Display user's limit orders in the modal
+        function updateLimitOrdersDisplay() {
+            const limitOrdersEl = document.getElementById('tradeModalLimitOrders');
+            if (!limitOrdersEl) return;
+
+            const orders = currentUserPosition.limitOrders;
+            if (!orders) {
+                limitOrdersEl.parentElement.style.display = 'none';
+                return;
+            }
+
+            // Count total orders
+            const yesAskCount = orders.yesAskPrices?.length || 0;
+            const yesBidCount = orders.yesBidPrices?.length || 0;
+            const noAskCount = orders.noAskPrices?.length || 0;
+            const noBidCount = orders.noBidPrices?.length || 0;
+            const totalOrders = yesAskCount + yesBidCount + noAskCount + noBidCount;
+
+            if (totalOrders === 0) {
+                limitOrdersEl.parentElement.style.display = 'none';
+                return;
+            }
+
+            // Calculate total value in orders
+            let totalAskShares = 0;
+            let totalBidCollateral = 0;
+
+            for (let i = 0; i < yesAskCount; i++) {
+                totalAskShares += Number(orders.yesAskShares[i]) / 1e18;
+            }
+            for (let i = 0; i < noAskCount; i++) {
+                totalAskShares += Number(orders.noAskShares[i]) / 1e18;
+            }
+            for (let i = 0; i < yesBidCount; i++) {
+                totalBidCollateral += Number(orders.yesBidCollateral[i]) / 1e18;
+            }
+            for (let i = 0; i < noBidCount; i++) {
+                totalBidCollateral += Number(orders.noBidCollateral[i]) / 1e18;
+            }
+
+            limitOrdersEl.parentElement.style.display = 'flex';
+            let html = `${totalOrders} order${totalOrders > 1 ? 's' : ''}`;
+            if (totalAskShares > 0) html += ` · ${totalAskShares.toFixed(2)} shares`;
+            if (totalBidCollateral > 0) html += ` · ${totalBidCollateral.toFixed(4)} ETH`;
+            limitOrdersEl.innerHTML = html;
         }
 
         function updatePositionValue(yesShares, noShares) {
@@ -7863,29 +7940,41 @@
 
                 let txPromise;
                 if (currentLpMode === 'add') {
-                    // Calculate expected LP tokens: estLp = (amt / poolTvl) * totalLpSupply
-                    const estLp = poolTvl > 0 && totalLpSupply > 0
-                        ? (amt / poolTvl) * totalLpSupply
-                        : amt; // For new pool, 1:1
-                    const minLiquidity = ethers.parseEther(Math.max(0, estLp * (1 - slippage)).toFixed(18));
+                    // Use PMHookRouter.provideLiquidity for adding to vault + AMM
+                    const pmHookRouter = new ethers.Contract(PMHOOKROUTER_ADDRESS, PMHOOKROUTER_ABI, signer);
 
-                    // Add liquidity: splitAndAddLiquidity
-                    txPromise = pamm.splitAndAddLiquidity(
+                    // Split ETH between vault (for bootstrap) and AMM
+                    // Default: 50% to vault (YES + NO), 50% to AMM
+                    const vaultShare = amtWei / 4n; // 25% to YES vault, 25% to NO vault
+                    const ammShare = amtWei / 2n;   // 50% to AMM
+
+                    // Calculate minimum outputs with slippage
+                    const maxReserve = Math.max(rYesNum, rNoNum);
+                    const hasActualSupply = currentUserPosition.lpTotalSupply !== null && currentUserPosition.lpTotalSupply > 0n;
+                    const estLp = maxReserve > 0 && hasActualSupply
+                        ? (amt / 2 / maxReserve) * totalLpSupply
+                        : amt / 2;
+                    const minAmmLiquidity = hasActualSupply && maxReserve > 0
+                        ? ethers.parseEther((estLp * (1 - slippage)).toFixed(18))
+                        : 0n;
+
+                    txPromise = pmHookRouter.provideLiquidity(
                         currentTrade.marketId,
-                        amtWei,
-                        HOOK_FEE_OR_HOOK,
-                        0, // amount0Min - tokens go to pool atomically, less MEV risk
-                        0, // amount1Min
-                        minLiquidity, // minLiquidity - protect against sandwich
+                        amtWei,         // Total collateral
+                        vaultShare,     // vaultYesShares
+                        vaultShare,     // vaultNoShares
+                        ammShare,       // ammLPShares
+                        0n,             // minAmount0
+                        0n,             // minAmount1
                         connectedAddress,
                         deadline,
                         { value: amtWei }
                     );
 
                     await monitorTransaction(txPromise, {
-                        pending: { title: 'Adding Liquidity', body: 'Confirm in your wallet...' },
+                        pending: { title: 'Adding Liquidity', body: 'Providing to vault + AMM...' },
                         submitted: { title: 'Adding Liquidity', body: 'Waiting for confirmation...' },
-                        success: { title: 'Liquidity Added!', body: `Added ${amt} ETH to the pool` },
+                        success: { title: 'Liquidity Added!', body: `Added ${amt} ETH to vault + AMM` },
                         error: { title: 'Add Liquidity Failed', body: '' },
                         onSuccess: async () => {
                             await Promise.all([

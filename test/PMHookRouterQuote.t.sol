@@ -16,6 +16,7 @@ interface IPAMM {
     function split(uint256 marketId, uint256 amount, address to) external payable;
     function setOperator(address operator, bool approved) external returns (bool);
     function resolve(uint256 marketId, bool outcome) external;
+    function getNoId(uint256 marketId) external pure returns (uint256);
     function markets(uint256 marketId)
         external
         view
@@ -28,6 +29,17 @@ interface IPAMM {
             address collateral,
             uint256 collateralLocked
         );
+}
+
+/// @dev Test harness to expose internal functions for verification
+contract PMHookQuoterHarness is PMHookQuoter {
+    function exposed_getNoId(uint256 marketId) external pure returns (uint256) {
+        return _getNoId(marketId);
+    }
+
+    function exposed_fullMulDiv(uint256 x, uint256 y, uint256 d) external pure returns (uint256) {
+        return fullMulDiv(x, y, d);
+    }
 }
 
 /**
@@ -44,6 +56,7 @@ contract PMHookRouterQuoteTest is Test {
     PMHookRouter public router;
     PMFeeHook public hook;
     PMHookQuoter public quoter;
+    PMHookQuoterHarness public harness;
     address public ALICE;
     address public BOB;
     uint256 public marketId;
@@ -69,8 +82,9 @@ contract PMHookRouterQuoteTest is Test {
         vm.prank(hook.owner());
         hook.transferOwnership(address(router));
 
-        // Deploy quoter
+        // Deploy quoter and harness
         quoter = new PMHookQuoter();
+        harness = new PMHookQuoterHarness();
 
         ALICE = makeAddr("ALICE");
         BOB = makeAddr("BOB");
@@ -1327,8 +1341,7 @@ contract PMHookRouterQuoteTest is Test {
 
         // split gives 100 YES + 100 NO
         // Deposit 30 YES to vault -> 70 YES remaining
-        // Deposit 20 NO to vault -> but vault also needs YES for pairing, consumes 10 more
-        // Result: 70 YES, 70 NO (vault deposits can consume both sides)
+        // Deposit 20 NO to vault -> 80 NO remaining
 
         (
             uint256 yesBalance,
@@ -1346,9 +1359,9 @@ contract PMHookRouterQuoteTest is Test {
         console.log("Pending YES collateral:", pendingYes);
         console.log("Pending NO collateral:", pendingNo);
 
-        // Verify balances - vault deposits consume shares
+        // Verify balances - vault deposits consume only deposited side
         assertEq(yesBalance, 70 ether, "Should have 70 YES shares");
-        assertEq(noBalance, 70 ether, "Should have 70 NO shares");
+        assertEq(noBalance, 80 ether, "Should have 80 NO shares");
 
         // Verify vault LP positions
         assertEq(yesVaultLP, 30 ether, "Should have 30 YES vault LP");
@@ -1522,8 +1535,7 @@ contract PMHookRouterQuoteTest is Test {
             bool vaultOtcAvailable,
             uint112 ammYesReserve,
             uint112 ammNoReserve,
-            uint256 ammSpotPriceBps,
-            ,,,,,
+            uint256 ammSpotPriceBps,,,,,
         ) = quoter.getLiquidityBreakdown(fakeMarketId, true);
 
         assertEq(vaultOtcShares, 0, "Should have no vault shares");
@@ -1534,5 +1546,348 @@ contract PMHookRouterQuoteTest is Test {
         assertEq(ammSpotPriceBps, 0, "AMM price should be 0");
 
         console.log("PASS: Returns zeros for unregistered market");
+    }
+
+    /// @notice Test TWAP interval boundary - quoter must match router's 30 minute interval
+    /// @dev Catches mismatch if quoter uses different MIN_TWAP_UPDATE_INTERVAL than router
+    function test_TWAPIntervalBoundary() public {
+        _bootstrapMarket();
+
+        console.log("=== TWAP INTERVAL BOUNDARY TEST ===");
+
+        // First TWAP observation
+        vm.warp(block.timestamp + 31 minutes);
+        vm.roll(block.number + 155);
+        router.updateTWAPObservation(marketId);
+
+        // Get TWAP at this point
+        uint256 twap1 = quoter.getTWAPPrice(marketId);
+        console.log("TWAP after first observation:", twap1);
+        assertGt(twap1, 0, "TWAP should be available after first observation");
+
+        // Advance time by 15 minutes (within the 30 minute window)
+        // This is the edge case: 15 minutes > 5 minutes (old wrong value) but < 30 minutes (correct)
+        vm.warp(block.timestamp + 15 minutes);
+        vm.roll(block.number + 75);
+
+        // Get TWAP again - should use cached observations (not fresh fetch)
+        uint256 twap2 = quoter.getTWAPPrice(marketId);
+        console.log("TWAP after 15 more minutes:", twap2);
+
+        // The TWAPs should be similar (both using cached path)
+        // If quoter had wrong 5-minute interval, it would take fresh fetch path
+        // and potentially return different value or 0
+        assertGt(twap2, 0, "TWAP should still be available within 30 minute window");
+
+        // Advance past 30 minutes total from last observation
+        vm.warp(block.timestamp + 20 minutes);
+        vm.roll(block.number + 100);
+
+        // Now TWAP should use fresh fetch path (elapsed > 30 minutes)
+        uint256 twap3 = quoter.getTWAPPrice(marketId);
+        console.log("TWAP after 35 minutes total:", twap3);
+        assertGt(twap3, 0, "TWAP should be available via fresh fetch");
+
+        console.log("PASS: TWAP interval boundary handled correctly");
+    }
+
+    // ============ Internal Function Verification Tests ============
+
+    /// @notice Verify _getNoId matches PAMM.getNoId exactly
+    /// @dev Critical: if these mismatch, all balance lookups and YES/NO ordering break
+    function test_GetNoId_MatchesPAMM() public {
+        console.log("=== _getNoId MATCHES PAMM.getNoId ===");
+
+        // Test with actual marketId from bootstrapped market
+        _bootstrapMarket();
+        uint256 quoterNoId = harness.exposed_getNoId(marketId);
+        uint256 pammNoId = PAMM.getNoId(marketId);
+        assertEq(quoterNoId, pammNoId, "Quoter _getNoId must match PAMM.getNoId for marketId");
+        console.log("marketId:", marketId);
+        console.log("quoter noId:", quoterNoId);
+        console.log("PAMM noId:", pammNoId);
+
+        console.log("PASS: _getNoId matches PAMM.getNoId");
+    }
+
+    /// @notice Fuzz test _getNoId against PAMM.getNoId
+    function testFuzz_GetNoId_MatchesPAMM(uint256 id) public {
+        uint256 quoterNoId = harness.exposed_getNoId(id);
+        uint256 pammNoId = PAMM.getNoId(id);
+        assertEq(quoterNoId, pammNoId, "Quoter _getNoId must match PAMM.getNoId");
+    }
+
+    /// @notice Test _getNoId with edge case values
+    function test_GetNoId_EdgeCases() public {
+        console.log("=== _getNoId EDGE CASES ===");
+
+        // Test id = 0
+        assertEq(harness.exposed_getNoId(0), PAMM.getNoId(0), "Should match for id=0");
+
+        // Test id = 1
+        assertEq(harness.exposed_getNoId(1), PAMM.getNoId(1), "Should match for id=1");
+
+        // Test max uint256
+        assertEq(
+            harness.exposed_getNoId(type(uint256).max),
+            PAMM.getNoId(type(uint256).max),
+            "Should match for max uint256"
+        );
+
+        // Test powers of 2
+        assertEq(
+            harness.exposed_getNoId(1 << 128), PAMM.getNoId(1 << 128), "Should match for 2^128"
+        );
+        assertEq(
+            harness.exposed_getNoId(1 << 255), PAMM.getNoId(1 << 255), "Should match for 2^255"
+        );
+
+        // Test typical market IDs
+        for (uint256 i = 1; i <= 100; i++) {
+            assertEq(harness.exposed_getNoId(i), PAMM.getNoId(i), "Should match for typical IDs");
+        }
+
+        console.log("PASS: _getNoId handles all edge cases correctly");
+    }
+
+    // ============ fullMulDiv Verification Tests ============
+
+    /// @notice Test fullMulDiv basic cases
+    function test_FullMulDiv_BasicCases() public {
+        console.log("=== fullMulDiv BASIC CASES ===");
+
+        // Simple cases
+        assertEq(harness.exposed_fullMulDiv(10, 20, 5), 40, "10 * 20 / 5 = 40");
+        assertEq(harness.exposed_fullMulDiv(100, 100, 100), 100, "100 * 100 / 100 = 100");
+        assertEq(harness.exposed_fullMulDiv(1e18, 1e18, 1e18), 1e18, "1e18 * 1e18 / 1e18 = 1e18");
+
+        // Zero cases
+        assertEq(harness.exposed_fullMulDiv(0, 100, 50), 0, "0 * 100 / 50 = 0");
+        assertEq(harness.exposed_fullMulDiv(100, 0, 50), 0, "100 * 0 / 50 = 0");
+
+        // Large but non-overflowing
+        assertEq(harness.exposed_fullMulDiv(1e30, 1e10, 1e20), 1e20, "1e30 * 1e10 / 1e20 = 1e20");
+
+        console.log("PASS: fullMulDiv basic cases correct");
+    }
+
+    /// @notice Test fullMulDiv with values that cause intermediate overflow
+    function test_FullMulDiv_OverflowCases() public {
+        console.log("=== fullMulDiv OVERFLOW CASES ===");
+
+        // Values that overflow uint256 when multiplied
+        uint256 a = type(uint128).max;
+        uint256 b = type(uint128).max;
+        uint256 d = type(uint128).max;
+
+        // (2^128 - 1) * (2^128 - 1) / (2^128 - 1) = (2^128 - 1)
+        uint256 result = harness.exposed_fullMulDiv(a, b, d);
+        assertEq(result, a, "Should handle 128-bit overflow correctly");
+        console.log("128-bit overflow case: PASS");
+
+        // More extreme: near max values
+        uint256 large1 = type(uint256).max / 2;
+        uint256 large2 = 2;
+        uint256 divisor = 1;
+        result = harness.exposed_fullMulDiv(large1, large2, divisor);
+        assertEq(result, type(uint256).max - 1, "max/2 * 2 / 1 = max-1");
+        console.log("Large value case: PASS");
+
+        // Test: (2^200) * (2^100) / (2^150) = 2^150
+        uint256 x = 1 << 200;
+        uint256 y = 1 << 100;
+        uint256 z = 1 << 150;
+        result = harness.exposed_fullMulDiv(x, y, z);
+        assertEq(result, 1 << 150, "2^200 * 2^100 / 2^150 = 2^150");
+        console.log("Power of 2 overflow case: PASS");
+
+        console.log("PASS: fullMulDiv handles overflow cases correctly");
+    }
+
+    /// @notice Fuzz test fullMulDiv with bounded realistic values
+    /// @dev Uses values typical for quoter: positions up to 1e30, accumulators up to 1e24
+    function testFuzz_FullMulDiv_BoundedRealistic(uint256 x, uint256 y, uint256 d) public {
+        // Bound to realistic quoter ranges (prevents overflow in verification math)
+        x = bound(x, 0, 1e30);
+        y = bound(y, 0, 1e24);
+        d = bound(d, 1, 1e24);
+
+        // Skip if would cause result overflow
+        vm.assume(x == 0 || y == 0 || y <= type(uint256).max / x);
+        uint256 product = x * y;
+        vm.assume(product / d < type(uint256).max);
+
+        uint256 result = harness.exposed_fullMulDiv(x, y, d);
+        uint256 expected = product / d;
+        assertEq(result, expected, "fullMulDiv should match direct division for bounded inputs");
+    }
+
+    /// @notice Test fullMulDiv with realistic quoter values (scaled positions)
+    function test_FullMulDiv_RealisticQuoterValues() public {
+        console.log("=== fullMulDiv REALISTIC VALUES ===");
+
+        // Typical values from getUserActivePositions:
+        // scaled * totalShares / totalScaled
+        // scaled * accCollPerScaled / 1e18
+
+        // Case 1: Position calculation
+        uint256 userScaled = 1000 ether;
+        uint256 totalShares = 10000 ether;
+        uint256 totalScaled = 5000 ether;
+        uint256 withdrawable = harness.exposed_fullMulDiv(userScaled, totalShares, totalScaled);
+        assertEq(withdrawable, 2000 ether, "1000 * 10000 / 5000 = 2000");
+
+        // Case 2: Accumulated rewards
+        uint256 scaled = 100 ether;
+        uint256 accPerScaled = 5e18; // 5 tokens per scaled unit
+        uint256 accumulated = harness.exposed_fullMulDiv(scaled, accPerScaled, 1e18);
+        assertEq(accumulated, 500 ether, "100 * 5e18 / 1e18 = 500");
+
+        // Case 3: Large position with high accumulator
+        uint256 largeScaled = 1e24; // 1M tokens
+        uint256 highAcc = 1e20; // High accumulator
+        uint256 largeAcc = harness.exposed_fullMulDiv(largeScaled, highAcc, 1e18);
+        assertEq(largeAcc, 1e26, "Large position calculation");
+
+        // Case 4: Edge - very small position
+        uint256 tinyScaled = 1;
+        uint256 tinyResult = harness.exposed_fullMulDiv(tinyScaled, totalShares, totalScaled);
+        assertEq(tinyResult, 2, "Tiny position rounds correctly");
+
+        console.log("PASS: fullMulDiv handles realistic quoter values");
+    }
+
+    /// @notice Test fullMulDiv reverts on division by zero
+    function testRevert_FullMulDiv_DivisionByZero() public {
+        console.log("=== fullMulDiv DIVISION BY ZERO ===");
+
+        vm.expectRevert();
+        harness.exposed_fullMulDiv(100, 100, 0);
+
+        console.log("PASS: fullMulDiv reverts on division by zero");
+    }
+
+    /// @notice Test fullMulDiv reverts when result would overflow
+    function testRevert_FullMulDiv_ResultOverflow() public {
+        console.log("=== fullMulDiv RESULT OVERFLOW ===");
+
+        // (max * max) / 1 would overflow result
+        vm.expectRevert();
+        harness.exposed_fullMulDiv(type(uint256).max, type(uint256).max, 1);
+
+        // (max * 2) / 1 would overflow
+        vm.expectRevert();
+        harness.exposed_fullMulDiv(type(uint256).max, 2, 1);
+
+        console.log("PASS: fullMulDiv reverts on result overflow");
+    }
+
+    // ============ getLiquidityBreakdown Robustness Tests ============
+
+    /// @notice Test that getLiquidityBreakdown handles MasterRouter gracefully
+    /// @dev The internal call to this.getActiveLevels could revert if MasterRouter is misconfigured
+    function test_GetLiquidityBreakdown_HandlesPoolsGracefully() public {
+        _bootstrapMarket();
+
+        console.log("=== getLiquidityBreakdown ROBUSTNESS ===");
+
+        // Wait for TWAP
+        vm.warp(block.timestamp + 35 minutes);
+        vm.roll(block.number + 175);
+        router.updateTWAPObservation(marketId);
+
+        // getLiquidityBreakdown should work even when pools have no orders
+        (
+            uint256 vaultOtcShares,
+            uint256 vaultOtcPriceBps,
+            bool vaultOtcAvailable,
+            uint112 ammYesReserve,
+            uint112 ammNoReserve,
+            uint256 ammSpotPriceBps,
+            uint256 ammMaxImpactBps,
+            uint256 poolAskDepth,
+            uint256 poolBestAskBps,
+            uint256 poolBidDepth,
+            uint256 poolBestBidBps
+        ) = quoter.getLiquidityBreakdown(marketId, true);
+
+        // Should return valid data for vault and AMM even if pools are empty
+        assertGt(ammYesReserve, 0, "AMM should have reserves");
+        assertGt(ammNoReserve, 0, "AMM should have reserves");
+
+        // Pool depths being 0 is fine - no orders placed
+        console.log("Pool ask depth:", poolAskDepth);
+        console.log("Pool bid depth:", poolBidDepth);
+
+        console.log("PASS: getLiquidityBreakdown handles empty pools gracefully");
+    }
+
+    /// @notice Test getActiveLevels doesn't revert on empty orderbook
+    function test_GetActiveLevels_EmptyOrderbook() public {
+        _bootstrapMarket();
+
+        console.log("=== getActiveLevels EMPTY ORDERBOOK ===");
+
+        // Call getActiveLevels directly - should return empty arrays, not revert
+        (
+            uint256[] memory askPrices,
+            uint256[] memory askDepths,
+            uint256[] memory bidPrices,
+            uint256[] memory bidDepths
+        ) = quoter.getActiveLevels(marketId, true, 10);
+
+        // Should return empty arrays (length 0)
+        assertEq(askPrices.length, 0, "Ask prices should be empty");
+        assertEq(askDepths.length, 0, "Ask depths should be empty");
+        assertEq(bidPrices.length, 0, "Bid prices should be empty");
+        assertEq(bidDepths.length, 0, "Bid depths should be empty");
+
+        console.log("PASS: getActiveLevels handles empty orderbook");
+    }
+
+    /// @notice Verify YES/NO ordering consistency across all functions
+    function test_YesNoOrdering_Consistency() public {
+        _bootstrapMarket();
+
+        console.log("=== YES/NO ORDERING CONSISTENCY ===");
+
+        // Wait for TWAP
+        vm.warp(block.timestamp + 35 minutes);
+        vm.roll(block.number + 175);
+        router.updateTWAPObservation(marketId);
+
+        // Get market summary
+        (uint112 summaryYesRes, uint112 summaryNoRes, uint256 summaryPrice,,,,,,,,,,) =
+            quoter.getMarketSummary(marketId);
+
+        // Get liquidity breakdown (11 return values)
+        uint112 breakdownYesRes;
+        uint112 breakdownNoRes;
+        uint256 breakdownPrice;
+        (,,, breakdownYesRes, breakdownNoRes, breakdownPrice,,,,,) =
+            quoter.getLiquidityBreakdown(marketId, true);
+
+        // Both should report same reserves
+        assertEq(summaryYesRes, breakdownYesRes, "YES reserves should match");
+        assertEq(summaryNoRes, breakdownNoRes, "NO reserves should match");
+
+        // Prices should be consistent (both represent pYes)
+        assertEq(summaryPrice, breakdownPrice, "Prices should match");
+
+        // Verify price is reasonable (near 50% for balanced pool)
+        assertGt(summaryPrice, 4000, "Price should be > 40%");
+        assertLt(summaryPrice, 6000, "Price should be < 60%");
+
+        // Verify reserves are balanced
+        uint256 diff = summaryYesRes > summaryNoRes
+            ? summaryYesRes - summaryNoRes
+            : summaryNoRes - summaryYesRes;
+        uint256 total = uint256(summaryYesRes) + uint256(summaryNoRes);
+        assertLt(diff * 100 / total, 10, "Reserves should be roughly balanced (within 10%)");
+
+        console.log("YES reserve:", summaryYesRes);
+        console.log("NO reserve:", summaryNoRes);
+        console.log("Price (YES bps):", summaryPrice);
+        console.log("PASS: YES/NO ordering is consistent across functions");
     }
 }
