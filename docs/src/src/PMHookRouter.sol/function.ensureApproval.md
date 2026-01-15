@@ -1,0 +1,10 @@
+# ensureApproval
+[Git Source](https://github.com/zammdefi/pm/blob/6156944a878712f207af01bad454c3401a603fc3/src/PMHookRouter.sol)
+
+Sets max approval once if allowance <= uint128.max
+
+
+```solidity
+function ensureApproval(address token, address spender) ;
+```
+

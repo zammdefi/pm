@@ -21,6 +21,7 @@
             --red: #ef4444;
             --red-dim: rgba(239, 68, 68, 0.15);
             --blue: #3b82f6;
+            --blue-dim: rgba(59, 130, 246, 0.15);
             --amber: #f59e0b;
             --amber-dim: rgba(245, 158, 11, 0.15);
             --pink: #ec4899;
@@ -217,8 +218,15 @@
 
         .bets-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            grid-template-columns: 1fr;
             gap: 1rem;
+        }
+
+        .market-row {
+            display: grid;
+            grid-template-columns: minmax(320px, 400px) 1fr;
+            gap: 1rem;
+            align-items: start;
         }
 
         .bet-card {
@@ -234,6 +242,45 @@
 
         .bet-card.resolved {
             opacity: 0.7;
+        }
+
+        .inline-orderbook {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 1rem;
+            min-height: 300px;
+        }
+
+        .inline-orderbook-header {
+            display: grid;
+            grid-template-columns: 1fr 56px 1fr;
+            gap: 0;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .inline-orderbook-ladder {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .inline-ob-cell {
+            transition: background 0.15s ease;
+        }
+
+        .inline-ob-cell:hover {
+            background: rgba(255, 255, 255, 0.08) !important;
+        }
+
+        .inline-ob-yes:hover {
+            background: rgba(0, 200, 83, 0.15) !important;
+        }
+
+        .inline-ob-no:hover {
+            background: rgba(255, 82, 82, 0.15) !important;
         }
 
         .bet-header {
@@ -363,20 +410,26 @@
 
         .bet-btn {
             padding: 0.75rem 0.5rem;
-            background: transparent;
-            border: 1px solid var(--border);
+            background: var(--surface);
+            border: 2px solid var(--border);
             border-radius: var(--radius);
             cursor: pointer;
             text-align: center;
             transition: all 0.15s;
         }
 
-        .bet-btn:hover { background: var(--surface-2); }
+        .bet-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 
-        .bet-btn.yes { border-color: var(--green); }
-        .bet-btn.yes:hover { background: var(--green-dim); }
-        .bet-btn.no { border-color: var(--red); }
-        .bet-btn.no:hover { background: var(--red-dim); }
+        .bet-btn.yes { border-color: var(--green); background: var(--green-dim); }
+        .bet-btn.yes:hover { background: var(--green); }
+        .bet-btn.yes:hover .bet-btn-label,
+        .bet-btn.yes:hover .bet-btn-odds,
+        .bet-btn.yes:hover .bet-btn-price { color: var(--bg); }
+        .bet-btn.no { border-color: var(--red); background: var(--red-dim); }
+        .bet-btn.no:hover { background: var(--red); }
+        .bet-btn.no:hover .bet-btn-label,
+        .bet-btn.no:hover .bet-btn-odds,
+        .bet-btn.no:hover .bet-btn-price { color: var(--bg); }
 
         .bet-btn-label {
             font-size: var(--font-xs);
@@ -720,6 +773,21 @@
 
         .info-text strong { color: var(--text); }
 
+        /* CHART */
+        .chart-container {
+            background: #0a0a0a;
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .chart-container iframe {
+            display: block;
+            width: 100%;
+            height: 360px;
+            border: none;
+            background: #0a0a0a;
+        }
+
         /* EMPTY STATE */
         .empty-state {
             text-align: center;
@@ -740,6 +808,7 @@
             .bets-section, .create-section, .info-section { padding: 1rem; }
             .hero-section { padding: 1rem; }
             .treasury-display { padding: 0.75rem 1rem; }
+            .chart-container iframe { height: 300px; }
             .modal {
                 margin: 0.5rem;
                 padding: 0.75rem;
@@ -759,6 +828,9 @@
                 margin-top: 0.5rem;
             }
             .bets-grid { grid-template-columns: 1fr; }
+            .market-row { grid-template-columns: 1fr; }
+            .inline-orderbook { min-height: 200px; }
+            .chart-container iframe { height: 240px; }
             /* Trade modal position info - stack on mobile */
             #tradeMarketInfo > div { flex-direction: column; gap: 0.5rem; }
             #tradeMarketInfo > div > div:last-child { text-align: left; }
@@ -772,7 +844,7 @@
 
         @media (max-width: 380px) {
             /* Extra small screens */
-            .bet-buttons { flex-direction: column; gap: 0.5rem; }
+            .bet-buttons { grid-template-columns: 1fr; gap: 0.5rem; }
             .bet-btn { width: 100%; }
             /* Depth ladder - narrower center column */
             #depthLadder > div { grid-template-columns: 1fr 44px 1fr !important; }
@@ -798,8 +870,12 @@
                 <div class="live-stat-value blue" id="marketCount">0</div>
             </div>
             <div class="live-stat">
-                <div class="live-stat-label">TVL</div>
+                <div class="live-stat-label">Pool TVL</div>
                 <div class="live-stat-value green" id="totalTvl">--</div>
+            </div>
+            <div class="live-stat">
+                <div class="live-stat-label">Book TVL</div>
+                <div class="live-stat-value" style="color:#f59e0b;" id="orderbookTvl">--</div>
             </div>
         </div>
         <button class="btn" id="connectBtn" onclick="connectWallet()">Connect</button>
@@ -830,6 +906,18 @@
             </div>
         </section>
 
+        <!-- Chart Section -->
+        <section class="bets-section" style="padding-bottom:0;">
+            <h2 class="section-title">Odds <span id="featuredOdds" style="font-weight:400;color:var(--text-muted);font-size:var(--font-sm);">--</span></h2>
+            <div class="chart-container">
+                <iframe
+                    src="https://www.zamm.finance/embed/pool/39414537111466279853124615553549368953361141359364927629160955167830963634860?theme=dark"
+                    title="PNK Market Odds"
+                    loading="lazy"
+                ></iframe>
+            </div>
+        </section>
+
         <!-- Active Markets Section -->
         <section class="bets-section">
             <h2 class="section-title">Active Markets</h2>
@@ -855,21 +943,22 @@
             </div>
         </section>
 
-        <!-- Create Section (hidden for now - demo market created) -->
-        <section class="create-section" id="createSection" style="display:none !important;">
+        <!-- Create Section - Admin market creation -->
+        <section class="create-section" id="createSection">
             <h2 class="section-title">Create Market</h2>
             <div class="create-card">
                 <div class="create-card-title">PNKSTR Punks Balance Market</div>
-                <div class="create-card-desc">Create a market on whether PNKSTR treasury will hold more than a target number of CryptoPunks by a deadline.</div>
+                <div class="create-card-desc">Create a market on whether PNKSTR treasury will hold &gt;= target CryptoPunks by a deadline.</div>
 
                 <div class="create-input-group">
-                    <label class="create-label">Target Punks (Greater Than)</label>
+                    <label class="create-label">Target Punks (Greater Than or Equal)</label>
                     <input type="number" class="create-input" id="createThreshold" value="40" min="1" step="1">
                 </div>
 
                 <div class="create-input-group">
                     <label class="create-label">Deadline</label>
                     <select class="create-input" id="createDeadline">
+                        <option value="eow">End of This Week (Sunday 23:59:59 UTC)</option>
                         <option value="eoy2025">End of 2025 (Dec 31, 23:59:59 UTC)</option>
                         <option value="custom">Custom...</option>
                     </select>
@@ -896,7 +985,7 @@
                 <div style="background:var(--surface-2);padding:0.75rem;border-radius:var(--radius);margin-bottom:1rem;font-size:var(--font-xs);">
                     <div style="color:var(--text-dim);margin-bottom:0.5rem;">Preview:</div>
                     <div id="createPreview" style="color:var(--text);">
-                        PNKSTR CryptoPunks balance > 40 by Dec 31, 2025
+                        PNKSTR CryptoPunks &gt;= 40 by <span id="previewDeadline">--</span>
                     </div>
                 </div>
 
@@ -960,6 +1049,12 @@
                             <span style="margin-left:0.5rem;color:var(--red);">NO: <span id="tradeModalNo">0</span></span>
                             <span style="margin-left:0.5rem;color:var(--blue);">LP: <span id="tradeModalLP">0</span></span>
                         </div>
+                        <div style="display:none;font-size:var(--font-xs);margin-top:2px;">
+                            <span style="color:var(--amber);">Vault LP: <span id="tradeModalVault">--</span></span>
+                        </div>
+                        <div style="display:none;font-size:var(--font-xs);margin-top:2px;">
+                            <span style="color:var(--text-muted);">Limit Orders: <span id="tradeModalLimitOrders">--</span></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1007,17 +1102,20 @@
                 <div class="trade-input-group">
                     <div class="trade-label">
                         <span id="tradeAmountLabel">Amount (ETH)</span>
-                        <span>Balance: <span id="tradeBalance">--</span></span>
+                        <span style="display:flex;align-items:center;gap:0.5rem;">
+                            Balance: <span id="tradeBalance">--</span>
+                            <button id="tradeMaxBtn" onclick="setTradeMax()" style="display:none;padding:0.25rem 0.5rem;background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius);color:var(--red);font-weight:600;font-size:10px;cursor:pointer;">Max</button>
+                        </span>
                     </div>
-                    <input type="number" class="trade-input" id="tradeAmount" placeholder="0.1" step="0.01" min="0" oninput="handleTradeInput()">
+                    <input type="number" class="trade-input" id="tradeAmount" value="0.01" step="0.01" min="0" oninput="handleTradeInput()">
                 </div>
                 <div class="trade-preview">
                     <div class="trade-preview-row">
-                        <span>Est. Shares</span>
+                        <span id="previewSharesLabel">Est. Shares</span>
                         <span id="previewShares">--</span>
                     </div>
                     <div class="trade-preview-row">
-                        <span>Avg. Price</span>
+                        <span id="previewPriceLabel">Avg. Price</span>
                         <span id="previewPrice">--</span>
                     </div>
                     <div class="trade-preview-row">
@@ -1110,9 +1208,12 @@
                 <div class="trade-input-group">
                     <div class="trade-label">
                         <span id="lpAmountLabel">ETH to Add</span>
-                        <span>Balance: <span id="lpBalance">--</span></span>
+                        <span style="display:flex;align-items:center;gap:0.5rem;">
+                            Balance: <span id="lpBalance">--</span>
+                            <button id="lpMaxBtn" onclick="setLpMax()" style="padding:0.25rem 0.5rem;background:var(--blue-dim);border:1px solid var(--blue);border-radius:var(--radius);color:var(--blue);font-weight:600;font-size:10px;cursor:pointer;">Max</button>
+                        </span>
                     </div>
-                    <input type="number" class="trade-input" id="lpAmount" placeholder="0.1" step="0.01" min="0" oninput="updateLpPreview()">
+                    <input type="number" class="trade-input" id="lpAmount" placeholder="0.1" step="0.01" min="0" oninput="lpMaxRaw=null;updateLpPreview()">
                 </div>
                 <div class="trade-preview">
                     <div class="trade-preview-row">
@@ -1159,7 +1260,7 @@
                         <span>Balance: <span id="limitBalance">--</span></span>
                     </div>
                     <div style="display:flex;gap:4px;">
-                        <input type="number" class="trade-input" id="limitAmount" placeholder="0.1" step="0.01" min="0" oninput="limitMaxRaw=null;updateLimitPreview()" style="flex:1;">
+                        <input type="number" class="trade-input" id="limitAmount" value="0.01" step="0.01" min="0" oninput="limitMaxRaw=null;updateLimitPreview()" style="flex:1;">
                         <button onclick="setLimitMax()" style="padding:0.5rem 1rem;background:var(--surface-2);border:1px solid #8b5cf6;border-radius:var(--radius);color:#8b5cf6;font-weight:600;font-size:var(--font-xs);cursor:pointer;">Max</button>
                     </div>
                 </div>
@@ -1225,9 +1326,9 @@
                 </div>
                 <!-- Legend -->
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:9px;color:var(--text-dim);">
-                    <span><span style="color:var(--green);">■</span> Bids</span>
-                    <span>Click row to fill | <span style="color:var(--blue);">AMM</span> = pool</span>
-                    <span><span style="color:var(--red);">■</span> Asks</span>
+                    <span><span style="color:var(--green);">■</span> Bids (buy)</span>
+                    <span>Depth in ETH | Click to fill</span>
+                    <span><span style="color:var(--red);">■</span> Asks (sell)</span>
                 </div>
             </div>
         </div>
@@ -1239,9 +1340,16 @@
         const PNKSTR_TREASURY = '0x1244EAe9FA2c064453B5F605d708C0a0Bfba4838';
         const RESOLVER_ADDRESS = '0x00000000002205020E387b6a378c05639047BcFB';
         const PAMM_ADDRESS = '0x000000000044bfe6c2BBFeD8862973E0612f07C0';
-        const PMROUTER_ADDRESS = '0x000000000055fF709f26efB262fba8B0AE8c35Dc';
         const ZAMM_ADDRESS = '0x000000000000040470635EB91b7CE4D132D616eD';
         const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+
+        // New routing system (PMHookRouter + MasterRouter)
+        const PMHOOKROUTER_ADDRESS = '0x0000000000BADa259Cb860c12ccD9500d9496B3e';
+        const PMHOOKQUOTER_ADDRESS = '0x0000000000f0bf4ea3a43560324376e62fe390bc';
+        const MASTERROUTER_ADDRESS = '0x000000000055CdB14b66f37B96a571108FFEeA5C';
+
+        // Legacy router removed - using MasterRouter + PMHookRouter
+
         const FEE_TIER = 30n; // 0.30%
         const EOY_2025 = 1767225599; // Dec 31, 2025 23:59:59 UTC
 
@@ -1286,7 +1394,6 @@
 
         const PAMM_ABI = [
             'function getMarket(uint256 marketId) view returns (address resolver, address collateral, bool resolved, bool outcome, bool canClose, uint64 close, uint256 collateralLocked, uint256 yesSupply, uint256 noSupply, string description)',
-            'function getMarkets(uint256 start, uint256 count) view returns (uint256[] marketIds, address[] resolvers, address[] collaterals, uint8[] states, uint64[] closes, uint256[] collateralAmounts, uint256[] yesSupplies, uint256[] noSupplies, string[] descs, uint256 next)',
             'function getPoolState(uint256 marketId, uint256 feeOrHook) view returns (uint256 rYes, uint256 rNo, uint256 pYesNum, uint256 pYesDen)',
             'function balanceOf(address owner, uint256 id) view returns (uint256)',
             'function getNoId(uint256 marketId) pure returns (uint256)',
@@ -1298,17 +1405,7 @@
             'function multicall(bytes[] data) returns (bytes[])'
         ];
 
-        const PMROUTER_ABI = [
-            'function buy(uint256 marketId, bool isYes, uint256 collateralIn, uint256 minSharesOut, uint256 feeOrHook, address to, uint256 deadline) payable returns (uint256)',
-            'function sell(uint256 marketId, bool isYes, uint256 sharesIn, uint256 minCollateralOut, uint256 feeOrHook, address to, uint256 deadline) returns (uint256)',
-            'function claim(uint256 marketId, address to) returns (uint256 payout)',
-            'function placeOrder(uint256 marketId, bool isYes, bool isBuy, uint96 shares, uint96 collateral, uint56 deadline, bool partialFill) payable returns (bytes32)',
-            'function cancelOrder(bytes32 orderHash)',
-            'function claimProceeds(bytes32 orderHash)',
-            'function fillOrdersThenSwap(uint256 marketId, bool isYes, bool isBuy, uint256 totalAmount, uint256 minOutput, bytes32[] orderHashes, uint256 feeOrHook, address to, uint256 deadline) payable returns (uint256)',
-            'function getOrderbook(uint256 marketId, bool isYes, uint256 depth) view returns (bytes32[] bidHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] bidOrders, bytes32[] askHashes, tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId)[] askOrders)',
-            'function getOrder(bytes32 orderHash) view returns (tuple(address owner, uint56 deadline, bool isYes, bool isBuy, bool partialFill, uint96 shares, uint96 collateral, uint256 marketId) order, uint96 sharesFilled, uint96 sharesRemaining, uint96 collateralFilled, uint96 collateralRemaining, bool active)'
-        ];
+        // Legacy PMROUTER_ABI removed - using MasterRouter + PMHookRouter instead
 
         const ZAMM_ABI = [
             'function isOperator(address owner, address operator) view returns (bool)',
@@ -1320,6 +1417,51 @@
 
         const MULTICALL3_ABI = [
             'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) view returns (tuple(bool success, bytes returnData)[])'
+        ];
+
+        // PMHookRouter - Vault-based routing with bootstrap liquidity
+        const PMHOOKROUTER_ABI = [
+            'function buyWithBootstrap(uint256 marketId, bool buyYes, uint256 collateralIn, uint256 minSharesOut, address to, uint256 deadline) payable returns (uint256 sharesOut, bytes4 source, uint256 vaultSharesMinted)',
+            'function sellWithBootstrap(uint256 marketId, bool sellYes, uint256 sharesIn, uint256 minCollateralOut, address to) returns (uint256 collateralOut, bytes4 source)',
+            'function claim(uint256 marketId, address to) returns (uint256 payout)',
+            'function vaultPositions(uint256 marketId, address user) view returns (uint112 yesVaultShares, uint112 noVaultShares, uint32 lastActivity, uint256 yesCollateralDebt, uint256 noCollateralDebt)',
+            'function bootstrapVaults(uint256 marketId) view returns (uint112 yesShares, uint112 noShares, uint32 lastActivity)',
+            'function totalYesVaultShares(uint256 marketId) view returns (uint256)',
+            'function totalNoVaultShares(uint256 marketId) view returns (uint256)',
+            'function canonicalPoolId(uint256 marketId) view returns (uint256)',
+            'function canonicalFeeOrHook(uint256 marketId) view returns (uint256)',
+            'function depositToVault(uint256 marketId, bool isYes, uint256 shares, address receiver, uint256 deadline) returns (uint256 vaultShares)',
+            'function withdrawFromVault(uint256 marketId, bool isYes, uint256 vaultShares, address receiver, uint256 deadline) returns (uint256 shares)',
+            'function provideLiquidity(uint256 marketId, uint256 collateralAmount, uint256 vaultYesShares, uint256 vaultNoShares, uint256 ammLPShares, uint256 minAmount0, uint256 minAmount1, address receiver, uint256 deadline) payable returns (uint256 yesVaultSharesMinted, uint256 noVaultSharesMinted, uint256 ammLiquidity)'
+        ];
+
+        // PMHookQuoter - View functions for quotes and position data
+        const PMHOOKQUOTER_ABI = [
+            'function getTWAPPrice(uint256 marketId) view returns (uint256 twapBps)',
+            'function getMarketSummary(uint256 marketId) view returns (uint112 ammYesReserve, uint112 ammNoReserve, uint256 ammPriceYesBps, uint256 feeBps, uint112 vaultYesShares, uint112 vaultNoShares, uint256 totalYesVaultLP, uint256 totalNoVaultLP, uint256 vaultBudget, uint256 twapPriceYesBps, uint64 closeTime, bool resolved, bool inCloseWindow)',
+            'function getUserFullPosition(uint256 marketId, address user) view returns (uint256 yesShareBalance, uint256 noShareBalance, uint112 yesVaultLP, uint112 noVaultLP, uint256 pendingYesCollateral, uint256 pendingNoCollateral, uint256 ammLPBalance)',
+            'function getLiquidityBreakdown(uint256 marketId, bool buyYes) view returns (uint256 vaultOtcShares, uint256 vaultOtcPriceBps, bool vaultOtcAvailable, uint112 ammYesReserve, uint112 ammNoReserve, uint256 ammSpotPriceBps, uint256 ammMaxImpactBps, uint256 poolAskDepth, uint256 poolBestAskBps, uint256 poolBidDepth, uint256 poolBestBidBps)',
+            'function getActiveLevels(uint256 marketId, bool isYes, uint256 maxLevels) view returns (uint256[] askPrices, uint256[] askDepths, uint256[] bidPrices, uint256[] bidDepths)',
+            'function getUserActivePositions(uint256 marketId, bool isYes, address user) view returns (uint256[] askPrices, uint256[] askShares, uint256[] askPendingColl, uint256[] bidPrices, uint256[] bidCollateral, uint256[] bidPendingShares)',
+            'function getUserAllLimitOrders(uint256 marketId, address user) view returns (uint256[] yesAskPrices, uint256[] yesAskShares, uint256[] yesAskPending, uint256[] yesBidPrices, uint256[] yesBidCollateral, uint256[] yesBidPending, uint256[] noAskPrices, uint256[] noAskShares, uint256[] noAskPending, uint256[] noBidPrices, uint256[] noBidCollateral, uint256[] noBidPending)',
+            'function quoteBootstrapBuy(uint256 marketId, bool buyYes, uint256 collateralIn, uint256 minSharesOut) view returns (uint256 totalSharesOut, bool usesVault, bytes4 source, uint256 vaultSharesMinted)',
+            'function quoteSellWithBootstrap(uint256 marketId, bool sellYes, uint256 sharesIn) view returns (uint256 collateralOut, bytes4 source)',
+            'function quoteBuyWithSweep(uint256 marketId, bool buyYes, uint256 collateralIn, uint256 maxPriceBps) view returns (uint256 totalSharesOut, uint256 poolSharesOut, uint256 poolLevelsFilled, uint256 pmSharesOut, bytes4 pmSource)',
+            'function quoteSellWithSweep(uint256 marketId, bool sellYes, uint256 sharesIn, uint256 minPriceBps) view returns (uint256 totalCollateralOut, uint256 poolCollateralOut, uint256 poolLevelsFilled, uint256 pmCollateralOut, bytes4 pmSource)'
+        ];
+
+        // MasterRouter - Pooled orderbook + vault integration
+        const MASTERROUTER_ABI = [
+            'function buy(uint256 marketId, bool buyYes, uint256 collateralIn, uint256 minSharesOut, uint256 poolPriceInBps, address to, uint256 deadline) payable returns (uint256 totalSharesOut, bytes4[] sources)',
+            'function buyWithSweep(uint256 marketId, bool buyYes, uint256 collateralIn, uint256 minSharesOut, uint256 maxPriceBps, address to, uint256 deadline) payable returns (uint256 totalSharesOut, uint256 poolSharesOut, uint256 poolLevelsFilled, bytes4[] sources)',
+            'function sell(uint256 marketId, bool sellYes, uint256 sharesIn, uint256 minCollateralOut, uint256 bidPoolPriceInBps, address to, uint256 deadline) returns (uint256 totalCollateralOut, bytes4[] sources)',
+            'function sellWithSweep(uint256 marketId, bool sellYes, uint256 sharesIn, uint256 minCollateralOut, uint256 minPriceBps, address to, uint256 deadline) returns (uint256 totalCollateralOut, uint256 poolCollateralOut, uint256 poolLevelsFilled, bytes4[] sources)',
+            'function mintAndPool(uint256 marketId, uint256 collateralIn, bool keepYes, uint256 priceInBps, address to) payable returns (bytes32 poolId)',
+            'function depositSharesToPool(uint256 marketId, bool isYes, uint256 sharesIn, uint256 priceInBps, address to) returns (bytes32 poolId)',
+            'function withdrawFromPool(uint256 marketId, bool isYes, uint256 priceInBps) returns (uint256 sharesOut, uint256 pendingCollateral)',
+            'function withdrawFromBidPool(uint256 marketId, bool isYes, uint256 priceInBps) returns (uint256 collateralOut, uint256 pendingShares)',
+            'function getBestAsk(uint256 marketId, bool isYes) view returns (uint256 price, uint256 depth)',
+            'function getBestBid(uint256 marketId, bool isYes) view returns (uint256 price, uint256 depth)'
         ];
 
         // Compute pool ID from pool key (keccak256 of encoded key)
@@ -1339,6 +1481,7 @@
         let connectedWalletProvider = null;
         let walletConnectProvider = null;
         let isConnecting = false;
+        let walletEventHandlers = null;
         const eip6963Providers = new Map();
 
         let pnkstrMarkets = []; // Markets related to PNKSTR
@@ -1356,7 +1499,7 @@
         let swapSlippage = 0.5; // 0.5%
 
         // User position state
-        let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n };
+        let currentUserPosition = { yesBalance: 0n, noBalance: 0n, lpBalance: 0n, lpTotalSupply: null, vaultYes: 0n, vaultNo: 0n, limitOrders: null };
 
         // Orderbook state - stores both YES and NO orderbooks
         let currentOrderbook = {
@@ -1368,8 +1511,10 @@
         async function init() {
             initEIP6963();
 
+            // Auto-reconnect wallet if previously connected
             const savedWallet = localStorage.getItem('pnkpm_wallet');
             if (savedWallet) {
+                // Small delay to let EIP-6963 providers announce themselves
                 setTimeout(async () => {
                     try {
                         await connectWithWallet(savedWallet);
@@ -1381,7 +1526,7 @@
             }
 
             await loadData();
-            setInterval(loadData, 60000);
+            startSmartPolling();
 
             // Setup create form listeners
             document.getElementById('createDeadline').addEventListener('change', updateCreatePreview);
@@ -1398,6 +1543,7 @@
             return readProvider;
         }
 
+        let loadDataRetries = 0;
         async function loadData() {
             try {
                 const rpc = await getReadProvider();
@@ -1412,99 +1558,134 @@
 
                 // Find PNKSTR-related markets by scanning ConditionCreated events
                 await loadPnkstrMarkets(rpc);
+                loadDataRetries = 0; // Reset on success
 
             } catch (error) {
                 console.error('Failed to load data:', error);
                 // Reset read provider on error to try a different RPC next time
                 readProvider = null;
+                // Show user-visible error for RPC failures with retry limit
+                if (error.message?.includes('RPC') || error.message?.includes('network') || error.message?.includes('timeout')) {
+                    if (loadDataRetries < 3) {
+                        loadDataRetries++;
+                        showToast('Network Error', `Retrying... (${loadDataRetries}/3)`, 'error', 3000);
+                        setTimeout(loadData, 5000 * loadDataRetries); // Exponential backoff
+                    } else {
+                        showToast('Network Error', 'Connection failed. Please refresh.', 'error', 8000);
+                    }
+                }
             }
         }
 
+        // Smart polling - pauses when tab is hidden, refreshes on return
+        let pollInterval = null;
+        function startSmartPolling() {
+            const ACTIVE_INTERVAL = 60000;   // 60s when active
+            const HIDDEN_INTERVAL = 300000;  // 5 min when hidden
+
+            function poll() {
+                clearInterval(pollInterval);
+                const interval = document.hidden ? HIDDEN_INTERVAL : ACTIVE_INTERVAL;
+                pollInterval = setInterval(loadData, interval);
+            }
+
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    loadDataRetries = 0; // Reset retry counter
+                    loadData(); // Refresh immediately when tab becomes visible
+                }
+                poll(); // Adjust polling interval
+            });
+
+            poll(); // Start polling
+        }
+
+        // Dynamically discovered PNKSTR market IDs (cached)
+        let discoveredPnkstrMarkets = [];
+        let lastMarketDiscoveryBlock = 0;
+        const MARKET_DISCOVERY_START_BLOCK = 21000000; // Start scanning from this block
+
         async function loadPnkstrMarkets(rpc) {
             try {
-                const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, rpc);
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
                 const punks = new ethers.Contract(CRYPTOPUNKS_ADDRESS, CRYPTOPUNKS_ABI, rpc);
-
-                // Use efficient batch view function to get all markets
-                const BATCH_SIZE = 100;
-                let start = 0;
-                let allMarketsData = [];
-
-                // Paginate through all markets
-                while (true) {
-                    const batch = await pamm.getMarkets(start, BATCH_SIZE);
-                    const { marketIds, resolvers, collaterals, states, closes, collateralAmounts, descs, next } = batch;
-
-                    for (let i = 0; i < marketIds.length; i++) {
-                        // Filter: only markets using our Resolver
-                        if (resolvers[i].toLowerCase() !== RESOLVER_ADDRESS.toLowerCase()) continue;
-
-                        const state = Number(states[i]);
-                        allMarketsData.push({
-                            marketId: marketIds[i],
-                            resolved: (state & 1) !== 0,
-                            outcome: (state & 2) !== 0,
-                            canClose: (state & 4) !== 0,
-                            close: Number(closes[i]),
-                            collateralLocked: collateralAmounts[i],
-                            description: descs[i]
-                        });
-                    }
-
-                    if (next === 0n || marketIds.length === 0) break;
-                    start = Number(next);
-                }
-
-                // Batch fetch conditions for all Resolver markets via multicall
                 const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
+                const pammInterface = new ethers.Interface(PAMM_ABI);
                 const resolverInterface = new ethers.Interface(RESOLVER_ABI);
 
-                const conditionCalls = allMarketsData.map(m => ({
-                    target: RESOLVER_ADDRESS,
-                    allowFailure: true,
-                    callData: resolverInterface.encodeFunctionData('conditions', [m.marketId])
-                }));
+                // Discover PNKSTR markets via ConditionCreated events
+                const currentBlock = await rpc.getBlockNumber();
+                if (discoveredPnkstrMarkets.length === 0 || currentBlock > lastMarketDiscoveryBlock + 1000) {
+                    const resolver = new ethers.Contract(RESOLVER_ADDRESS, RESOLVER_ABI, rpc);
+                    const filter = resolver.filters.ConditionCreated();
+                    // Scan from start block or last discovery + some buffer
+                    const fromBlock = lastMarketDiscoveryBlock > 0 ? lastMarketDiscoveryBlock : MARKET_DISCOVERY_START_BLOCK;
+                    const events = await resolver.queryFilter(filter, fromBlock, currentBlock);
 
-                const conditionRaw = conditionCalls.length > 0
-                    ? await multicall.aggregate3(conditionCalls)
-                    : [];
+                    // Filter for PNKSTR-related markets (targetA == CRYPTOPUNKS)
+                    const pnkstrMarketIds = events
+                        .filter(e => e.args.targetA.toLowerCase() === CRYPTOPUNKS_ADDRESS.toLowerCase())
+                        .map(e => e.args.marketId);
 
-                const conditionResults = conditionRaw.map((r, i) => {
-                    if (!r.success) return null;
-                    try {
-                        return resolverInterface.decodeFunctionResult('conditions', r.returnData);
-                    } catch { return null; }
-                });
-
-                // Filter to only PNKSTR markets
-                const pnkstrCandidates = [];
-                for (let i = 0; i < allMarketsData.length; i++) {
-                    const m = allMarketsData[i];
-                    const condition = conditionResults[i];
-
-                    if (!condition) continue;
-
-                    // Check if this is a PNKSTR market
-                    if (condition.targetA === ethers.ZeroAddress) {
-                        // Resolved market - check description for PNKSTR
-                        if (!m.description.toLowerCase().includes('pnkstr')) continue;
-                    } else {
-                        // Active market - verify target and callData
-                        if (condition.targetA.toLowerCase() !== CRYPTOPUNKS_ADDRESS.toLowerCase()) continue;
-                        if (condition.callDataA.toLowerCase() !== PNKSTR_BALANCE_CALLDATA) continue;
+                    if (pnkstrMarketIds.length > 0) {
+                        discoveredPnkstrMarkets = pnkstrMarketIds;
                     }
+                    lastMarketDiscoveryBlock = currentBlock;
+                }
 
-                    pnkstrCandidates.push({ ...m, condition });
+                const marketIds = discoveredPnkstrMarkets;
+
+                if (marketIds.length === 0) {
+                    // No markets found - show empty state
+                    pnkstrMarkets = [];
+                    document.getElementById('marketCount').textContent = '0';
+                    document.getElementById('activeCount').textContent = '0';
+                    document.getElementById('readyCount').textContent = '0';
+                    document.getElementById('resolvedCount').textContent = '0';
+                    document.getElementById('totalTvl').textContent = '0 ETH';
+                    renderMarkets([]);
+                    return;
+                }
+
+                // Batch fetch market data via multicall: getMarket + conditions for each
+                const marketCalls = marketIds.flatMap(id => [
+                    { target: PAMM_ADDRESS, allowFailure: true, callData: pammInterface.encodeFunctionData('getMarket', [id]) },
+                    { target: RESOLVER_ADDRESS, allowFailure: true, callData: resolverInterface.encodeFunctionData('conditions', [id]) }
+                ]);
+
+                const marketRaw = await multicall.aggregate3(marketCalls);
+
+                // Parse market data
+                let allMarketsData = [];
+                for (let i = 0; i < marketIds.length; i++) {
+                    const marketResult = marketRaw[i * 2];
+                    const conditionResult = marketRaw[i * 2 + 1];
+
+                    if (!marketResult.success || !conditionResult.success) continue;
+
+                    try {
+                        const market = pammInterface.decodeFunctionResult('getMarket', marketResult.returnData);
+                        const condition = resolverInterface.decodeFunctionResult('conditions', conditionResult.returnData);
+
+                        allMarketsData.push({
+                            marketId: marketIds[i],
+                            resolved: market.resolved,
+                            outcome: market.outcome,
+                            canClose: market.canClose,
+                            close: Number(market.close),
+                            collateralLocked: market.collateralLocked,
+                            description: market.description,
+                            condition
+                        });
+                    } catch { continue; }
                 }
 
                 // Batch fetch pool states, noIds, previews, and punk balance via multicall
-                const pammInterface = new ethers.Interface(PAMM_ABI);
                 const punksInterface = new ethers.Interface(CRYPTOPUNKS_ABI);
 
                 const dataCalls = [];
-                // Pool state calls for each candidate
-                for (const m of pnkstrCandidates) {
+                // Pool state calls for each market
+                for (const m of allMarketsData) {
                     dataCalls.push({
                         target: PAMM_ADDRESS,
                         allowFailure: true,
@@ -1512,7 +1693,7 @@
                     });
                 }
                 // NoId calls for each candidate (for ZAMM pool link)
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     dataCalls.push({
                         target: PAMM_ADDRESS,
                         allowFailure: true,
@@ -1520,7 +1701,7 @@
                     });
                 }
                 // Preview calls for unresolved markets
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     if (!m.resolved) {
                         dataCalls.push({
                             target: RESOLVER_ADDRESS,
@@ -1545,7 +1726,7 @@
                 let idx = 0;
 
                 // Pool states
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     const r = dataRaw[idx++];
                     if (r.success) {
                         try {
@@ -1556,7 +1737,7 @@
                     }
                 }
                 // NoIds
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     const r = dataRaw[idx++];
                     if (r.success) {
                         try {
@@ -1567,7 +1748,7 @@
                     }
                 }
                 // Previews
-                for (const m of pnkstrCandidates) {
+                for (const m of allMarketsData) {
                     if (!m.resolved) {
                         const r = dataRaw[idx++];
                         if (r.success) {
@@ -1591,16 +1772,17 @@
                 const markets = [];
                 let totalTvl = 0n;
 
-                for (let i = 0; i < pnkstrCandidates.length; i++) {
-                    const m = pnkstrCandidates[i];
+                for (let i = 0; i < allMarketsData.length; i++) {
+                    const m = allMarketsData[i];
                     const poolState = poolResults[i];
                     const preview = previewResults[i];
                     const noId = noIdResults[i];
 
                     let yesOdds = 50;
+                    let rYes = 0n, rNo = 0n;
                     if (poolState) {
-                        const rYes = poolState.rYes;
-                        const rNo = poolState.rNo;
+                        rYes = poolState.rYes;
+                        rNo = poolState.rNo;
                         if (rYes + rNo > 0n) {
                             yesOdds = Number(rNo * 100n / (rYes + rNo));
                         }
@@ -1619,6 +1801,8 @@
                         id: m.marketId,
                         noId: noId,
                         poolId: poolId,
+                        rYes: rYes,
+                        rNo: rNo,
                         description: m.description,
                         resolved: m.resolved,
                         outcome: m.outcome,
@@ -1650,6 +1834,14 @@
                 document.getElementById('resolvedCount').textContent = resolved.length;
                 document.getElementById('totalTvl').textContent = formatEth(totalTvl) + ' ETH';
 
+                // Update featured odds (first active market, or first market if all resolved)
+                const featuredMarket = active[0] || markets[0];
+                if (featuredMarket) {
+                    const yesOdds = featuredMarket.yesOdds;
+                    const noOdds = 100 - yesOdds;
+                    document.getElementById('featuredOdds').textContent = `YES ${yesOdds}% / NO ${noOdds}%`;
+                }
+
                 renderMarkets(markets);
 
             } catch (error) {
@@ -1677,6 +1869,24 @@
             }
 
             grid.innerHTML = markets.map(m => renderMarketCard(m)).join('');
+
+            // Load orderbook for first active market to populate inline view
+            const activeMarket = markets.find(m => !m.resolved);
+            if (activeMarket) {
+                loadInlineOrderbook(activeMarket);
+            }
+        }
+
+        async function loadInlineOrderbook(market) {
+            // Set minimal currentTrade data needed for orderbook loading
+            currentTrade.marketId = market.id;
+            currentTrade.yesId = market.id;
+            currentTrade.noId = market.noId;
+            currentTrade.rYes = market.rYes || 0n;
+            currentTrade.rNo = market.rNo || 0n;
+            currentTrade.isYes = true;
+
+            await loadOrderbook();
         }
 
         function renderMarketCard(market) {
@@ -1699,6 +1909,7 @@
             const noOdds = 100 - market.yesOdds;
 
             return `
+                <div class="market-row">
                 <div class="bet-card ${market.resolved ? 'resolved' : ''}">
                     <div class="bet-header">
                         <span class="bet-type">PNKSTR</span>
@@ -1737,14 +1948,14 @@
                         </div>
                         <div class="bet-buttons">
                             <button class="bet-btn yes" onclick="openTrade('${market.id}', true)">
-                                <div class="bet-btn-label">Yes</div>
+                                <div class="bet-btn-label">Buy Yes</div>
                                 <div class="bet-btn-odds">${market.yesOdds}%</div>
-                                <div class="bet-btn-price">${(market.yesOdds / 100).toFixed(2)} ETH</div>
+                                <div class="bet-btn-price">${(market.yesOdds / 100).toFixed(2)} ETH/share</div>
                             </button>
                             <button class="bet-btn no" onclick="openTrade('${market.id}', false)">
-                                <div class="bet-btn-label">No</div>
+                                <div class="bet-btn-label">Buy No</div>
                                 <div class="bet-btn-odds">${noOdds}%</div>
-                                <div class="bet-btn-price">${(noOdds / 100).toFixed(2)} ETH</div>
+                                <div class="bet-btn-price">${(noOdds / 100).toFixed(2)} ETH/share</div>
                             </button>
                         </div>
                     ` : `
@@ -1773,6 +1984,30 @@
                         <button class="resolve-btn" onclick="resolveMarket('${market.id}')">Resolve Market</button>
                     ` : ''}
                 </div>
+                ${!market.resolved ? `
+                <div class="inline-orderbook" id="inlineOrderbook-${market.id}">
+                    <div class="inline-orderbook-header">
+                        <div style="text-align:center;">
+                            <div style="font-weight:700;color:var(--green);font-size:13px;">YES</div>
+                            <div style="font-size:10px;color:var(--text-dim);" id="inlineYesAmm-${market.id}">--</div>
+                        </div>
+                        <div style="text-align:center;font-size:9px;color:var(--text-dim);display:flex;align-items:center;justify-content:center;">Odds</div>
+                        <div style="text-align:center;">
+                            <div style="font-weight:700;color:var(--red);font-size:13px;">NO</div>
+                            <div style="font-size:10px;color:var(--text-dim);" id="inlineNoAmm-${market.id}">--</div>
+                        </div>
+                    </div>
+                    <div class="inline-orderbook-ladder" id="inlineLadder-${market.id}">
+                        <div style="text-align:center;color:var(--text-dim);padding:2rem;font-size:11px;">Loading orderbook...</div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-size:9px;color:var(--text-dim);">
+                        <span><span style="color:var(--green);">■</span> Bids</span>
+                        <span>Depth in ETH | Click to trade</span>
+                        <span><span style="color:var(--red);">■</span> Asks</span>
+                    </div>
+                </div>
+                ` : '<div></div>'}
+                </div>
             `;
         }
 
@@ -1781,6 +2016,7 @@
             metamask: { name: 'MetaMask', icon: '🦊', detect: () => window.ethereum?.isMetaMask, getProvider: () => window.ethereum },
             coinbase: { name: 'Coinbase', icon: '🔵', detect: () => window.ethereum?.isCoinbaseWallet, getProvider: () => window.ethereum },
             rabby: { name: 'Rabby', icon: '🐰', detect: () => window.ethereum?.isRabby, getProvider: () => window.ethereum },
+            rainbow: { name: 'Rainbow', icon: '🌈', detect: () => window.ethereum?.isRainbow, getProvider: () => window.ethereum },
             walletconnect: { name: 'WalletConnect', icon: '📱' }
         };
 
@@ -1809,10 +2045,12 @@
                 if (!seenNames.has(info.name.toLowerCase())) {
                     const safeName = (info.name || 'Unknown').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
                     const iconUrl = info.icon && (info.icon.startsWith('data:') || info.icon.startsWith('https://')) ? info.icon : null;
+                    // Escape URL to prevent XSS via attribute injection
+                    const safeIconUrl = iconUrl ? iconUrl.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])) : null;
                     detected.push({
                         key: `eip6963_${uuid}`,
                         name: safeName,
-                        icon: iconUrl ? `<img src="${iconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
+                        icon: safeIconUrl ? `<img src="${safeIconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
                         getProvider: () => provider
                     });
                     seenNames.add(info.name.toLowerCase());
@@ -1851,7 +2089,7 @@
                         <span class="wallet-option-icon">${w.icon}</span>
                         <span class="wallet-option-name">${w.name}</span>
                     </div>
-                `).join('') : '<div style="padding:1rem;text-align:center;color:var(--text-muted);">No wallets detected.</div>';
+                `).join('') : '<div style="padding:1rem;text-align:center;color:var(--text-muted);">No wallets detected. Install MetaMask or use WalletConnect.</div>';
             }
 
             document.getElementById('walletModal').classList.add('active');
@@ -1868,6 +2106,11 @@
         async function connectWithWallet(walletKey) {
             if (isConnecting) return;
             isConnecting = true;
+
+            const connectBtn = document.getElementById('connectBtn');
+            const originalText = connectBtn.textContent;
+            connectBtn.textContent = 'Connecting...';
+            connectBtn.disabled = true;
 
             try {
                 closeWalletModal();
@@ -1916,18 +2159,17 @@
                 // Check network is Ethereum mainnet
                 let network = await provider.getNetwork();
                 if (network.chainId !== 1n) {
-                    showToast('Wrong Network', 'Please switch to Ethereum mainnet', 'error');
                     try {
                         await walletProvider.request({
                             method: 'wallet_switchEthereumChain',
                             params: [{ chainId: '0x1' }]
                         });
+                        // Re-create provider after network switch and verify
+                        provider = new ethers.BrowserProvider(walletProvider);
+                        network = await provider.getNetwork();
                     } catch (e) {
-                        throw new Error('Please switch to Ethereum mainnet');
+                        // Switch failed or was rejected
                     }
-                    // Re-create provider after network switch and verify
-                    provider = new ethers.BrowserProvider(walletProvider);
-                    network = await provider.getNetwork();
                     if (network.chainId !== 1n) {
                         throw new Error('Please switch to Ethereum mainnet');
                     }
@@ -1940,8 +2182,22 @@
                 document.getElementById('connectBtn').textContent = connectedAddress.slice(0, 6) + '...' + connectedAddress.slice(-4);
                 document.getElementById('connectBtn').classList.add('connected');
 
-                walletProvider.on('accountsChanged', () => window.location.reload());
-                walletProvider.on('chainChanged', () => window.location.reload());
+                // Remove old listeners if any
+                if (walletEventHandlers) {
+                    try {
+                        walletEventHandlers.provider.removeListener('accountsChanged', walletEventHandlers.onAccountsChanged);
+                        walletEventHandlers.provider.removeListener('chainChanged', walletEventHandlers.onChainChanged);
+                    } catch (e) {}
+                }
+
+                // Store and add new listeners
+                walletEventHandlers = {
+                    provider: walletProvider,
+                    onAccountsChanged: () => window.location.reload(),
+                    onChainChanged: () => window.location.reload()
+                };
+                walletProvider.on('accountsChanged', walletEventHandlers.onAccountsChanged);
+                walletProvider.on('chainChanged', walletEventHandlers.onChainChanged);
 
                 localStorage.setItem('pnkpm_wallet', walletKey);
 
@@ -1953,12 +2209,23 @@
                 if (!isUserRejection(error)) {
                     showToast('Connection Failed', error.message || 'Could not connect wallet', 'error');
                 }
+                connectBtn.textContent = originalText;
+                connectBtn.classList.remove('connected');
             } finally {
+                connectBtn.disabled = false;
                 isConnecting = false;
             }
         }
 
         function disconnectWallet() {
+            // Remove event listeners
+            if (walletEventHandlers) {
+                try {
+                    walletEventHandlers.provider.removeListener('accountsChanged', walletEventHandlers.onAccountsChanged);
+                    walletEventHandlers.provider.removeListener('chainChanged', walletEventHandlers.onChainChanged);
+                } catch (e) {}
+                walletEventHandlers = null;
+            }
             if (walletConnectProvider) {
                 try { walletConnectProvider.disconnect(); } catch (e) {}
                 walletConnectProvider = null;
@@ -2062,10 +2329,22 @@
             await loadBalance();
 
             document.getElementById('tradeModal').classList.add('active');
+
+            // Trigger preview with default amount
+            handleTradeInput();
         }
 
         function closeTradeModal() {
             document.getElementById('tradeModal').classList.remove('active');
+        }
+
+        // Open trade modal with limit tab pre-filled (for inline orderbook clicks)
+        async function openTradeWithPrice(marketId, isYes, price) {
+            await openTrade(marketId, isYes);
+            // Switch to limit mode and pre-fill price
+            setTradeMode('limit');
+            document.getElementById('limitPrice').value = price.toFixed(2);
+            updateLimitPreview();
         }
 
         // View market depth without opening trade modal
@@ -2144,8 +2423,10 @@
 
         function setTradeDirection(dir) {
             currentTradeDirection = dir;
+            tradeMaxRaw = null; // Clear max when switching direction
             const buyBtn = document.getElementById('buyBtn');
             const sellBtn = document.getElementById('sellBtn');
+            const maxBtn = document.getElementById('tradeMaxBtn');
 
             if (dir === 'buy') {
                 buyBtn.style.background = 'var(--green-dim)';
@@ -2155,7 +2436,10 @@
                 sellBtn.style.color = 'var(--text-muted)';
                 sellBtn.style.borderColor = 'var(--border)';
                 document.getElementById('tradeAmountLabel').textContent = 'Amount (ETH)';
+                document.getElementById('previewSharesLabel').textContent = 'Est. Shares';
+                document.getElementById('previewPriceLabel').textContent = 'Avg. Price';
                 document.getElementById('previewPayoutLabel').textContent = 'If you win';
+                maxBtn.style.display = 'none';
             } else {
                 sellBtn.style.background = 'var(--red-dim)';
                 sellBtn.style.color = 'var(--red)';
@@ -2164,7 +2448,10 @@
                 buyBtn.style.color = 'var(--text-muted)';
                 buyBtn.style.borderColor = 'var(--border)';
                 document.getElementById('tradeAmountLabel').textContent = 'Shares to Sell';
-                document.getElementById('previewPayoutLabel').textContent = 'You receive';
+                document.getElementById('previewSharesLabel').textContent = 'ETH Received';
+                document.getElementById('previewPriceLabel').textContent = 'Price/Share';
+                document.getElementById('previewPayoutLabel').textContent = 'Min Received';
+                maxBtn.style.display = 'inline-block';
             }
 
             updateTradeButton();
@@ -2258,6 +2545,23 @@
 
         let swapMaxRaw = null; // Store raw BigInt for exact max swaps
         let limitMaxRaw = null; // Store raw BigInt for exact max limit orders
+        let tradeMaxRaw = null; // Store raw BigInt for exact max sells
+        let lpMaxRaw = null; // Store raw BigInt for exact max LP operations
+
+        function setTradeMax() {
+            // Only works for sell mode - fills with user's share balance
+            if (currentTradeDirection !== 'sell') return;
+
+            const balance = currentTrade.isYes
+                ? currentUserPosition.yesBalance
+                : currentUserPosition.noBalance;
+
+            if (balance && balance > 0n) {
+                tradeMaxRaw = balance;
+                document.getElementById('tradeAmount').value = ethers.formatEther(balance);
+                updateTradePreview(); // Don't call handleTradeInput which clears tradeMaxRaw
+            }
+        }
 
         function setSwapMax() {
             // Get the balance of the source token (YES or NO based on swap direction)
@@ -2274,33 +2578,38 @@
         }
 
         async function setLimitMax() {
-            if (limitIsBuy) {
-                // For buys, max is ETH balance
-                if (!connectedAddress) return;
-                const rpc = await getReadProvider();
-                const bal = await rpc.getBalance(connectedAddress);
-                if (bal > 0n) {
-                    // Leave a little for gas (0.001 ETH)
-                    const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
-                    limitMaxRaw = maxBal;
-                    document.getElementById('limitAmount').value = ethers.formatEther(maxBal);
-                    updateLimitPreview();
+            try {
+                if (limitIsBuy) {
+                    // For buys, max is ETH balance
+                    if (!connectedAddress) return;
+                    const rpc = await getReadProvider();
+                    const bal = await rpc.getBalance(connectedAddress);
+                    if (bal > 0n) {
+                        // Leave a little for gas (0.001 ETH)
+                        const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
+                        limitMaxRaw = maxBal;
+                        document.getElementById('limitAmount').value = ethers.formatEther(maxBal);
+                        updateLimitPreview();
+                    }
+                } else {
+                    // For sells, max is share balance (YES or NO based on currentTrade.isYes)
+                    const balance = currentTrade.isYes
+                        ? currentUserPosition.yesBalance
+                        : currentUserPosition.noBalance;
+                    if (balance && balance > 0n) {
+                        limitMaxRaw = balance;
+                        document.getElementById('limitAmount').value = ethers.formatEther(balance);
+                        updateLimitPreview();
+                    }
                 }
-            } else {
-                // For sells, max is share balance (YES or NO based on currentTrade.isYes)
-                const balance = currentTrade.isYes
-                    ? currentUserPosition.yesBalance
-                    : currentUserPosition.noBalance;
-                if (balance && balance > 0n) {
-                    limitMaxRaw = balance;
-                    document.getElementById('limitAmount').value = ethers.formatEther(balance);
-                    updateLimitPreview();
-                }
+            } catch (e) {
+                // Silently fail - max button just won't work
             }
         }
 
         function setLpMode(mode) {
             currentLpMode = mode;
+            lpMaxRaw = null; // Clear max when switching mode
             const addBtn = document.getElementById('lpAddBtn');
             const removeBtn = document.getElementById('lpRemoveBtn');
 
@@ -2324,6 +2633,33 @@
 
             loadBalance();
             updateLpPreview();
+        }
+
+        async function setLpMax() {
+            try {
+                if (currentLpMode === 'add') {
+                    // For add, max is ETH balance (leave some for gas)
+                    if (!connectedAddress) return;
+                    const rpc = await getReadProvider();
+                    const bal = await rpc.getBalance(connectedAddress);
+                    if (bal > 0n) {
+                        const maxBal = bal > ethers.parseEther('0.001') ? bal - ethers.parseEther('0.001') : bal;
+                        lpMaxRaw = maxBal;
+                        document.getElementById('lpAmount').value = ethers.formatEther(maxBal);
+                        updateLpPreview();
+                    }
+                } else {
+                    // For remove, max is LP balance
+                    const lpBal = currentUserPosition.lpBalance;
+                    if (lpBal && lpBal > 0n) {
+                        lpMaxRaw = lpBal;
+                        document.getElementById('lpAmount').value = ethers.formatEther(lpBal);
+                        updateLpPreview();
+                    }
+                }
+            } catch (e) {
+                // Silently fail - max button just won't work
+            }
         }
 
         function setLimitSide(side) {
@@ -2396,54 +2732,196 @@
         }
 
         // ======================== USER POSITION ========================
-        async function loadUserPosition() {
+        async function refreshPoolState() {
+            if (!currentTrade.marketId) return;
+            try {
+                const rpc = await getReadProvider();
+                const pammInterface = new ethers.Interface(PAMM_ABI);
+                const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
+                const results = await multicall.aggregate3([
+                    { target: PAMM_ADDRESS, allowFailure: false, callData: pammInterface.encodeFunctionData('getPoolState', [currentTrade.marketId, FEE_TIER]) }
+                ]);
+                const poolState = pammInterface.decodeFunctionResult('getPoolState', results[0].returnData);
+                currentTrade.rYes = poolState.rYes;
+                currentTrade.rNo = poolState.rNo;
+            } catch (e) {
+                console.error('Failed to refresh pool state:', e);
+            }
+        }
+
+        // Position cache to reduce RPC calls
+        const positionCache = new Map(); // key -> { data, timestamp }
+        const POSITION_CACHE_TTL = 30000; // 30 seconds
+
+        async function loadUserPosition(forceRefresh = false) {
             if (!connectedAddress || !currentTrade.marketId) return;
+
+            const cacheKey = `${connectedAddress}-${currentTrade.marketId}`;
+            const cached = positionCache.get(cacheKey);
+
+            // Use cache if valid and not forcing refresh
+            if (!forceRefresh && cached && Date.now() - cached.timestamp < POSITION_CACHE_TTL) {
+                currentUserPosition = cached.data;
+                updatePositionUI(cached.data);
+                return;
+            }
 
             try {
                 const rpc = await getReadProvider();
-                const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
-                const pammInterface = new ethers.Interface(PAMM_ABI);
-                const zammInterface = new ethers.Interface(ZAMM_ABI);
+                const quoterDeployed = PMHOOKQUOTER_ADDRESS !== '0x0000000000000000000000000000000000000000';
 
-                const yesId = currentTrade.yesId;
-                const noId = currentTrade.noId;
+                if (quoterDeployed) {
+                    // Use quoter for share balances, vault info, and limit orders
+                    const quoter = new ethers.Contract(PMHOOKQUOTER_ADDRESS, PMHOOKQUOTER_ABI, rpc);
 
-                // Compute pool ID
-                const id0 = yesId < noId ? yesId : noId;
-                const id1 = yesId < noId ? noId : yesId;
-                const poolId = computePoolId(id0, id1, PAMM_ADDRESS, PAMM_ADDRESS, FEE_TIER);
+                    const [position, limitOrders] = await Promise.all([
+                        quoter.getUserFullPosition(currentTrade.marketId, connectedAddress),
+                        quoter.getUserAllLimitOrders(currentTrade.marketId, connectedAddress).catch(() => null)
+                    ]);
 
-                // Batch all 4 calls: YES bal, NO bal, LP bal, pool data
-                const results = await multicall.aggregate3([
-                    { target: PAMM_ADDRESS, allowFailure: false, callData: pammInterface.encodeFunctionData('balanceOf', [connectedAddress, yesId]) },
-                    { target: PAMM_ADDRESS, allowFailure: false, callData: pammInterface.encodeFunctionData('balanceOf', [connectedAddress, noId]) },
-                    { target: ZAMM_ADDRESS, allowFailure: false, callData: zammInterface.encodeFunctionData('balanceOf', [connectedAddress, poolId]) },
-                    { target: ZAMM_ADDRESS, allowFailure: false, callData: zammInterface.encodeFunctionData('pools', [poolId]) }
-                ]);
+                    // For legacy markets (not registered with PMHookRouter), quoter returns ammLPBalance=0
+                    // Fetch LP balance separately using legacy pool computation
+                    let lpBalance = position.ammLPBalance;
+                    let lpTotalSupply = null;
+                    if (lpBalance === 0n && currentTrade.yesId && currentTrade.noId) {
+                        const zamm = new ethers.Contract(ZAMM_ADDRESS, ZAMM_ABI, rpc);
+                        const yesId = currentTrade.yesId;
+                        const noId = currentTrade.noId;
+                        const id0 = yesId < noId ? yesId : noId;
+                        const id1 = yesId < noId ? noId : yesId;
+                        const poolId = computePoolId(id0, id1, PAMM_ADDRESS, PAMM_ADDRESS, FEE_TIER);
+                        const [lpBal, poolData] = await Promise.all([
+                            zamm.balanceOf(connectedAddress, poolId),
+                            zamm.pools(poolId)
+                        ]);
+                        lpBalance = lpBal;
+                        lpTotalSupply = poolData[6];
+                    }
 
-                const yesBal = pammInterface.decodeFunctionResult('balanceOf', results[0].returnData)[0];
-                const noBal = pammInterface.decodeFunctionResult('balanceOf', results[1].returnData)[0];
-                const lpBal = zammInterface.decodeFunctionResult('balanceOf', results[2].returnData)[0];
-                const poolData = zammInterface.decodeFunctionResult('pools', results[3].returnData);
-                // poolData: [reserve0, reserve1, blockTimestampLast, price0CumulativeLast, price1CumulativeLast, kLast, supply]
-                const lpTotalSupply = poolData[6];
+                    currentUserPosition = {
+                        yesBalance: position.yesShareBalance,
+                        noBalance: position.noShareBalance,
+                        lpBalance: lpBalance,
+                        lpTotalSupply: lpTotalSupply,
+                        vaultYes: BigInt(position.yesVaultLP),
+                        vaultNo: BigInt(position.noVaultLP),
+                        pendingYes: position.pendingYesCollateral,
+                        pendingNo: position.pendingNoCollateral,
+                        limitOrders: limitOrders
+                    };
+                } else {
+                    // Fallback to direct contract calls
+                    const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
+                    const pammInterface = new ethers.Interface(PAMM_ABI);
+                    const zammInterface = new ethers.Interface(ZAMM_ABI);
 
-                currentUserPosition = {
-                    yesBalance: yesBal,
-                    noBalance: noBal,
-                    lpBalance: lpBal,
-                    lpTotalSupply: lpTotalSupply
-                };
+                    const yesId = currentTrade.yesId;
+                    const noId = currentTrade.noId;
+                    const id0 = yesId < noId ? yesId : noId;
+                    const id1 = yesId < noId ? noId : yesId;
+                    const poolId = computePoolId(id0, id1, PAMM_ADDRESS, PAMM_ADDRESS, FEE_TIER);
 
-                // Update UI
-                document.getElementById('tradeModalYes').textContent = formatEth(yesBal);
-                document.getElementById('tradeModalNo').textContent = formatEth(noBal);
-                document.getElementById('tradeModalLP').textContent = formatEth(lpBal);
-                document.getElementById('lpPosition').textContent = formatEth(lpBal) + ' LP';
+                    const results = await multicall.aggregate3([
+                        { target: PAMM_ADDRESS, allowFailure: false, callData: pammInterface.encodeFunctionData('balanceOf', [connectedAddress, yesId]) },
+                        { target: PAMM_ADDRESS, allowFailure: false, callData: pammInterface.encodeFunctionData('balanceOf', [connectedAddress, noId]) },
+                        { target: ZAMM_ADDRESS, allowFailure: false, callData: zammInterface.encodeFunctionData('balanceOf', [connectedAddress, poolId]) },
+                        { target: ZAMM_ADDRESS, allowFailure: false, callData: zammInterface.encodeFunctionData('pools', [poolId]) }
+                    ]);
+
+                    const yesBal = pammInterface.decodeFunctionResult('balanceOf', results[0].returnData)[0];
+                    const noBal = pammInterface.decodeFunctionResult('balanceOf', results[1].returnData)[0];
+                    const lpBal = zammInterface.decodeFunctionResult('balanceOf', results[2].returnData)[0];
+                    const poolData = zammInterface.decodeFunctionResult('pools', results[3].returnData);
+                    const lpTotalSupply = poolData[6];
+
+                    currentUserPosition = {
+                        yesBalance: yesBal,
+                        noBalance: noBal,
+                        lpBalance: lpBal,
+                        lpTotalSupply: lpTotalSupply,
+                        vaultYes: 0n,
+                        vaultNo: 0n,
+                        limitOrders: null
+                    };
+                }
+
+                // Cache the result
+                positionCache.set(cacheKey, { data: currentUserPosition, timestamp: Date.now() });
+
+                updatePositionUI(currentUserPosition);
+
+                // Load user's pool positions for My Orders section
+                await loadUserPoolPositions();
+                updateMyOrders();
 
             } catch (e) {
                 console.error('Failed to load user position:', e);
             }
+        }
+
+        function updatePositionUI(pos) {
+            document.getElementById('tradeModalYes').textContent = formatEth(pos.yesBalance);
+            document.getElementById('tradeModalNo').textContent = formatEth(pos.noBalance);
+            document.getElementById('tradeModalLP').textContent = formatEth(pos.lpBalance);
+            document.getElementById('lpPosition').textContent = formatEth(pos.lpBalance) + ' LP';
+
+            // Show vault positions if user has any
+            const vaultEl = document.getElementById('tradeModalVault');
+            if (vaultEl) {
+                const vaultYes = Number(pos.vaultYes || 0n) / 1e18;
+                const vaultNo = Number(pos.vaultNo || 0n) / 1e18;
+                if (vaultYes > 0 || vaultNo > 0) {
+                    vaultEl.parentElement.style.display = 'flex';
+                    vaultEl.innerHTML = `${vaultYes.toFixed(2)} YES / ${vaultNo.toFixed(2)} NO`;
+                } else {
+                    vaultEl.parentElement.style.display = 'none';
+                }
+            }
+
+            // Show limit orders if user has any
+            updateLimitOrdersDisplay(pos);
+        }
+
+        // Display user's limit orders summary
+        function updateLimitOrdersDisplay(pos) {
+            const limitOrdersEl = document.getElementById('tradeModalLimitOrders');
+            if (!limitOrdersEl) return;
+
+            const orders = pos.limitOrders;
+            if (!orders) {
+                limitOrdersEl.parentElement.style.display = 'none';
+                return;
+            }
+
+            const yesAskCount = orders.yesAskPrices?.length || 0;
+            const yesBidCount = orders.yesBidPrices?.length || 0;
+            const noAskCount = orders.noAskPrices?.length || 0;
+            const noBidCount = orders.noBidPrices?.length || 0;
+            const totalOrders = yesAskCount + yesBidCount + noAskCount + noBidCount;
+
+            if (totalOrders === 0) {
+                limitOrdersEl.parentElement.style.display = 'none';
+                return;
+            }
+
+            let totalAskShares = 0;
+            let totalBidCollateral = 0;
+
+            for (let i = 0; i < yesAskCount; i++) totalAskShares += Number(orders.yesAskShares[i]) / 1e18;
+            for (let i = 0; i < noAskCount; i++) totalAskShares += Number(orders.noAskShares[i]) / 1e18;
+            for (let i = 0; i < yesBidCount; i++) totalBidCollateral += Number(orders.yesBidCollateral[i]) / 1e18;
+            for (let i = 0; i < noBidCount; i++) totalBidCollateral += Number(orders.noBidCollateral[i]) / 1e18;
+
+            limitOrdersEl.parentElement.style.display = 'flex';
+            let html = `${totalOrders} order${totalOrders > 1 ? 's' : ''}`;
+            if (totalAskShares > 0) html += ` · ${totalAskShares.toFixed(2)} shares`;
+            if (totalBidCollateral > 0) html += ` · ${totalBidCollateral.toFixed(4)} ETH`;
+            limitOrdersEl.innerHTML = html;
+        }
+
+        // Invalidate position cache after transactions
+        function invalidatePositionCache() {
+            positionCache.clear();
         }
 
         async function loadBalance() {
@@ -2485,41 +2963,62 @@
         }
 
         // ======================== ORDERBOOK ========================
+        // Uses PMHookQuoter.getActiveLevels for orderbook data
         async function loadOrderbook() {
             if (!currentTrade.marketId) return;
 
             try {
                 const rpc = await getReadProvider();
-                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, rpc);
+                const quoter = new ethers.Contract(PMHOOKQUOTER_ADDRESS, PMHOOKQUOTER_ABI, rpc);
 
-                // Load orderbooks for both YES and NO sides in parallel
-                const [[yesBidHashes, yesBidOrders, yesAskHashes, yesAskOrders],
-                       [noBidHashes, noBidOrders, noAskHashes, noAskOrders]] = await Promise.all([
-                    pmRouter.getOrderbook(currentTrade.marketId, true, 10),
-                    pmRouter.getOrderbook(currentTrade.marketId, false, 10)
+                // Load orderbooks for both YES and NO sides in parallel via quoter
+                const [yesLevels, noLevels] = await Promise.all([
+                    quoter.getActiveLevels(currentTrade.marketId, true, 10),
+                    quoter.getActiveLevels(currentTrade.marketId, false, 10)
                 ]);
 
-                // Parse orders helper
-                const parseOrders = (hashes, orders, sortAsc) => {
-                    const now = Math.floor(Date.now() / 1000);
-                    const parsed = orders.map((order, i) => ({
-                        hash: hashes[i],
-                        price: Number(order.shares) > 0 ? Number(order.collateral) / Number(order.shares) : 0,
-                        shares: order.shares,
-                        collateral: order.collateral,
-                        owner: order.owner,
-                        deadline: Number(order.deadline),
-                        isOwn: connectedAddress && order.owner.toLowerCase() === connectedAddress.toLowerCase(),
-                        isExpired: Number(order.deadline) <= now
-                    })).filter(o =>
-                        o.price > 0 &&
-                        isFinite(o.price) &&
-                        !o.isExpired // Only filter expired orders, keep own orders for display
-                    );
-                    return sortAsc
-                        ? parsed.sort((a, b) => a.price - b.price)
-                        : parsed.sort((a, b) => b.price - a.price);
+                // Parse levels from quoter format: (askPrices[], askDepths[], bidPrices[], bidDepths[])
+                const parseLevels = (levels) => {
+                    const [askPrices, askDepths, bidPrices, bidDepths] = levels;
+
+                    // Convert to orderbook format
+                    const asks = [];
+                    for (let i = 0; i < askPrices.length; i++) {
+                        if (askDepths[i] > 0n) {
+                            const priceBps = Number(askPrices[i]);
+                            asks.push({
+                                price: priceBps / 10000, // Convert BPS to decimal
+                                priceBps: priceBps,
+                                depth: askDepths[i],
+                                shares: askDepths[i], // Depth is in shares for asks
+                                collateral: askDepths[i] * BigInt(priceBps) / 10000n
+                            });
+                        }
+                    }
+
+                    const bids = [];
+                    for (let i = 0; i < bidPrices.length; i++) {
+                        if (bidDepths[i] > 0n) {
+                            const priceBps = Number(bidPrices[i]);
+                            bids.push({
+                                price: priceBps / 10000, // Convert BPS to decimal
+                                priceBps: priceBps,
+                                depth: bidDepths[i],
+                                collateral: bidDepths[i], // Depth is in collateral for bids
+                                shares: bidDepths[i] * 10000n / BigInt(priceBps)
+                            });
+                        }
+                    }
+
+                    // Sort asks ascending by price, bids descending
+                    asks.sort((a, b) => a.price - b.price);
+                    bids.sort((a, b) => b.price - a.price);
+
+                    return { asks, bids };
                 };
+
+                const yesParsed = parseLevels(yesLevels);
+                const noParsed = parseLevels(noLevels);
 
                 // Calculate AMM prices
                 const ammYesPrice = currentTrade.rYes > 0n && currentTrade.rNo > 0n
@@ -2529,57 +3028,24 @@
 
                 currentOrderbook = {
                     yes: {
-                        bids: parseOrders(yesBidHashes, yesBidOrders, false),
-                        asks: parseOrders(yesAskHashes, yesAskOrders, true),
+                        bids: yesParsed.bids,
+                        asks: yesParsed.asks,
                         ammPrice: ammYesPrice
                     },
                     no: {
-                        bids: parseOrders(noBidHashes, noBidOrders, false),
-                        asks: parseOrders(noAskHashes, noAskOrders, true),
+                        bids: noParsed.bids,
+                        asks: noParsed.asks,
                         ammPrice: ammNoPrice
                     }
                 };
 
-                // Fetch fill status for user's own orders via multicall
-                if (connectedAddress) {
-                    const allOrders = [
-                        ...currentOrderbook.yes.bids,
-                        ...currentOrderbook.yes.asks,
-                        ...currentOrderbook.no.bids,
-                        ...currentOrderbook.no.asks
-                    ];
-                    const ownOrders = allOrders.filter(o => o.isOwn);
-
-                    if (ownOrders.length > 0) {
-                        try {
-                            const multicall = new ethers.Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, rpc);
-                            const pmRouterInterface = new ethers.Interface(PMROUTER_ABI);
-
-                            const calls = ownOrders.map(o => ({
-                                target: PMROUTER_ADDRESS,
-                                allowFailure: true,
-                                callData: pmRouterInterface.encodeFunctionData('getOrder', [o.hash])
-                            }));
-
-                            const results = await multicall.aggregate3(calls);
-
-                            results.forEach((r, i) => {
-                                if (r.success) {
-                                    try {
-                                        const status = pmRouterInterface.decodeFunctionResult('getOrder', r.returnData);
-                                        ownOrders[i].sharesFilled = status.sharesFilled;
-                                        ownOrders[i].collateralFilled = status.collateralFilled;
-                                    } catch { /* ignore decode errors */ }
-                                }
-                            });
-                        } catch (e) {
-                            console.warn('Failed to fetch order fill status:', e);
-                        }
-                    }
-                }
-
-                updateOrderbookUI();
-                updateLimitBookPreview();
+                // Batch all DOM updates in single animation frame
+                requestAnimationFrame(() => {
+                    updateOrderbookUI();
+                    updateLimitBookPreview();
+                    updateInlineOrderbook();
+                    updateOrderbookTvl();
+                });
 
             } catch (e) {
                 console.error('Failed to load orderbook:', e);
@@ -2616,7 +3082,7 @@
 
             // Asks (sell orders) - show in red
             for (const ask of topAsks) {
-                const size = (Number(ask.shares) / 1e18).toFixed(2);
+                const size = (Number(ask.shares) / 1e18).toFixed(2) + ' sh';
                 const price = (ask.price * 100).toFixed(1) + '%';
                 html += `<div></div>`;
                 html += `<div style="color:var(--red);text-align:center;">${price}</div>`;
@@ -2634,7 +3100,7 @@
 
             // Bids (buy orders) - show in green
             for (const bid of topBids) {
-                const size = (Number(bid.shares) / 1e18).toFixed(2);
+                const size = (Number(bid.shares) / 1e18).toFixed(2) + ' sh';
                 const price = (bid.price * 100).toFixed(1) + '%';
                 html += `<div style="color:var(--green);">${size}</div>`;
                 html += `<div style="color:var(--green);text-align:center;">${price}</div>`;
@@ -2645,12 +3111,142 @@
             container.innerHTML = html;
         }
 
+        function updateInlineOrderbook() {
+            if (!currentTrade.marketId) return;
+
+            const ladder = document.getElementById(`inlineLadder-${currentTrade.marketId}`);
+            const yesAmmEl = document.getElementById(`inlineYesAmm-${currentTrade.marketId}`);
+            const noAmmEl = document.getElementById(`inlineNoAmm-${currentTrade.marketId}`);
+            if (!ladder) return;
+
+            const yesBook = currentOrderbook.yes;
+            const noBook = currentOrderbook.no;
+            if (!yesBook || !noBook) return;
+            const yesAmm = yesBook.ammPrice || 0.5;
+            const noAmm = noBook.ammPrice || 0.5;
+
+            // Update AMM reference prices
+            if (yesAmmEl) yesAmmEl.textContent = yesBook.ammPrice ? `AMM: ${(yesBook.ammPrice * 100).toFixed(1)}%` : '--';
+            if (noAmmEl) noAmmEl.textContent = noBook.ammPrice ? `AMM: ${(noBook.ammPrice * 100).toFixed(1)}%` : '--';
+
+            // Collect resting orders only:
+            // - Bids below AMM (buyers want cheaper)
+            // - Asks above AMM (sellers want more)
+            const levels = new Map();
+
+            const addOrders = (orders, side, isYes, ammPrice) => {
+                orders.forEach(order => {
+                    const price = Math.round(order.price * 1000) / 1000;
+                    // Only show resting orders (bids below AMM, asks above AMM)
+                    const isResting = side === 'bids' ? price < ammPrice : price > ammPrice;
+                    if (!isResting) return;
+
+                    const eth = Number(order.shares) / 1e18 * order.price;
+                    if (!levels.has(price)) levels.set(price, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0 });
+                    const key = isYes ? (side === 'bids' ? 'yesBids' : 'yesAsks') : (side === 'bids' ? 'noBids' : 'noAsks');
+                    levels.get(price)[key] += eth; // Sum depth at each level
+                });
+            };
+
+            addOrders(yesBook.bids, 'bids', true, yesAmm);
+            addOrders(yesBook.asks, 'asks', true, yesAmm);
+            addOrders(noBook.bids, 'bids', false, noAmm);
+            addOrders(noBook.asks, 'asks', false, noAmm);
+
+            // Add AMM price rows
+            const yesAmmRounded = Math.round(yesAmm * 1000) / 1000;
+            const noAmmRounded = Math.round(noAmm * 1000) / 1000;
+            if (!levels.has(yesAmmRounded)) levels.set(yesAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, isYesAmm: true });
+            else levels.get(yesAmmRounded).isYesAmm = true;
+            if (!levels.has(noAmmRounded)) levels.set(noAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, isNoAmm: true });
+            else levels.get(noAmmRounded).isNoAmm = true;
+
+            const sortedLevels = [...levels.entries()].sort((a, b) => b[0] - a[0]);
+
+            if (sortedLevels.length === 0) {
+                ladder.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:1.5rem;font-size:11px;">No limit orders yet. Trade via AMM or place limit orders.</div>`;
+                return;
+            }
+
+            let maxDepth = 0.001;
+            sortedLevels.forEach(([, data]) => {
+                maxDepth = Math.max(maxDepth, data.yesBids, data.yesAsks, data.noBids, data.noAsks);
+            });
+
+            ladder.innerHTML = sortedLevels.map(([price, data]) => {
+                const pct = (price * 100).toFixed(1);
+                // Asks above AMM (red), Bids below AMM (green)
+                const yesDepth = data.yesAsks > 0 ? data.yesAsks : data.yesBids;
+                const noDepth = data.noAsks > 0 ? data.noAsks : data.noBids;
+                const yesBarWidth = (yesDepth / maxDepth * 100).toFixed(1);
+                const noBarWidth = (noDepth / maxDepth * 100).toFixed(1);
+                const yesIsAsk = data.yesAsks > 0;
+                const noIsAsk = data.noAsks > 0;
+
+                const isYesAmm = data.isYesAmm;
+                const isNoAmm = data.isNoAmm;
+                const isAmmRow = isYesAmm || isNoAmm;
+
+                const yesDepthStr = yesDepth > 0 ? (yesDepth >= 1 ? yesDepth.toFixed(2) : yesDepth.toFixed(3)) + 'Ξ' : '';
+                const noDepthStr = noDepth > 0 ? (noDepth >= 1 ? noDepth.toFixed(2) : noDepth.toFixed(3)) + 'Ξ' : '';
+
+                return `
+                    <div class="inline-ob-row" style="display:grid;grid-template-columns:1fr 50px 1fr;gap:0;align-items:center;height:24px;border-bottom:1px solid var(--border);${isAmmRow ? 'background:var(--surface-2);' : ''}">
+                        <div class="inline-ob-cell inline-ob-yes" style="position:relative;height:100%;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;overflow:hidden;cursor:pointer;"
+                             onclick="openTradeWithPrice('${currentTrade.marketId}', true, ${price})">
+                            ${yesDepth > 0 ? `<div style="position:absolute;right:0;top:0;bottom:0;width:${yesBarWidth}%;background:${yesIsAsk ? 'var(--red)' : 'var(--green)'};opacity:0.3;"></div>` : ''}
+                            ${isYesAmm ? '<span style="font-size:8px;color:var(--blue);margin-right:4px;z-index:1;font-weight:600;">AMM</span>' : ''}
+                            <span style="font-size:10px;color:${yesIsAsk ? 'var(--red)' : 'var(--green)'};z-index:1;font-weight:500;">${yesDepthStr}</span>
+                        </div>
+                        <div style="text-align:center;font-size:10px;font-weight:600;color:var(--text);height:100%;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);">${pct}%</div>
+                        <div class="inline-ob-cell inline-ob-no" style="position:relative;height:100%;display:flex;align-items:center;padding-left:6px;overflow:hidden;cursor:pointer;"
+                             onclick="openTradeWithPrice('${currentTrade.marketId}', false, ${price})">
+                            ${noDepth > 0 ? `<div style="position:absolute;left:0;top:0;bottom:0;width:${noBarWidth}%;background:${noIsAsk ? 'var(--red)' : 'var(--green)'};opacity:0.3;"></div>` : ''}
+                            <span style="font-size:10px;color:${noIsAsk ? 'var(--red)' : 'var(--green)'};z-index:1;font-weight:500;">${noDepthStr}</span>
+                            ${isNoAmm ? '<span style="font-size:8px;color:var(--blue);margin-left:4px;z-index:1;font-weight:600;">AMM</span>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateOrderbookTvl() {
+            const el = document.getElementById('orderbookTvl');
+            if (!el) return;
+            if (!currentOrderbook.yes || !currentOrderbook.no) {
+                el.textContent = '--';
+                return;
+            }
+
+            // Calculate TVL from all orders
+            // Bids: collateral (ETH) locked
+            // Asks: shares locked, valued at ask price
+            let totalEth = 0;
+
+            // Sum bid collateral (ETH locked by buyers)
+            [...currentOrderbook.yes.bids, ...currentOrderbook.no.bids].forEach(o => {
+                totalEth += Number(o.collateral) / 1e18;
+            });
+
+            // Sum ask value (shares * price = ETH equivalent)
+            [...currentOrderbook.yes.asks, ...currentOrderbook.no.asks].forEach(o => {
+                totalEth += (Number(o.shares) / 1e18) * o.price;
+            });
+
+            el.textContent = totalEth >= 1
+                ? totalEth.toFixed(2) + ' Ξ'
+                : totalEth > 0
+                    ? totalEth.toFixed(4) + ' Ξ'
+                    : '0';
+        }
+
         function updateOrderbookUI() {
             const container = document.getElementById('orderbookPreview');
             if (!container) return;
 
             // Get data for current trade side
             const book = currentTrade.isYes ? currentOrderbook.yes : currentOrderbook.no;
+            if (!book || !currentOrderbook.yes || !currentOrderbook.no) return;
             const { bids, asks, ammPrice } = book;
             const bestBidPrice = bids.length > 0 ? bids[0].price : null;
             const bestAskPrice = asks.length > 0 ? asks[0].price : null;
@@ -2705,6 +3301,76 @@
             updateMyOrders();
         }
 
+        // User pool positions cached from quoter
+        let userPoolPositions = { yes: { asks: [], bids: [] }, no: { asks: [], bids: [] } };
+
+        async function loadUserPoolPositions() {
+            if (!connectedAddress || !currentTrade.marketId) return;
+
+            try {
+                const rpc = await getReadProvider();
+                const quoter = new ethers.Contract(PMHOOKQUOTER_ADDRESS, PMHOOKQUOTER_ABI, rpc);
+
+                // Fetch user positions for both YES and NO
+                const [yesPos, noPos] = await Promise.all([
+                    quoter.getUserActivePositions(currentTrade.marketId, true, connectedAddress),
+                    quoter.getUserActivePositions(currentTrade.marketId, false, connectedAddress)
+                ]);
+
+                // Parse YES positions
+                const yesAsks = [];
+                for (let i = 0; i < yesPos.askPrices.length; i++) {
+                    if (yesPos.askShares[i] > 0n) {
+                        yesAsks.push({
+                            priceBps: Number(yesPos.askPrices[i]),
+                            shares: yesPos.askShares[i],
+                            pendingCollateral: yesPos.askPendingColl[i]
+                        });
+                    }
+                }
+                const yesBids = [];
+                for (let i = 0; i < yesPos.bidPrices.length; i++) {
+                    if (yesPos.bidCollateral[i] > 0n) {
+                        yesBids.push({
+                            priceBps: Number(yesPos.bidPrices[i]),
+                            collateral: yesPos.bidCollateral[i],
+                            pendingShares: yesPos.bidPendingShares[i]
+                        });
+                    }
+                }
+
+                // Parse NO positions
+                const noAsks = [];
+                for (let i = 0; i < noPos.askPrices.length; i++) {
+                    if (noPos.askShares[i] > 0n) {
+                        noAsks.push({
+                            priceBps: Number(noPos.askPrices[i]),
+                            shares: noPos.askShares[i],
+                            pendingCollateral: noPos.askPendingColl[i]
+                        });
+                    }
+                }
+                const noBids = [];
+                for (let i = 0; i < noPos.bidPrices.length; i++) {
+                    if (noPos.bidCollateral[i] > 0n) {
+                        noBids.push({
+                            priceBps: Number(noPos.bidPrices[i]),
+                            collateral: noPos.bidCollateral[i],
+                            pendingShares: noPos.bidPendingShares[i]
+                        });
+                    }
+                }
+
+                userPoolPositions = {
+                    yes: { asks: yesAsks, bids: yesBids },
+                    no: { asks: noAsks, bids: noBids }
+                };
+            } catch (e) {
+                console.error('Failed to load user pool positions:', e);
+                userPoolPositions = { yes: { asks: [], bids: [] }, no: { asks: [], bids: [] } };
+            }
+        }
+
         function updateMyOrders() {
             const section = document.getElementById('myOrdersSection');
             const list = document.getElementById('myOrdersList');
@@ -2712,70 +3378,75 @@
 
             if (!section || !list) return;
 
-            // Collect all user's orders from both YES and NO sides
-            const myOrders = [];
+            // Collect all user's pool positions
+            const myPositions = [];
 
-            // YES Bids (user wants to buy YES at limit price)
-            for (const order of currentOrderbook.yes.bids.filter(o => o.isOwn)) {
-                myOrders.push({ ...order, side: 'YES', type: 'BID' });
+            // YES asks (user is selling YES)
+            for (const pos of userPoolPositions.yes.asks) {
+                myPositions.push({ ...pos, isYes: true, type: 'ASK' });
             }
-            // YES Asks (user is selling YES)
-            for (const order of currentOrderbook.yes.asks.filter(o => o.isOwn)) {
-                myOrders.push({ ...order, side: 'YES', type: 'ASK' });
+            // YES bids (user wants to buy YES)
+            for (const pos of userPoolPositions.yes.bids) {
+                myPositions.push({ ...pos, isYes: true, type: 'BID' });
             }
-            // NO Bids (user wants to buy NO at limit price)
-            for (const order of currentOrderbook.no.bids.filter(o => o.isOwn)) {
-                myOrders.push({ ...order, side: 'NO', type: 'BID' });
+            // NO asks (user is selling NO)
+            for (const pos of userPoolPositions.no.asks) {
+                myPositions.push({ ...pos, isYes: false, type: 'ASK' });
             }
-            // NO Asks (user is selling NO)
-            for (const order of currentOrderbook.no.asks.filter(o => o.isOwn)) {
-                myOrders.push({ ...order, side: 'NO', type: 'ASK' });
+            // NO bids (user wants to buy NO)
+            for (const pos of userPoolPositions.no.bids) {
+                myPositions.push({ ...pos, isYes: false, type: 'BID' });
             }
 
-            if (myOrders.length === 0) {
+            if (myPositions.length === 0) {
                 section.style.display = 'none';
                 return;
             }
 
             section.style.display = 'block';
-            countEl.textContent = myOrders.length;
+            countEl.textContent = myPositions.length;
 
             // Sort by price descending
-            myOrders.sort((a, b) => b.price - a.price);
+            myPositions.sort((a, b) => b.priceBps - a.priceBps);
 
             let html = '';
-            for (const order of myOrders) {
-                const priceStr = (order.price * 100).toFixed(1) + '%';
-                const sharesStr = formatEth(order.shares);
-                const sideColor = order.side === 'YES' ? 'var(--green)' : 'var(--red)';
-                const typeColor = order.type === 'BID' ? 'var(--green)' : 'var(--red)';
+            for (const pos of myPositions) {
+                const priceStr = (pos.priceBps / 100).toFixed(1) + '%';
+                const sideLabel = pos.isYes ? 'YES' : 'NO';
+                const sideColor = pos.isYes ? 'var(--green)' : 'var(--red)';
+                const typeColor = pos.type === 'BID' ? 'var(--green)' : 'var(--red)';
 
-                // Check if there are proceeds to claim
-                // For buy orders (BID): sharesFilled > 0 means shares to claim
-                // For sell orders (ASK): collateralFilled > 0 means ETH to claim
-                const isBuyOrder = order.type === 'BID';
-                const hasClaimable = isBuyOrder
-                    ? (order.sharesFilled && order.sharesFilled > 0n)
-                    : (order.collateralFilled && order.collateralFilled > 0n);
+                // Amount display
+                const amountStr = pos.type === 'ASK'
+                    ? formatEth(pos.shares) + ' sh'
+                    : formatEth(pos.collateral) + ' ETH';
 
-                const claimableInfo = hasClaimable
-                    ? (isBuyOrder
-                        ? `${formatEth(order.sharesFilled)} filled`
-                        : `${formatEth(order.collateralFilled)} ETH filled`)
+                // Pending fills
+                const hasPending = pos.type === 'ASK'
+                    ? (pos.pendingCollateral && pos.pendingCollateral > 0n)
+                    : (pos.pendingShares && pos.pendingShares > 0n);
+                const pendingStr = hasPending
+                    ? (pos.type === 'ASK'
+                        ? `${formatEth(pos.pendingCollateral)} ETH pending`
+                        : `${formatEth(pos.pendingShares)} sh pending`)
                     : '';
+
+                // Withdraw function based on type
+                const withdrawFn = pos.type === 'ASK'
+                    ? `withdrawFromAskPool(${pos.isYes}, ${pos.priceBps})`
+                    : `withdrawFromBidPool(${pos.isYes}, ${pos.priceBps})`;
 
                 html += `
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(245,158,11,0.2);">
                         <div>
-                            <span style="color:${sideColor};font-weight:600;">${order.side}</span>
-                            <span style="color:${typeColor};margin-left:4px;">${order.type === 'BID' ? 'Buy' : 'Sell'}</span>
+                            <span style="color:${sideColor};font-weight:600;">${sideLabel}</span>
+                            <span style="color:${typeColor};margin-left:4px;">${pos.type === 'BID' ? 'Buy' : 'Sell'}</span>
                             <span style="color:var(--text-muted);margin-left:4px;">@ ${priceStr}</span>
-                            ${hasClaimable ? `<span style="color:var(--green);margin-left:4px;font-size:10px;">(${claimableInfo})</span>` : ''}
+                            ${hasPending ? `<span style="color:var(--green);margin-left:4px;font-size:10px;">(${pendingStr})</span>` : ''}
                         </div>
                         <div style="display:flex;align-items:center;gap:6px;">
-                            <span style="color:var(--text);">${sharesStr}</span>
-                            ${hasClaimable ? `<button onclick="claimProceeds('${order.hash}')" style="padding:2px 6px;font-size:10px;background:var(--green-dim);border:1px solid var(--green);border-radius:4px;color:var(--green);cursor:pointer;">Claim</button>` : ''}
-                            <button onclick="cancelOrder('${order.hash}')" style="padding:2px 6px;font-size:10px;background:var(--surface);border:1px solid var(--amber);border-radius:4px;color:var(--amber);cursor:pointer;">Cancel</button>
+                            <span style="color:var(--text);">${amountStr}</span>
+                            <button onclick="${withdrawFn}" style="padding:2px 6px;font-size:10px;background:var(--surface);border:1px solid var(--amber);border-radius:4px;color:var(--amber);cursor:pointer;">Withdraw</button>
                         </div>
                     </div>
                 `;
@@ -2793,34 +3464,45 @@
             const ladder = document.getElementById('depthLadder');
             const yesBook = currentOrderbook.yes;
             const noBook = currentOrderbook.no;
+            if (!yesBook || !noBook) return;
+            const yesAmm = yesBook.ammPrice || 0.5;
+            const noAmm = noBook.ammPrice || 0.5;
 
             // Update header AMM prices
             document.getElementById('yesAmmRef').textContent = yesBook.ammPrice ? `AMM ${(yesBook.ammPrice * 100).toFixed(1)}%` : '--';
             document.getElementById('noAmmRef').textContent = noBook.ammPrice ? `AMM ${(noBook.ammPrice * 100).toFixed(1)}%` : '--';
 
-            // Collect all price levels and compute cumulative depth
+            // Collect resting orders only (bids below AMM, asks above AMM)
             const levels = new Map(); // price -> { yesBids, yesAsks, noBids, noAsks, orders[] }
 
-            // Helper to add orders with cumulative ETH calculation
-            const addOrders = (orders, side, isYes) => {
-                let cumulative = 0;
-                // Bids: highest price first (best bid). Asks: lowest price first (best ask)
-                const sorted = [...orders].sort((a, b) => side === 'bids' ? b.price - a.price : a.price - b.price);
-                sorted.forEach(order => {
+            // Helper to add resting orders with depth at each level
+            const addOrders = (orders, side, isYes, ammPrice) => {
+                orders.forEach(order => {
                     const price = Math.round(order.price * 1000) / 1000; // Round to 0.1% precision
+                    // Only show resting orders (bids below AMM, asks above AMM)
+                    const isResting = side === 'bids' ? price < ammPrice : price > ammPrice;
+                    if (!isResting) return;
+
                     const eth = Number(order.shares) / 1e18 * order.price;
-                    cumulative += eth;
                     if (!levels.has(price)) levels.set(price, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, orders: [] });
                     const key = isYes ? (side === 'bids' ? 'yesBids' : 'yesAsks') : (side === 'bids' ? 'noBids' : 'noAsks');
-                    levels.get(price)[key] = cumulative;
+                    levels.get(price)[key] += eth; // Sum depth at each level
                     levels.get(price).orders.push({ ...order, side, isYes, eth });
                 });
             };
 
-            addOrders(yesBook.bids, 'bids', true);
-            addOrders(yesBook.asks, 'asks', true);
-            addOrders(noBook.bids, 'bids', false);
-            addOrders(noBook.asks, 'asks', false);
+            addOrders(yesBook.bids, 'bids', true, yesAmm);
+            addOrders(yesBook.asks, 'asks', true, yesAmm);
+            addOrders(noBook.bids, 'bids', false, noAmm);
+            addOrders(noBook.asks, 'asks', false, noAmm);
+
+            // Add AMM price rows as reference points
+            const yesAmmRounded = Math.round(yesAmm * 1000) / 1000;
+            const noAmmRounded = Math.round(noAmm * 1000) / 1000;
+            if (!levels.has(yesAmmRounded)) levels.set(yesAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, orders: [], isYesAmm: true });
+            else levels.get(yesAmmRounded).isYesAmm = true;
+            if (!levels.has(noAmmRounded)) levels.set(noAmmRounded, { yesBids: 0, yesAsks: 0, noBids: 0, noAsks: 0, orders: [], isNoAmm: true });
+            else levels.get(noAmmRounded).isNoAmm = true;
 
             // Sort levels by price descending (high odds to low)
             const sortedLevels = [...levels.entries()].sort((a, b) => b[0] - a[0]);
@@ -2850,57 +3532,40 @@
                 maxDepth = Math.max(maxDepth, data.yesBids, data.yesAsks, data.noBids, data.noAsks);
             });
 
-            // Render ladder rows
+            // Render ladder rows - simplified for pooled orderbook (aggregate depth only)
             ladder.innerHTML = sortedLevels.map(([price, data]) => {
                 const pct = (price * 100).toFixed(1);
-                const yesDepth = Math.max(data.yesBids, data.yesAsks);
-                const noDepth = Math.max(data.noBids, data.noAsks);
+                // Asks (above AMM) or Bids (below AMM) - only one should be non-zero per side
+                const yesDepth = data.yesAsks > 0 ? data.yesAsks : data.yesBids;
+                const noDepth = data.noAsks > 0 ? data.noAsks : data.noBids;
                 const yesBarWidth = (yesDepth / maxDepth * 100).toFixed(1);
                 const noBarWidth = (noDepth / maxDepth * 100).toFixed(1);
-                const yesIsAsk = data.yesAsks > data.yesBids;
-                const noIsAsk = data.noAsks > data.noBids;
+                const yesIsAsk = data.yesAsks > 0;
+                const noIsAsk = data.noAsks > 0;
 
-                // Check if this is near AMM price (highlight row)
-                const isYesAmm = yesBook.ammPrice && Math.abs(price - yesBook.ammPrice) < 0.005;
-                const isNoAmm = noBook.ammPrice && Math.abs(price - noBook.ammPrice) < 0.005;
+                // Check if this is AMM price row
+                const isYesAmm = data.isYesAmm;
+                const isNoAmm = data.isNoAmm;
                 const isAmmRow = isYesAmm || isNoAmm;
 
-                // Get clickable order info (prefer the order type that has depth)
-                const yesOrder = data.orders.find(o => o.isYes && ((yesIsAsk && o.side === 'asks') || (!yesIsAsk && o.side === 'bids')));
-                const noOrder = data.orders.find(o => !o.isYes && ((noIsAsk && o.side === 'asks') || (!noIsAsk && o.side === 'bids')));
-
-                // For own orders, show cancel button; for others, show fill action
-                const yesIsOwn = yesOrder?.isOwn;
-                const noIsOwn = noOrder?.isOwn;
-                const yesClick = yesOrder ? (yesIsOwn
-                    ? `onclick="cancelOrder('${yesOrder.hash}')"`
-                    : `onclick="fillOrderFromBook('${yesOrder.hash}', ${yesOrder.price}, '${yesOrder.shares.toString()}', ${yesOrder.side === 'bids'}, true)"`) : '';
-                const noClick = noOrder ? (noIsOwn
-                    ? `onclick="cancelOrder('${noOrder.hash}')"`
-                    : `onclick="fillOrderFromBook('${noOrder.hash}', ${noOrder.price}, '${noOrder.shares.toString()}', ${noOrder.side === 'bids'}, false)"`) : '';
-
-                // Format depth display
-                const yesDepthStr = yesDepth > 0 ? (yesDepth >= 1 ? yesDepth.toFixed(2) : yesDepth.toFixed(3)) : '';
-                const noDepthStr = noDepth > 0 ? (noDepth >= 1 ? noDepth.toFixed(2) : noDepth.toFixed(3)) : '';
+                // Format depth display (ETH value)
+                const yesDepthStr = yesDepth > 0 ? (yesDepth >= 1 ? yesDepth.toFixed(2) : yesDepth.toFixed(3)) + 'Ξ' : '';
+                const noDepthStr = noDepth > 0 ? (noDepth >= 1 ? noDepth.toFixed(2) : noDepth.toFixed(3)) + 'Ξ' : '';
 
                 return `
                     <div style="display:grid;grid-template-columns:1fr 56px 1fr;gap:0;align-items:center;height:26px;border-bottom:1px solid var(--border);${isAmmRow ? 'background:var(--surface-2);' : ''}">
                         <!-- YES side (bars grow right-to-left) -->
-                        <div ${yesClick} style="position:relative;height:100%;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;${yesOrder ? 'cursor:pointer;' : ''}overflow:hidden;"
-                             ${yesOrder ? `onmouseover="this.style.background='var(--${yesIsOwn ? 'amber' : (yesIsAsk ? 'red' : 'green')}-dim)'" onmouseout="this.style.background='transparent'"` : ''}>
-                            ${yesDepth > 0 ? `<div style="position:absolute;right:0;top:0;bottom:0;width:${yesBarWidth}%;background:${yesIsOwn ? 'var(--amber)' : (yesIsAsk ? 'var(--red)' : 'var(--green)')};opacity:${yesIsOwn ? '0.4' : '0.3'};"></div>` : ''}
-                            ${yesIsOwn ? '<span style="font-size:8px;color:var(--amber);margin-right:4px;z-index:1;font-weight:600;">YOU</span>' : ''}
+                        <div style="position:relative;height:100%;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;overflow:hidden;">
+                            ${yesDepth > 0 ? `<div style="position:absolute;right:0;top:0;bottom:0;width:${yesBarWidth}%;background:${yesIsAsk ? 'var(--red)' : 'var(--green)'};opacity:0.3;"></div>` : ''}
                             ${isYesAmm ? '<span style="font-size:8px;color:var(--blue);margin-right:6px;z-index:1;font-weight:600;">AMM</span>' : ''}
-                            <span style="font-size:10px;color:${yesIsOwn ? 'var(--amber)' : (yesIsAsk ? 'var(--red)' : 'var(--green)')};z-index:1;font-weight:600;">${yesDepthStr}</span>
+                            <span style="font-size:10px;color:${yesIsAsk ? 'var(--red)' : 'var(--green)'};z-index:1;font-weight:600;">${yesDepthStr}</span>
                         </div>
                         <!-- Center odds -->
                         <div style="text-align:center;font-size:11px;font-weight:700;color:var(--text);background:${isAmmRow ? 'var(--surface-2)' : 'var(--surface)'};height:100%;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);">${pct}%</div>
                         <!-- NO side (bars grow left-to-right) -->
-                        <div ${noClick} style="position:relative;height:100%;display:flex;align-items:center;padding-left:8px;${noOrder ? 'cursor:pointer;' : ''}overflow:hidden;"
-                             ${noOrder ? `onmouseover="this.style.background='var(--${noIsOwn ? 'amber' : (noIsAsk ? 'red' : 'green')}-dim)'" onmouseout="this.style.background='transparent'"` : ''}>
-                            ${noDepth > 0 ? `<div style="position:absolute;left:0;top:0;bottom:0;width:${noBarWidth}%;background:${noIsOwn ? 'var(--amber)' : (noIsAsk ? 'var(--red)' : 'var(--green)')};opacity:${noIsOwn ? '0.4' : '0.3'};"></div>` : ''}
-                            <span style="font-size:10px;color:${noIsOwn ? 'var(--amber)' : (noIsAsk ? 'var(--red)' : 'var(--green)')};z-index:1;font-weight:600;">${noDepthStr}</span>
-                            ${noIsOwn ? '<span style="font-size:8px;color:var(--amber);margin-left:4px;z-index:1;font-weight:600;">YOU</span>' : ''}
+                        <div style="position:relative;height:100%;display:flex;align-items:center;padding-left:8px;overflow:hidden;">
+                            ${noDepth > 0 ? `<div style="position:absolute;left:0;top:0;bottom:0;width:${noBarWidth}%;background:${noIsAsk ? 'var(--red)' : 'var(--green)'};opacity:0.3;"></div>` : ''}
+                            <span style="font-size:10px;color:${noIsAsk ? 'var(--red)' : 'var(--green)'};z-index:1;font-weight:600;">${noDepthStr}</span>
                             ${isNoAmm ? '<span style="font-size:8px;color:var(--blue);margin-left:6px;z-index:1;font-weight:600;">AMM</span>' : ''}
                         </div>
                     </div>
@@ -2912,109 +3577,26 @@
             document.getElementById('orderbookModal').classList.remove('active');
         }
 
-        async function fillOrderFromBook(orderHash, price, sharesStr, isBid, isYes) {
-            if (!signer) {
+        // Withdraw from a sell pool (ask order) - returns shares
+        async function withdrawFromAskPool(isYes, priceBps) {
+            if (!signer || !currentTrade.marketId) {
                 showWalletModal();
                 return;
             }
 
-            // For bids (buy orders): user is selling to fill them
-            // For asks (sell orders): user is buying to fill them
-            const isBuying = !isBid;
-            const shares = BigInt(sharesStr); // Parse string back to BigInt for precision
-            const shareAmount = Number(shares) / 1e18;
-            const ethAmount = shareAmount * price;
             const side = isYes ? 'YES' : 'NO';
-
-            // Validate user can fill (fetch fresh balances)
-            const rpc = await getReadProvider();
-            if (isBuying) {
-                // Buying: need ETH
-                const ethBal = await rpc.getBalance(connectedAddress);
-                if (Number(ethBal) / 1e18 < ethAmount) {
-                    showToast('Insufficient ETH', `Need ${ethAmount.toFixed(4)} ETH to fill this order`, 'error');
-                    return;
-                }
-            } else {
-                // Selling: need shares - fetch fresh balance
-                const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, rpc);
-                const shareId = isYes ? currentTrade.yesId : currentTrade.noId;
-                const userShares = await pamm.balanceOf(connectedAddress, shareId);
-                if (Number(userShares) / 1e18 < shareAmount) {
-                    showToast('Insufficient Shares', `Need ${shareAmount.toFixed(4)} ${side} shares to fill this order`, 'error');
-                    return;
-                }
-            }
-
-            closeOrderbookModal();
-
-            // Execute fill directly via fillOrdersThenSwap with the specific order
-            try {
-                if (!isBuying) {
-                    // Need PMRouter approval for selling
-                    const approved = await checkAndRequestApprovals('sell');
-                    if (!approved) return;
-                }
-
-                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
-                const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
-                const amtWei = isBuying
-                    ? ethers.parseEther(ethAmount.toFixed(18))
-                    : ethers.parseEther(shareAmount.toFixed(18));
-
-                // Calculate minOutput with slippage protection
-                const expectedOutput = isBuying
-                    ? ethers.parseEther(shareAmount.toFixed(18))
-                    : ethers.parseEther(ethAmount.toFixed(18));
-                const minOutput = expectedOutput * BigInt(100 - slippageTolerance) / 100n;
-
-                const txPromise = pmRouter.fillOrdersThenSwap(
-                    currentTrade.marketId,
-                    isYes,
-                    isBuying,
-                    amtWei,
-                    minOutput,
-                    [orderHash],
-                    FEE_TIER,
-                    connectedAddress,
-                    deadline,
-                    isBuying ? { value: amtWei } : {}
-                );
-
-                await monitorTransaction(txPromise, {
-                    pending: { title: `Filling ${side} Order`, body: `${isBuying ? 'Buying' : 'Selling'} at ${(price * 100).toFixed(1)}%...` },
-                    submitted: { title: `Filling ${side} Order`, body: 'Waiting for confirmation...' },
-                    success: { title: 'Order Filled!', body: `${isBuying ? 'Bought' : 'Sold'} ${shareAmount.toFixed(4)} ${side} shares` },
-                    error: { title: 'Fill Failed', body: 'Order may have been filled or expired' },
-                    onSuccess: async () => {
-                        await Promise.all([loadUserPosition(), loadOrderbook(), loadData()]);
-                        loadBalance();
-                    }
-                });
-            } catch (e) {
-                if (!isUserRejection(e)) {
-                    console.error('Fill order error:', e);
-                    showToast('Fill Failed', 'Order may have been filled or expired', 'error');
-                }
-            }
-        }
-
-        async function cancelOrder(orderHash) {
-            if (!signer) {
-                showWalletModal();
-                return;
-            }
+            const priceDisplay = (priceBps / 100).toFixed(0) + '%';
 
             try {
-                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+                const masterRouter = new ethers.Contract(MASTERROUTER_ADDRESS, MASTERROUTER_ABI, signer);
 
                 await monitorTransaction(
-                    pmRouter.cancelOrder(orderHash),
+                    masterRouter.withdrawFromPool(currentTrade.marketId, isYes, priceBps),
                     {
-                        pending: { title: 'Cancelling Order', body: 'Confirm in your wallet...' },
-                        submitted: { title: 'Cancelling Order', body: 'Waiting for confirmation...' },
-                        success: { title: 'Order Cancelled', body: 'Your order has been cancelled and funds returned' },
-                        error: { title: 'Cancel Failed', body: '' },
+                        pending: { title: `Withdrawing ${side} Order`, body: `Cancelling ask at ${priceDisplay}...` },
+                        submitted: { title: `Withdrawing ${side} Order`, body: 'Waiting for confirmation...' },
+                        success: { title: 'Order Withdrawn', body: `Your ${side} shares have been returned` },
+                        error: { title: 'Withdraw Failed', body: '' },
                         onSuccess: async () => {
                             await Promise.all([loadUserPosition(), loadOrderbook()]);
                             loadBalance();
@@ -3023,28 +3605,32 @@
                 );
             } catch (e) {
                 if (!isUserRejection(e)) {
-                    console.error('Cancel order error:', e);
-                    showToast('Cancel Failed', 'Could not cancel order', 'error');
+                    console.error('Withdraw from pool error:', e);
+                    showToast('Withdraw Failed', 'Could not withdraw from pool', 'error');
                 }
             }
         }
 
-        async function claimProceeds(orderHash) {
-            if (!signer) {
+        // Withdraw from a buy pool (bid order) - returns collateral
+        async function withdrawFromBidPool(isYes, priceBps) {
+            if (!signer || !currentTrade.marketId) {
                 showWalletModal();
                 return;
             }
 
+            const side = isYes ? 'YES' : 'NO';
+            const priceDisplay = (priceBps / 100).toFixed(0) + '%';
+
             try {
-                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
+                const masterRouter = new ethers.Contract(MASTERROUTER_ADDRESS, MASTERROUTER_ABI, signer);
 
                 await monitorTransaction(
-                    pmRouter.claimProceeds(orderHash),
+                    masterRouter.withdrawFromBidPool(currentTrade.marketId, isYes, priceBps),
                     {
-                        pending: { title: 'Claiming Proceeds', body: 'Confirm in your wallet...' },
-                        submitted: { title: 'Claiming Proceeds', body: 'Waiting for confirmation...' },
-                        success: { title: 'Proceeds Claimed!', body: 'Your filled order proceeds have been transferred' },
-                        error: { title: 'Claim Failed', body: '' },
+                        pending: { title: `Withdrawing ${side} Bid`, body: `Cancelling bid at ${priceDisplay}...` },
+                        submitted: { title: `Withdrawing ${side} Bid`, body: 'Waiting for confirmation...' },
+                        success: { title: 'Bid Withdrawn', body: 'Your ETH has been returned' },
+                        error: { title: 'Withdraw Failed', body: '' },
                         onSuccess: async () => {
                             await Promise.all([loadUserPosition(), loadOrderbook()]);
                             loadBalance();
@@ -3053,25 +3639,32 @@
                 );
             } catch (e) {
                 if (!isUserRejection(e)) {
-                    console.error('Claim proceeds error:', e);
-                    showToast('Claim Failed', 'Could not claim proceeds', 'error');
+                    console.error('Withdraw from bid pool error:', e);
+                    showToast('Withdraw Failed', 'Could not withdraw from bid pool', 'error');
                 }
             }
         }
 
         // ======================== PREVIEW FUNCTIONS ========================
+        let tradeInputTimer = null;
         function handleTradeInput() {
-            if (currentTradeMode === 'trade') updateTradePreview();
+            tradeMaxRaw = null; // Clear max when user manually edits input
+            // Debounce expensive preview calculations
+            clearTimeout(tradeInputTimer);
+            tradeInputTimer = setTimeout(() => {
+                if (currentTradeMode === 'trade') updateTradePreview();
+            }, 80);
         }
 
         function updateTradePreview() {
             const amount = parseFloat(document.getElementById('tradeAmount').value) || 0;
             const routeEl = document.getElementById('previewRoute');
 
-            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n) {
+            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n || currentTrade.rNo === 0n) {
                 document.getElementById('previewShares').textContent = '--';
                 document.getElementById('previewPrice').textContent = '--';
                 document.getElementById('previewPayout').textContent = '--';
+                document.getElementById('previewPayout').style.color = 'var(--text-muted)';
                 routeEl.textContent = '--';
                 return;
             }
@@ -3084,64 +3677,68 @@
                 ? (currentTrade.isYes ? quoteBuyYes(amtWei, currentTrade.rYes, currentTrade.rNo) : quoteBuyNo(amtWei, currentTrade.rYes, currentTrade.rNo))
                 : (currentTrade.isYes ? quoteSellYes(amtWei, currentTrade.rYes, currentTrade.rNo) : quoteSellNo(amtWei, currentTrade.rYes, currentTrade.rNo));
             const ammOutputNum = Number(ammOutput) / 1e18;
-            // Guard against division by zero
             const ammExecutionPrice = (ammOutputNum > 0 && amount > 0)
                 ? (isBuy ? amount / ammOutputNum : ammOutputNum / amount)
                 : null;
 
             // Check orderbook for better prices (use current side's book)
             const book = currentTrade.isYes ? currentOrderbook.yes : currentOrderbook.no;
+            if (!book) {
+                document.getElementById('previewShares').textContent = ammOutputNum.toFixed(4);
+                document.getElementById('previewPrice').textContent = ammExecutionPrice ? ammExecutionPrice.toFixed(4) : '--';
+                document.getElementById('previewPayout').textContent = isBuy ? ammOutputNum.toFixed(4) + ' ETH' : '--';
+                routeEl.textContent = 'AMM';
+                return;
+            }
+
             const { bids, asks } = book;
-            const relevantOrders = isBuy ? asks : bids;
+            const relevantLevels = isBuy ? asks : bids;
 
-            // Simulate routing through limit orders then AMM
-            let betterOrders = [];
-            let sharesFromOrders = 0;  // Shares received (buy) or ETH received (sell)
-            let ethFromOrders = 0;     // ETH received from selling to bids
+            // Simulate routing through orderbook depth levels then AMM
+            let sharesFromPool = 0;
+            let ethFromPool = 0;
             let remainingAmount = amount;
+            let poolLevelsUsed = 0;
 
-            if (relevantOrders && relevantOrders.length > 0 && ammExecutionPrice !== null) {
-                for (const order of relevantOrders) {
-                    // Skip own orders - can't fill your own orders
-                    if (order.isOwn) continue;
-                    // Compare against execution price (with impact), not spot
-                    const isBetter = isBuy ? order.price <= ammExecutionPrice : order.price >= ammExecutionPrice;
-                    if (!isBetter || remainingAmount <= 0) continue;
+            if (relevantLevels && relevantLevels.length > 0 && ammExecutionPrice !== null) {
+                for (const level of relevantLevels) {
+                    if (remainingAmount <= 0) break;
 
-                    const orderShares = Number(order.shares) / 1e18;
-                    const orderPrice = order.price;
+                    // Check if level price is better than AMM
+                    const isBetter = isBuy ? level.price <= ammExecutionPrice : level.price >= ammExecutionPrice;
+                    if (!isBetter) continue;
+
+                    const levelDepth = Number(level.depth) / 1e18;
+                    poolLevelsUsed++;
 
                     if (isBuy) {
-                        // Buy: we spend ETH to get shares from asks
-                        const orderCost = orderShares * orderPrice;
-                        if (remainingAmount >= orderCost) {
-                            sharesFromOrders += orderShares;
-                            remainingAmount -= orderCost;
+                        // Buy: spend ETH to get shares from asks
+                        const levelCost = levelDepth * level.price;
+                        if (remainingAmount >= levelCost) {
+                            sharesFromPool += levelDepth;
+                            remainingAmount -= levelCost;
                         } else {
-                            // Partial fill
-                            const partialShares = remainingAmount / orderPrice;
-                            sharesFromOrders += partialShares;
+                            const partialShares = remainingAmount / level.price;
+                            sharesFromPool += partialShares;
                             remainingAmount = 0;
                         }
                     } else {
-                        // Sell: we sell shares to bids to get ETH
-                        if (remainingAmount >= orderShares) {
-                            ethFromOrders += orderShares * orderPrice;
-                            remainingAmount -= orderShares;
+                        // Sell: sell shares to bids for ETH
+                        if (remainingAmount >= levelDepth) {
+                            ethFromPool += levelDepth * level.price;
+                            remainingAmount -= levelDepth;
                         } else {
-                            ethFromOrders += remainingAmount * orderPrice;
+                            ethFromPool += remainingAmount * level.price;
                             remainingAmount = 0;
                         }
                     }
-                    betterOrders.push(order);
                 }
             }
 
-            // Calculate final output including both orderbook and AMM portions
+            // Calculate final output including both pool and AMM portions
             let totalShares, avgPrice, profit;
 
             if (isBuy) {
-                // Remaining ETH goes to AMM
                 let ammShares = 0n;
                 if (remainingAmount > 0) {
                     const remainingWei = ethers.parseEther(remainingAmount.toFixed(18));
@@ -3149,11 +3746,10 @@
                         ? quoteBuyYes(remainingWei, currentTrade.rYes, currentTrade.rNo)
                         : quoteBuyNo(remainingWei, currentTrade.rYes, currentTrade.rNo);
                 }
-                totalShares = sharesFromOrders + Number(ammShares) / 1e18;
+                totalShares = sharesFromPool + Number(ammShares) / 1e18;
                 avgPrice = totalShares > 0 ? amount / totalShares : 0;
                 profit = totalShares - amount;
             } else {
-                // Remaining shares go to AMM
                 let ammEth = 0n;
                 if (remainingAmount > 0) {
                     const remainingWei = ethers.parseEther(remainingAmount.toFixed(18));
@@ -3161,33 +3757,23 @@
                         ? quoteSellYes(remainingWei, currentTrade.rYes, currentTrade.rNo)
                         : quoteSellNo(remainingWei, currentTrade.rYes, currentTrade.rNo);
                 }
-                const totalEth = ethFromOrders + Number(ammEth) / 1e18;
-                totalShares = amount; // shares sold
+                const totalEth = ethFromPool + Number(ammEth) / 1e18;
+                totalShares = amount;
                 avgPrice = totalEth / amount;
                 profit = totalEth;
             }
 
-            // Update route indicator with savings info
-            if (betterOrders.length > 0) {
-                // Calculate AMM-only output for comparison
-                let ammOnlyOutput;
-                if (isBuy) {
-                    ammOnlyOutput = currentTrade.isYes
-                        ? quoteBuyYes(amtWei, currentTrade.rYes, currentTrade.rNo)
-                        : quoteBuyNo(amtWei, currentTrade.rYes, currentTrade.rNo);
-                } else {
-                    ammOnlyOutput = currentTrade.isYes
-                        ? quoteSellYes(amtWei, currentTrade.rYes, currentTrade.rNo)
-                        : quoteSellNo(amtWei, currentTrade.rYes, currentTrade.rNo);
-                }
+            // Update route indicator
+            if (poolLevelsUsed > 0) {
+                const ammOnlyOutput = isBuy
+                    ? (currentTrade.isYes ? quoteBuyYes(amtWei, currentTrade.rYes, currentTrade.rNo) : quoteBuyNo(amtWei, currentTrade.rYes, currentTrade.rNo))
+                    : (currentTrade.isYes ? quoteSellYes(amtWei, currentTrade.rYes, currentTrade.rNo) : quoteSellNo(amtWei, currentTrade.rYes, currentTrade.rNo));
                 const ammOnlyNum = Number(ammOnlyOutput) / 1e18;
                 const savings = ammOnlyNum > 0
                     ? (isBuy ? ((totalShares / ammOnlyNum - 1) * 100).toFixed(1) : ((profit / ammOnlyNum - 1) * 100).toFixed(1))
                     : '0.0';
                 const savingsStr = parseFloat(savings) > 0 ? ` (+${savings}%)` : '';
-                const routeText = remainingAmount > 0
-                    ? `${betterOrders.length} order${betterOrders.length > 1 ? 's' : ''} + AMM`
-                    : `${betterOrders.length} order${betterOrders.length > 1 ? 's' : ''}`;
+                const routeText = remainingAmount > 0 ? `Pool + AMM` : `Pool`;
                 routeEl.innerHTML = `<span style="color:var(--green);">${routeText}</span><span style="color:var(--green);font-size:10px;">${savingsStr}</span>`;
             } else {
                 routeEl.textContent = 'AMM';
@@ -3198,17 +3784,21 @@
                 document.getElementById('previewShares').textContent = totalShares.toFixed(4);
                 document.getElementById('previewPrice').textContent = avgPrice.toFixed(4) + ' ETH';
                 document.getElementById('previewPayout').textContent = (profit > 0 ? '+' : '') + profit.toFixed(4) + ' ETH';
+                document.getElementById('previewPayout').style.color = 'var(--green)';
             } else {
-                document.getElementById('previewShares').textContent = amount.toFixed(4);
+                // For sells: profit = totalEth received
+                document.getElementById('previewShares').textContent = profit.toFixed(4) + ' ETH';
                 document.getElementById('previewPrice').textContent = avgPrice.toFixed(4) + ' ETH';
-                document.getElementById('previewPayout').textContent = profit.toFixed(4) + ' ETH';
+                const minReceived = profit * (100 - slippageTolerance) / 100;
+                document.getElementById('previewPayout').textContent = minReceived.toFixed(4) + ' ETH';
+                document.getElementById('previewPayout').style.color = 'var(--text-muted)';
             }
         }
 
         function updateSwapPreview() {
             const amount = parseFloat(document.getElementById('swapAmount').value) || 0;
 
-            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n) {
+            if (!currentTrade.marketId || amount <= 0 || currentTrade.rYes === 0n || currentTrade.rNo === 0n) {
                 document.getElementById('swapOutput').textContent = '--';
                 document.getElementById('swapFee').textContent = '--';
                 document.getElementById('swapMinOutput').textContent = '--';
@@ -3222,10 +3812,11 @@
             const outputNum = Number(output) / 1e18;
             const fee = amount * 0.003;
             const minOut = outputNum * (1 - swapSlippage / 100);
+            const outputSide = currentSwapDirection ? 'NO' : 'YES';
 
-            document.getElementById('swapOutput').textContent = outputNum.toFixed(4) + (currentSwapDirection ? ' NO' : ' YES');
-            document.getElementById('swapFee').textContent = fee.toFixed(6) + ' shares';
-            document.getElementById('swapMinOutput').textContent = minOut.toFixed(4);
+            document.getElementById('swapOutput').textContent = outputNum.toFixed(4) + ' ' + outputSide;
+            document.getElementById('swapFee').textContent = fee.toFixed(6) + ' (included)';
+            document.getElementById('swapMinOutput').textContent = minOut.toFixed(4) + ' ' + outputSide;
         }
 
         function updateLpPreview() {
@@ -3236,13 +3827,11 @@
             const rNoNum = Number(rNo) / 1e18;
 
             // Get total LP supply and user LP balance
-            const totalLpSupply = currentUserPosition.lpTotalSupply
+            const hasActualSupply = currentUserPosition.lpTotalSupply !== null && currentUserPosition.lpTotalSupply > 0n;
+            const totalLpSupply = hasActualSupply
                 ? Number(currentUserPosition.lpTotalSupply) / 1e18
                 : Math.sqrt(rYesNum * rNoNum);
             const userLp = Number(currentUserPosition.lpBalance || 0n) / 1e18;
-
-            // Pool TVL (approximate as average of reserves, which equals collateral locked)
-            const poolTvl = (rYesNum + rNoNum) / 2;
 
             if (!currentTrade.marketId || amount <= 0) {
                 document.getElementById('lpPreview').textContent = '--';
@@ -3261,9 +3850,10 @@
             }
 
             if (currentLpMode === 'add') {
-                // Adding liquidity: estimate LP tokens proportional to contribution
-                // estLp = (amount / poolTvl) * totalLpSupply
-                const estLp = poolTvl > 0 ? (amount / poolTvl) * totalLpSupply : amount;
+                // Adding liquidity: estimate LP tokens
+                // splitAndAddLiquidity adds equal YES+NO, so LP = min(amt/rYes, amt/rNo) * supply
+                const maxReserve = Math.max(rYesNum, rNoNum);
+                const estLp = maxReserve > 0 ? (amount / maxReserve) * totalLpSupply : amount;
                 const newTotalLp = totalLpSupply + estLp;
                 const newUserLp = userLp + estLp;
                 const currentShare = totalLpSupply > 0 ? (userLp / totalLpSupply) * 100 : 0;
@@ -3337,9 +3927,13 @@
                 const shares = amount / price;
                 document.getElementById('limitResult').textContent = shares.toFixed(4) + ' shares';
 
-                // Compare to pool: how many shares would pool give for same ETH?
-                if (poolPrice && poolPrice > 0) {
-                    const poolShares = amount / poolPrice;
+                // Compare to pool: how many shares would pool ACTUALLY give (with slippage)?
+                if (currentTrade.rYes > 0n && currentTrade.rNo > 0n) {
+                    const amtWei = ethers.parseEther(amount.toString());
+                    const poolSharesWei = currentTrade.isYes
+                        ? quoteBuyYes(amtWei, currentTrade.rYes, currentTrade.rNo)
+                        : quoteBuyNo(amtWei, currentTrade.rYes, currentTrade.rNo);
+                    const poolShares = Number(poolSharesWei) / 1e18;
                     const extraShares = shares - poolShares;
                     if (extraShares > 0) {
                         document.getElementById('limitSavings').textContent = '+' + extraShares.toFixed(4) + ' shares';
@@ -3357,9 +3951,13 @@
                 const ethReceived = amount * price;
                 document.getElementById('limitResult').textContent = ethReceived.toFixed(4) + ' ETH';
 
-                // Compare to pool: how much ETH would pool give for same shares?
-                if (poolPrice && poolPrice > 0) {
-                    const poolEth = amount * poolPrice;
+                // Compare to pool: how much ETH would pool ACTUALLY give (with slippage)?
+                if (currentTrade.rYes > 0n && currentTrade.rNo > 0n) {
+                    const amtWei = ethers.parseEther(amount.toString());
+                    const poolEthWei = currentTrade.isYes
+                        ? quoteSellYes(amtWei, currentTrade.rYes, currentTrade.rNo)
+                        : quoteSellNo(amtWei, currentTrade.rYes, currentTrade.rNo);
+                    const poolEth = Number(poolEthWei) / 1e18;
                     const extraEth = ethReceived - poolEth;
                     if (extraEth > 0) {
                         document.getElementById('limitSavings').textContent = '+' + extraEth.toFixed(4) + ' ETH';
@@ -3434,6 +4032,7 @@
         }
 
         // ======================== EXECUTE FUNCTIONS ========================
+        // Uses MasterRouter.buyWithSweep/sellWithSweep for optimal routing
         async function executeTrade() {
             if (!signer || !currentTrade.marketId) return;
 
@@ -3446,170 +4045,103 @@
             const isBuy = currentTradeDirection === 'buy';
             const side = currentTrade.isYes ? 'YES' : 'NO';
 
+            // For sells, validate balance first
+            if (!isBuy) {
+                const balance = currentTrade.isYes
+                    ? currentUserPosition.yesBalance
+                    : currentUserPosition.noBalance;
+                const amtToSell = tradeMaxRaw || ethers.parseEther(amount.toString());
+                if (!balance || amtToSell > balance) {
+                    showToast('Insufficient Balance', `You don't have enough ${side} shares`, 'error');
+                    return;
+                }
+            }
+
+            // Refresh pool state before trade to ensure fresh prices
+            await refreshPoolState();
+
             try {
                 if (!isBuy) {
                     const approved = await checkAndRequestApprovals('sell');
                     if (!approved) return;
                 }
 
-                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
-                const amtWei = ethers.parseEther(amount.toString());
+                const masterRouter = new ethers.Contract(MASTERROUTER_ADDRESS, MASTERROUTER_ABI, signer);
+                const quoter = new ethers.Contract(PMHOOKQUOTER_ADDRESS, PMHOOKQUOTER_ABI, await getReadProvider());
+
+                // Use exact raw value if max was clicked, otherwise parse input
+                const amtWei = (!isBuy && tradeMaxRaw) ? tradeMaxRaw : ethers.parseEther(amount.toString());
                 const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
-                // Calculate expected AMM output (with price impact) for routing decisions
-                let expectedAmmOutput;
-                if (isBuy) {
-                    expectedAmmOutput = currentTrade.isYes
-                        ? quoteBuyYes(amtWei, currentTrade.rYes, currentTrade.rNo)
-                        : quoteBuyNo(amtWei, currentTrade.rYes, currentTrade.rNo);
-                } else {
-                    expectedAmmOutput = currentTrade.isYes
-                        ? quoteSellYes(amtWei, currentTrade.rYes, currentTrade.rNo)
-                        : quoteSellNo(amtWei, currentTrade.rYes, currentTrade.rNo);
-                }
-
-                // Calculate actual AMM execution price (includes price impact, not just spot)
-                // For buys: price = ETH spent / shares received
-                // For sells: price = ETH received / shares sold
-                const ammOutputNum = Number(expectedAmmOutput) / 1e18;
-                const ammExecutionPrice = (ammOutputNum > 0 && amount > 0)
-                    ? (isBuy ? amount / ammOutputNum : ammOutputNum / amount)
-                    : null;
-
-                // Smart order routing: compare orders against AMM execution price (with impact)
-                const book = currentTrade.isYes ? currentOrderbook.yes : currentOrderbook.no;
-                const { bids, asks } = book;
-                const relevantOrders = isBuy ? asks : bids; // Buy fills asks, sell fills bids
-                const betterOrders = [];
-
-                // Track expected output from orders and remaining amount for AMM
-                // Use BigInt for all calculations to match contract precision
-                let expectedFromOrders = 0n;
-                let remainingWei = amtWei; // Track in wei for precision
-
-                if (relevantOrders.length > 0 && ammExecutionPrice !== null) {
-                    for (const order of relevantOrders) {
-                        // Skip own orders - can't fill your own orders
-                        if (order.isOwn) continue;
-                        // For buying: ask price <= AMM execution price is better (lower = cheaper)
-                        // For selling: bid price >= AMM execution price is better (higher = more ETH back)
-                        const isBetterThanAmm = isBuy
-                            ? order.price <= ammExecutionPrice
-                            : order.price >= ammExecutionPrice;
-                        if (isBetterThanAmm && remainingWei > 0n) {
-                            betterOrders.push(order.hash);
-
-                            if (isBuy) {
-                                // Buy: spend ETH to get shares from asks
-                                // orderCost in wei = order.collateral (that's the ETH needed to buy all shares)
-                                const orderCostWei = order.collateral;
-                                if (remainingWei >= orderCostWei) {
-                                    // Full fill
-                                    expectedFromOrders += order.shares;
-                                    remainingWei -= orderCostWei;
-                                } else {
-                                    // Partial fill: shares = remainingWei * order.shares / order.collateral
-                                    const partialShares = remainingWei * order.shares / order.collateral;
-                                    expectedFromOrders += partialShares;
-                                    remainingWei = 0n;
-                                }
-                            } else {
-                                // Sell: sell shares to bids to get ETH
-                                // remainingWei here is actually remaining shares in wei
-                                if (remainingWei >= order.shares) {
-                                    // Full fill: ETH out = order.collateral
-                                    expectedFromOrders += order.collateral;
-                                    remainingWei -= order.shares;
-                                } else {
-                                    // Partial fill: ETH = remainingWei * order.collateral / order.shares
-                                    const partialEth = remainingWei * order.collateral / order.shares;
-                                    expectedFromOrders += partialEth;
-                                    remainingWei = 0n;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Calculate expected output: orders + AMM for remaining amount
+                // Get quote from quoter for expected output
                 let expectedOutput;
-                if (betterOrders.length > 0 && remainingWei > 0n) {
-                    // Mixed route: orders + AMM
-                    let ammOutput;
-                    if (isBuy) {
-                        ammOutput = currentTrade.isYes
-                            ? quoteBuyYes(remainingWei, currentTrade.rYes, currentTrade.rNo)
-                            : quoteBuyNo(remainingWei, currentTrade.rYes, currentTrade.rNo);
-                    } else {
-                        ammOutput = currentTrade.isYes
-                            ? quoteSellYes(remainingWei, currentTrade.rYes, currentTrade.rNo)
-                            : quoteSellNo(remainingWei, currentTrade.rYes, currentTrade.rNo);
-                    }
-                    expectedOutput = expectedFromOrders + ammOutput;
-                } else if (betterOrders.length > 0) {
-                    // Orders only (consumed full amount)
-                    expectedOutput = expectedFromOrders;
-                } else {
-                    // AMM only
-                    expectedOutput = expectedAmmOutput;
-                }
-
-                // Apply slippage tolerance
-                const minOutput = expectedOutput * BigInt(100 - slippageTolerance) / 100n;
-
                 let txPromise;
-                const useFillOrders = betterOrders.length > 0;
 
-                if (useFillOrders) {
-                    // Route through fillOrdersThenSwap to fill better limit orders first
-                    txPromise = pmRouter.fillOrdersThenSwap(
+                if (isBuy) {
+                    // maxPriceBps: apply slippage as max price willing to pay (spot + slippage)
+                    const spotPriceBps = currentTrade.rYes > 0n && currentTrade.rNo > 0n
+                        ? (currentTrade.isYes
+                            ? Number(currentTrade.rNo * 10000n / (currentTrade.rYes + currentTrade.rNo))
+                            : Number(currentTrade.rYes * 10000n / (currentTrade.rYes + currentTrade.rNo)))
+                        : 5000;
+                    const maxPriceBps = Math.min(9900, Math.floor(spotPriceBps * (1 + slippageTolerance / 100)));
+
+                    // Quote the buy
+                    const quote = await quoter.quoteBuyWithSweep(currentTrade.marketId, currentTrade.isYes, amtWei, maxPriceBps);
+                    expectedOutput = quote.totalSharesOut;
+                    const minOutput = expectedOutput * BigInt(100 - slippageTolerance) / 100n;
+
+                    txPromise = masterRouter.buyWithSweep(
                         currentTrade.marketId,
                         currentTrade.isYes,
-                        isBuy,
                         amtWei,
                         minOutput,
-                        betterOrders,
-                        FEE_TIER,
-                        connectedAddress,
-                        deadline,
-                        isBuy ? { value: amtWei } : {}
-                    );
-                } else if (isBuy) {
-                    txPromise = pmRouter.buy(
-                        currentTrade.marketId,
-                        currentTrade.isYes,
-                        amtWei,
-                        minOutput,
-                        FEE_TIER,
+                        maxPriceBps,
                         connectedAddress,
                         deadline,
                         { value: amtWei }
                     );
                 } else {
-                    txPromise = pmRouter.sell(
+                    // minPriceBps: apply slippage as min price willing to accept (spot - slippage)
+                    const spotPriceBps = currentTrade.rYes > 0n && currentTrade.rNo > 0n
+                        ? (currentTrade.isYes
+                            ? Number(currentTrade.rNo * 10000n / (currentTrade.rYes + currentTrade.rNo))
+                            : Number(currentTrade.rYes * 10000n / (currentTrade.rYes + currentTrade.rNo)))
+                        : 5000;
+                    const minPriceBps = Math.max(100, Math.floor(spotPriceBps * (1 - slippageTolerance / 100)));
+
+                    // Quote the sell
+                    const quote = await quoter.quoteSellWithSweep(currentTrade.marketId, currentTrade.isYes, amtWei, minPriceBps);
+                    expectedOutput = quote.totalCollateralOut;
+                    const minOutput = expectedOutput * BigInt(100 - slippageTolerance) / 100n;
+
+                    txPromise = masterRouter.sellWithSweep(
                         currentTrade.marketId,
                         currentTrade.isYes,
                         amtWei,
                         minOutput,
-                        FEE_TIER,
+                        minPriceBps,
                         connectedAddress,
                         deadline
                     );
                 }
 
-                const routeInfo = useFillOrders ? ` (via ${betterOrders.length} limit order${betterOrders.length > 1 ? 's' : ''})` : '';
+                const expectedOutputNum = Number(expectedOutput) / 1e18;
                 await monitorTransaction(txPromise, {
-                    pending: { title: `${isBuy ? 'Buying' : 'Selling'} ${side}`, body: `Confirm in your wallet...${routeInfo}` },
+                    pending: { title: `${isBuy ? 'Buying' : 'Selling'} ${side}`, body: 'Confirm in your wallet...' },
                     submitted: { title: `${isBuy ? 'Buying' : 'Selling'} ${side}`, body: 'Waiting for confirmation...' },
-                    success: { title: 'Trade Complete!', body: `${isBuy ? 'Bought' : 'Sold'} ${amount} ${side} shares${routeInfo}` },
+                    success: { title: 'Trade Complete!', body: isBuy ? `Bought ~${expectedOutputNum.toFixed(4)} ${side} shares for ${amount} ETH` : `Sold ${amount} ${side} shares for ~${expectedOutputNum.toFixed(4)} ETH` },
                     error: { title: 'Trade Failed', body: '' },
                     onSuccess: async () => {
-                        await Promise.all([loadUserPosition(), loadOrderbook(), loadData()]);
+                        tradeMaxRaw = null; // Clear max flag
+                        await Promise.all([refreshPoolState(), loadUserPosition(), loadOrderbook(), loadData()]);
                         loadBalance();
                     }
                 });
             } catch (e) {
                 if (!isUserRejection(e)) console.error('Trade error:', e);
+            } finally {
+                tradeMaxRaw = null; // Clear max flag regardless of outcome
             }
         }
 
@@ -3632,6 +4164,9 @@
 
             const fromLabel = currentSwapDirection ? 'YES' : 'NO';
             const toLabel = currentSwapDirection ? 'NO' : 'YES';
+
+            // Refresh pool state before swap to ensure fresh prices
+            await refreshPoolState();
 
             try {
                 // Need ZAMM approved as operator on PAMM
@@ -3673,7 +4208,7 @@
                         error: { title: 'Swap Failed', body: '' },
                         onSuccess: async () => {
                             swapMaxRaw = null; // Clear max flag
-                            await loadUserPosition();
+                            await Promise.all([refreshPoolState(), loadUserPosition(), loadData()]);
                             loadBalance();
                         }
                     }
@@ -3694,41 +4229,79 @@
                 return;
             }
 
+            // Use exact raw value if max was clicked, otherwise parse input
+            const amtWei = lpMaxRaw || ethers.parseEther(amount.toString());
+
+            // Validate balance for LP remove
+            if (currentLpMode === 'remove') {
+                const lpBal = currentUserPosition.lpBalance;
+                if (!lpBal || amtWei > lpBal) {
+                    showToast('Insufficient LP', 'You don\'t have enough LP tokens', 'error');
+                    return;
+                }
+            }
+
+            // Validate pool exists for adding liquidity
+            if (currentLpMode === 'add' && (!currentTrade.rYes || currentTrade.rYes === 0n)) {
+                showToast('Pool Not Seeded', 'This market has no liquidity pool yet', 'error');
+                return;
+            }
+
+            // Refresh pool state before LP action to ensure fresh reserves
+            await refreshPoolState();
+
             try {
                 const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
-                const amtWei = ethers.parseEther(amount.toString());
                 const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
                 // Calculate expected outputs for slippage protection
                 const rYesNum = Number(currentTrade.rYes) / 1e18;
                 const rNoNum = Number(currentTrade.rNo) / 1e18;
-                const totalLpSupply = currentUserPosition.lpTotalSupply
+                // Use actual LP supply if available, otherwise estimate from reserves (only accurate for initial add)
+                const hasActualSupply = currentUserPosition.lpTotalSupply !== null && currentUserPosition.lpTotalSupply > 0n;
+                const totalLpSupply = hasActualSupply
                     ? Number(currentUserPosition.lpTotalSupply) / 1e18
                     : Math.sqrt(rYesNum * rNoNum);
-                const poolTvl = (rYesNum + rNoNum) / 2;
 
                 if (currentLpMode === 'add') {
-                    // Expected LP tokens from adding liquidity
-                    const estLp = poolTvl > 0 ? (amount / poolTvl) * totalLpSupply : amount;
-                    const minLiquidity = ethers.parseEther((estLp * (100 - slippageTolerance) / 100).toFixed(18));
+                    // Use PMHookRouter.provideLiquidity for adding to vault + AMM
+                    const pmHookRouter = new ethers.Contract(PMHOOKROUTER_ADDRESS, PMHOOKROUTER_ABI, signer);
+
+                    // Split ETH between vault (for bootstrap) and AMM
+                    // Default: 50% to vault (YES + NO), 50% to AMM
+                    const vaultShare = amtWei / 4n; // 25% to YES vault, 25% to NO vault
+                    const ammShare = amtWei / 2n;   // 50% to AMM
+
+                    // Calculate minimum outputs with slippage
+                    const maxReserve = Math.max(rYesNum, rNoNum);
+                    const estLp = maxReserve > 0 && hasActualSupply
+                        ? (amount / 2 / maxReserve) * totalLpSupply
+                        : amount / 2;
+                    const minAmmLiquidity = hasActualSupply && maxReserve > 0
+                        ? ethers.parseEther((estLp * (100 - slippageTolerance) / 100).toFixed(18))
+                        : 0n;
 
                     await monitorTransaction(
-                        pamm.splitAndAddLiquidity(
+                        pmHookRouter.provideLiquidity(
                             currentTrade.marketId,
-                            amtWei,
-                            FEE_TIER,
-                            0n, 0n, minLiquidity,
+                            amtWei,         // Total collateral
+                            vaultShare,     // vaultYesShares
+                            vaultShare,     // vaultNoShares
+                            ammShare,       // ammLPShares
+                            0n,             // minAmount0
+                            0n,             // minAmount1
                             connectedAddress,
                             deadline,
                             { value: amtWei }
                         ),
                         {
-                            pending: { title: 'Adding Liquidity', body: 'Confirm in your wallet...' },
+                            pending: { title: 'Adding Liquidity', body: 'Providing to vault + AMM...' },
                             submitted: { title: 'Adding Liquidity', body: 'Waiting for confirmation...' },
-                            success: { title: 'Liquidity Added!', body: `Added ${amount} ETH to the pool` },
+                            success: { title: 'Liquidity Added!', body: `Added ${amount} ETH to vault + AMM` },
                             error: { title: 'Add Liquidity Failed', body: '' },
                             onSuccess: async () => {
-                                await loadUserPosition();
+                                lpMaxRaw = null; // Clear max flag
+                                await Promise.all([refreshPoolState(), loadUserPosition(), loadData()]);
                                 loadBalance();
                             }
                         }
@@ -3800,13 +4373,16 @@
                         success: { title: 'Success!', body: successBody },
                         error: { title: 'Withdraw Failed', body: '' },
                         onSuccess: async () => {
-                            await loadUserPosition();
+                            lpMaxRaw = null; // Clear max flag
+                            await Promise.all([refreshPoolState(), loadUserPosition(), loadData()]);
                             loadBalance();
                         }
                     });
                 }
             } catch (e) {
                 if (!isUserRejection(e)) console.error('LP error:', e);
+            } finally {
+                lpMaxRaw = null; // Clear max flag regardless of outcome
             }
         }
 
@@ -3853,6 +4429,7 @@
             }
         }
 
+        // Uses MasterRouter.mintAndPool for buy orders, depositSharesToPool for sell orders
         async function executeLimitOrder() {
             if (!signer || !currentTrade.marketId) return;
 
@@ -3868,23 +4445,21 @@
                 return;
             }
 
+            // Convert price to BPS for MasterRouter
+            const priceBps = Math.floor(price * 10000);
+
             // Calculate shares and collateral based on order type
-            // Use limitMaxRaw for exact BigInt precision when available
+            const WAD = 10n ** 18n;
             let sharesWei, collateralWei;
-            let shares, collateral;
 
             if (limitIsBuy) {
-                // BUY: user provides ETH (amount), wants shares
+                // BUY: user provides ETH (amount), mints shares and pools opposite side
                 collateralWei = limitMaxRaw || ethers.parseEther(amount.toString());
-                collateral = Number(ethers.formatEther(collateralWei));
-                shares = collateral / price;
-                sharesWei = ethers.parseEther(shares.toFixed(18));
+                sharesWei = collateralWei * 10000n / BigInt(priceBps);
             } else {
-                // SELL: user provides shares (amount), wants ETH
+                // SELL: user provides shares (amount), deposits to pool at price
                 sharesWei = limitMaxRaw || ethers.parseEther(amount.toString());
-                shares = Number(ethers.formatEther(sharesWei));
-                collateral = shares * price;
-                collateralWei = ethers.parseEther(collateral.toFixed(18));
+                collateralWei = sharesWei * BigInt(priceBps) / 10000n;
 
                 // Check balance
                 const userShares = currentTrade.isYes ? currentUserPosition.yesBalance : currentUserPosition.noBalance;
@@ -3894,43 +4469,46 @@
                 }
             }
 
+            // Calculate display values for toast message
+            const shares = Number(sharesWei) / 1e18;
+            const collateral = Number(collateralWei) / 1e18;
+
             try {
                 if (!limitIsBuy) {
                     const approved = await checkAndRequestApprovals('limit');
                     if (!approved) return;
                 }
 
-                const pmRouter = new ethers.Contract(PMROUTER_ADDRESS, PMROUTER_ABI, signer);
-                const pamm = new ethers.Contract(PAMM_ADDRESS, PAMM_ABI, signer);
-
-                // Get market close time for deadline
-                const market = await pamm.getMarket(currentTrade.marketId);
-                const closeTime = market[5];
+                const masterRouter = new ethers.Contract(MASTERROUTER_ADDRESS, MASTERROUTER_ABI, signer);
 
                 const orderType = limitIsBuy ? 'Buy' : 'Sell';
                 const displayPrice = (price * 100).toFixed(0) + '%';
                 let txPromise;
 
                 if (limitIsBuy) {
-                    txPromise = pmRouter.placeOrder(
+                    // mintAndPool: mints shares and pools the opposite side at the given price
+                    // keepYes=true means we want YES shares, so we pool NO at (1-price)
+                    // keepYes=false means we want NO shares, so we pool YES at price
+                    // The priceInBps is for the side being pooled
+                    const keepYes = currentTrade.isYes;
+                    const poolPriceBps = keepYes ? (10000 - priceBps) : priceBps;
+
+                    txPromise = masterRouter.mintAndPool(
                         currentTrade.marketId,
-                        currentTrade.isYes,
-                        true, // isBuy
-                        sharesWei,
                         collateralWei,
-                        closeTime,
-                        true, // partialFill
+                        keepYes,
+                        poolPriceBps,
+                        connectedAddress,
                         { value: collateralWei }
                     );
                 } else {
-                    txPromise = pmRouter.placeOrder(
+                    // depositSharesToPool: deposits existing shares to pool at price
+                    txPromise = masterRouter.depositSharesToPool(
                         currentTrade.marketId,
                         currentTrade.isYes,
-                        false, // isBuy
                         sharesWei,
-                        collateralWei,
-                        closeTime,
-                        true // partialFill
+                        priceBps,
+                        connectedAddress
                     );
                 }
 
@@ -3987,9 +4565,9 @@
                 return false;
             }
 
-            // PMRouter needs operator on PAMM for: sell, limit orders
+            // MasterRouter needs operator on PAMM for: sell, limit orders (depositSharesToPool)
             if (operation === 'sell' || operation === 'limit') {
-                return await ensureOperatorApproval('pamm', PMROUTER_ADDRESS, 'PMRouter');
+                return await ensureOperatorApproval('pamm', MASTERROUTER_ADDRESS, 'MasterRouter');
             }
 
             // PAMM needs operator on ZAMM for: LP remove
@@ -4000,6 +4578,11 @@
             // ZAMM needs operator on PAMM for: swap
             if (operation === 'swap') {
                 return await ensureOperatorApproval('pamm', ZAMM_ADDRESS, 'ZAMM');
+            }
+
+            // PMHookRouter needs operator on PAMM for: LP via vault
+            if (operation === 'lp_vault') {
+                return await ensureOperatorApproval('pamm', PMHOOKROUTER_ADDRESS, 'PMHookRouter');
             }
 
             return true;
@@ -4033,6 +4616,7 @@
 
                 if (receipt && Number(receipt.status) === 1) {
                     updateToast(toastId, success.title, `${success.body}${success.body ? '<br>' : ''}${etherscanLink}`, 'success', 5000);
+                    invalidatePositionCache(); // Clear cached positions after successful tx
                     if (onSuccess) await onSuccess(receipt);
                     return receipt;
                 } else if (receipt && Number(receipt.status) === 0) {
@@ -4061,6 +4645,33 @@
         }
 
         // ======================== MARKET CREATION ========================
+        // Helper to get end of current week (Sunday 23:59:59 UTC)
+        function getEndOfWeekTimestamp() {
+            const now = new Date();
+            const dayOfWeek = now.getUTCDay(); // 0 = Sunday, 6 = Saturday
+            const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+            const endOfWeek = new Date(Date.UTC(
+                now.getUTCFullYear(),
+                now.getUTCMonth(),
+                now.getUTCDate() + daysUntilSunday,
+                23, 59, 59
+            ));
+            return Math.floor(endOfWeek.getTime() / 1000);
+        }
+
+        function formatDeadlineDate(timestamp) {
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'UTC'
+            }) + ' UTC';
+        }
+
         function updateCreatePreview() {
             const threshold = document.getElementById('createThreshold').value || '40';
             const deadlineSelect = document.getElementById('createDeadline').value;
@@ -4068,17 +4679,23 @@
 
             document.getElementById('customDeadlineGroup').style.display = deadlineSelect === 'custom' ? 'block' : 'none';
 
-            let deadlineStr = 'Dec 31, 2025';
-            if (deadlineSelect === 'custom') {
+            let deadlineStr;
+            if (deadlineSelect === 'eow') {
+                deadlineStr = formatDeadlineDate(getEndOfWeekTimestamp());
+            } else if (deadlineSelect === 'eoy2025') {
+                deadlineStr = 'Dec 31, 2025 23:59:59 UTC';
+            } else {
                 const customTs = document.getElementById('createCustomDeadline').value;
                 if (customTs) {
-                    deadlineStr = new Date(parseInt(customTs) * 1000).toUTCString();
+                    deadlineStr = formatDeadlineDate(parseInt(customTs));
+                } else {
+                    deadlineStr = '--';
                 }
             }
 
-            document.getElementById('createPreview').textContent =
-                `PNKSTR CryptoPunks balance > ${threshold} by ${deadlineStr}` +
-                (canClose ? ' (may close early)' : '');
+            document.getElementById('createPreview').innerHTML =
+                `PNKSTR CryptoPunks >= ${threshold} by ${deadlineStr}` +
+                (canClose ? ' <span style="color:var(--amber);">(may close early)</span>' : '');
         }
 
         async function createMarket() {
@@ -4103,7 +4720,9 @@
             }
 
             let close;
-            if (deadlineSelect === 'eoy2025') {
+            if (deadlineSelect === 'eow') {
+                close = getEndOfWeekTimestamp();
+            } else if (deadlineSelect === 'eoy2025') {
                 close = EOY_2025;
             } else {
                 close = parseInt(document.getElementById('createCustomDeadline').value);
@@ -4138,14 +4757,15 @@
                 showToast('Transaction Pending', 'Please confirm in your wallet...', 'pending');
 
                 // Observable string for on-chain description
-                const observable = `PNKSTR Punks (0x1244..4838)`;
+                const deadlineLabel = deadlineSelect === 'eow' ? 'EOW' : (deadlineSelect === 'eoy2025' ? 'EOY25' : 'custom');
+                const observable = `PNKSTR Punks >= ${threshold} (${deadlineLabel})`;
 
                 const tx = await resolver.createNumericMarketAndSeed(
                     observable,
                     ethers.ZeroAddress, // ETH collateral
                     CRYPTOPUNKS_ADDRESS,
                     callData,
-                    1, // Op.GT (greater than)
+                    3, // Op.GE (greater than or equal) - index 3 in [LT, GT, LE, GE, EQ, NE]
                     BigInt(threshold),
                     BigInt(close),
                     canClose,
@@ -4156,6 +4776,10 @@
                 showToast('Transaction Submitted', `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank">View on Etherscan</a>`, 'pending');
 
                 const receipt = await tx.wait();
+
+                // Clear discovered markets cache to force refresh
+                discoveredPnkstrMarkets = [];
+                lastMarketDiscoveryBlock = 0;
 
                 showToast('Market Created', 'Your market is now live!', 'success');
                 await loadData();
@@ -4259,6 +4883,13 @@
                         pendingToasts.delete(id);
                     }, 300);
                 }, duration);
+            } else {
+                // Auto-cleanup pending toasts after 70s (just after tx monitor's 60s timeout)
+                setTimeout(() => {
+                    if (pendingToasts.has(id)) {
+                        updateToast(id, 'Timeout', 'Transaction may still be pending. Check Etherscan.', 'info', 8000);
+                    }
+                }, 70000);
             }
 
             return id;
