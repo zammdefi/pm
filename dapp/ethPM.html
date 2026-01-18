@@ -46,7 +46,7 @@
       letter-spacing: -2px;
       z-index: 10;
     }
-    .logo span { text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+    .logo span { text-decoration: underline; text-underline-offset: 4px; cursor: pointer; text-decoration-color: #627EEA; }
     .logo span:hover { opacity: 0.5; }
 
     @media (max-width: 600px) {
@@ -114,16 +114,23 @@
       border: 3px solid #000;
       padding: 16px;
       display: flex;
+      flex-direction: column;
       gap: 12px;
-      align-items: center;
       transform: translateY(-8px);
       opacity: 0;
       visibility: hidden;
       transition: all 0.2s;
+      z-index: 100;
     }
     .drop.open { transform: translateY(0); opacity: 1; visibility: visible; }
-    .drop.yes { background: #0F0; }
-    .drop.no { background: #F00; }
+    .drop.yes { background: #0F0; color: #000; }
+    .drop.no { background: #F00; color: #fff; }
+
+    .trade-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
 
     .drop input {
       flex: 1;
@@ -138,8 +145,16 @@
     .drop.no input { border-color: #fff; background: rgba(0,0,0,0.15); color: #fff; }
     .drop.no input::placeholder { color: rgba(255,255,255,0.5); }
 
-    .drop .info { font-size: 14px; letter-spacing: 0.5px; white-space: nowrap; }
-    .drop.no .info { color: #fff; }
+    .trade-info {
+      font-size: 14px;
+      letter-spacing: 0.5px;
+      text-align: center;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.1);
+      border-radius: 4px;
+    }
+    .trade-info b { font-size: 18px; }
+    .drop.no .trade-info { background: rgba(255,255,255,0.15); }
 
     .drop button {
       padding: 12px 28px;
@@ -149,17 +164,71 @@
       border: none;
       background: #000;
       color: #fff;
+      flex-shrink: 0;
     }
     .drop button:hover { opacity: 0.7; }
     .drop button:disabled { opacity: 0.3; cursor: not-allowed; }
     .drop.no button { background: #fff; color: #000; }
 
-    @media (max-width: 500px) {
-      .drop { flex-wrap: wrap; }
-      .drop input { flex: 1 1 55%; }
-      .drop .info { flex: 1 1 30%; text-align: right; }
-      .drop button { flex: 1 1 100%; margin-top: 6px; }
+    /* Venue waterfall bar */
+    .waterfall {
+      display: none;
+      height: 24px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.2);
+      position: relative;
     }
+    .waterfall.active { display: flex; }
+    .waterfall-segment {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      color: #000;
+      transition: flex 0.3s ease;
+      overflow: hidden;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .waterfall-segment.pool { background: linear-gradient(180deg, #4f4 0%, #2a2 100%); }
+    .waterfall-segment.vault { background: linear-gradient(180deg, #4af 0%, #28c 100%); }
+    .waterfall-segment.amm { background: linear-gradient(180deg, #c6f 0%, #94d 100%); }
+    .waterfall-segment.mint { background: linear-gradient(180deg, #fa4 0%, #c82 100%); }
+    .waterfall-label {
+      padding: 0 6px;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+    }
+    .drop.no .waterfall { background: rgba(255,255,255,0.2); }
+
+    /* Toast notifications */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--fg);
+      color: var(--bg);
+      padding: 12px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 3000;
+      opacity: 0;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 90vw;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast.success { background: #0F0; color: #000; }
+    .toast.error { background: #F00; color: #fff; }
+    .toast.pending { background: #F50; color: #000; }
+    .toast a { color: inherit; font-weight: bold; text-decoration: underline; }
+    .toast-close { cursor: pointer; opacity: 0.6; font-size: 18px; }
+    .toast-close:hover { opacity: 1; }
 
     /* Modals */
     .modal-overlay {
@@ -356,11 +425,11 @@
     .trade-toggle button:hover:not(.active) { opacity: 0.6; }
     .drop.yes .trade-toggle button { border-color: #000; }
     .drop.yes .trade-toggle button.active { background: #000; color: #0F0; }
-    .drop.no .trade-toggle button { border-color: #fff; color: #fff; }
+    .drop.no .trade-toggle button { border-color: #fff; color: #fff; background: rgba(0,0,0,0.25); }
     .drop.no .trade-toggle button.active { background: #fff; color: #F00; }
 
     /* Sell mode styling */
-    .drop.sell-mode .info { font-size: 13px; }
+    .drop.sell-mode .trade-info { font-size: 13px; }
 
     /* Resolved market */
     .resolved-badge {
@@ -608,39 +677,6 @@
     .lp-harvest-btn:hover { opacity: 1; background: #0F0; color: #000; }
     .lp-harvest-btn:disabled { opacity: 0.2; cursor: not-allowed; border-color: var(--fg); color: var(--fg); }
 
-    /* Vault Stats */
-    .vault-stats {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    .vault-stat {
-      flex: 1;
-      padding: 8px;
-      background: rgba(128,128,128,0.08);
-      border: 1px solid rgba(128,128,128,0.2);
-      border-radius: 4px;
-    }
-    .vault-stat-label {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      opacity: 0.5;
-      margin-bottom: 4px;
-    }
-    .vault-stat-value {
-      font-size: 13px;
-      font-weight: bold;
-      font-variant-numeric: tabular-nums;
-    }
-    .vault-stat-value.yes { color: #0F0; }
-    .vault-stat-value.no { color: #F00; }
-    .vault-stat-yield {
-      font-size: 10px;
-      opacity: 0.7;
-      margin-top: 2px;
-    }
-
     /* Pool Stats */
     .pool-stats {
       padding: 10px;
@@ -676,35 +712,61 @@
     /* Resolve Section */
     .resolve-section {
       margin-top: 24px;
-      padding: 16px;
-      border: 2px solid #F50;
-      background: rgba(255,85,0,0.05);
     }
-    .resolve-title {
+    .resolve-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border: 1px solid var(--fg);
+      opacity: 0.6;
+      cursor: pointer;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 1px;
-      color: #F50;
-      margin-bottom: 12px;
     }
-    .resolve-status {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 12px;
-      font-size: 12px;
+    .resolve-toggle:hover { opacity: 0.8; }
+    .resolve-toggle.expanded { opacity: 1; border-color: #F50; }
+    .resolve-toggle-status { font-weight: bold; }
+    .resolve-toggle-status.pending { color: #F50; }
+    .resolve-toggle-status.ready { color: #0F0; }
+    .resolve-toggle-status.resolved { color: #0FF; }
+    .resolve-details {
+      display: none;
+      padding: 16px;
+      border: 1px solid var(--fg);
+      border-top: none;
+      background: rgba(128,128,128,0.05);
     }
-    .resolve-status-item {
+    .resolve-details.expanded { display: block; }
+    .resolve-details.ready { border-color: #0F0; background: rgba(0,255,0,0.05); }
+    .resolve-condition {
+      font-size: 13px;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .resolve-condition-target { opacity: 0.7; font-size: 11px; }
+    .resolve-condition-val { font-weight: bold; color: #0FF; }
+    .resolve-condition-thresh { font-weight: bold; color: #0F0; }
+    .resolve-progress {
+      margin-bottom: 16px;
+      font-family: monospace;
+    }
+    .resolve-progress-bar {
+      font-size: 14px;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+      color: var(--fg);
+    }
+    .resolve-progress-bar .filled { color: #0F0; }
+    .resolve-progress-bar .empty { opacity: 0.3; }
+    .resolve-progress-bar.met .filled { color: #0F0; }
+    .resolve-progress-text {
       display: flex;
       justify-content: space-between;
-      padding: 6px 0;
+      font-size: 11px;
+      opacity: 0.7;
     }
-    .resolve-status-label { opacity: 0.6; }
-    .resolve-status-val { font-weight: bold; }
-    .resolve-status-val.ready { color: #0F0; }
-    .resolve-status-val.pending { color: #F50; }
-    .resolve-status-val.yes { color: #0F0; }
-    .resolve-status-val.no { color: #F00; }
     .resolve-btn {
       width: 100%;
       padding: 12px;
@@ -1037,9 +1099,12 @@
         <button id="buyToggle" class="active" onclick="setTradeMode('buy')">BUY</button>
         <button id="sellToggle" onclick="setTradeMode('sell')">SELL</button>
       </div>
-      <input id="amt" inputmode="decimal" placeholder="0.00" oninput="calc()" onkeydown="if(event.key==='Enter')executeTrade()">
-      <span class="info" id="tradeInfo">ETH &rarr; <b id="out">0.00</b> <b id="side">Y</b></span>
-      <button id="tradeBtn" onclick="executeTrade()">BUY</button>
+      <div class="trade-row">
+        <input id="amt" inputmode="decimal" placeholder="0.00" oninput="calc()" onkeydown="if(event.key==='Enter')executeTrade()">
+        <button id="tradeBtn" onclick="executeTrade()">BUY</button>
+      </div>
+      <div class="trade-info" id="tradeInfo">ETH &rarr; <b id="out">0.00</b> <b id="side">Y</b></div>
+      <div class="waterfall" id="waterfall"></div>
     </div>
     <button class="liq-toggle" id="liqToggle" onclick="toggleLiquidityPanel()" title="Liquidity">💧</button>
   </div>
@@ -1060,18 +1125,6 @@
     </div>
     <div class="lp-positions" id="lpPositions" style="display:none;">
       <div class="lp-positions-title">Your LP Positions</div>
-      <div class="vault-stats" id="vaultStats">
-        <div class="vault-stat">
-          <div class="vault-stat-label">YES Vault Fees</div>
-          <div class="vault-stat-value yes" id="yesVaultTotalFees">0 ETH</div>
-          <div class="vault-stat-yield" id="yesVaultYield">0% yield</div>
-        </div>
-        <div class="vault-stat">
-          <div class="vault-stat-label">NO Vault Fees</div>
-          <div class="vault-stat-value no" id="noVaultTotalFees">0 ETH</div>
-          <div class="vault-stat-yield" id="noVaultYield">0% yield</div>
-        </div>
-      </div>
       <div class="lp-pos-row" id="yesVaultRow">
         <span class="lp-pos-label"><span class="lp-pos-dot yes"></span> YES Vault</span>
         <span class="lp-pos-right">
@@ -1158,31 +1211,11 @@
     </div>
   </div>
   <div class="resolve-section" id="resolveSection" style="display:none;">
-    <div class="resolve-title">MARKET RESOLUTION</div>
-    <div class="resolve-status">
-      <div class="resolve-status-item" id="resolveOracleRow" style="display:none;">
-        <span class="resolve-status-label">Oracle</span>
-        <span class="resolve-status-val" id="resolveOracle">...</span>
-      </div>
-      <div class="resolve-status-item">
-        <span class="resolve-status-label">Oracle Value</span>
-        <span class="resolve-status-val" id="resolveValue">...</span>
-      </div>
-      <div class="resolve-status-item">
-        <span class="resolve-status-label">Threshold</span>
-        <span class="resolve-status-val" id="resolveThreshold">...</span>
-      </div>
-      <div class="resolve-status-item">
-        <span class="resolve-status-label">Condition Met</span>
-        <span class="resolve-status-val" id="resolveCondition">...</span>
-      </div>
-      <div class="resolve-status-item">
-        <span class="resolve-status-label">Status</span>
-        <span class="resolve-status-val" id="resolveStatus">...</span>
-      </div>
+    <div class="resolve-toggle" id="resolveToggle" onclick="toggleResolveDetails()">
+      <span id="resolveToggleLabel">⚙ Resolution</span>
+      <span class="resolve-toggle-status pending" id="resolveToggleStatus">PENDING</span>
     </div>
-    <button class="resolve-btn" id="resolveBtn" onclick="resolveMarket()" disabled>RESOLVE MARKET</button>
-    <div class="resolve-hint" id="resolveHint">Anyone can resolve once market is ready</div>
+    <div class="resolve-details" id="resolveDetails"></div>
   </div>
 </div>
 
@@ -1500,7 +1533,11 @@
   </div>
 </div>
 
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
 <script>
+console.log('[ethPM] Script loading...');
 // ======================== CONTRACTS ========================
 const CONTRACTS = {
   PAMM: '0x000000000044bfe6c2BBFeD8862973E0612f07C0',
@@ -1570,6 +1607,7 @@ const PM_HOOK_ROUTER_ABI = [
   'function harvestVaultFees(uint256 marketId, bool isYes) returns (uint256 feesEarned)',
   'function totalYesVaultShares(uint256) view returns (uint256)',
   'function totalNoVaultShares(uint256) view returns (uint256)',
+  'function rebalanceCollateralBudget(uint256) view returns (uint256)',
   'function accYesCollateralPerShare(uint256) view returns (uint256)',
   'function accNoCollateralPerShare(uint256) view returns (uint256)',
   'function bootstrapVaults(uint256) view returns (uint112 yesShares, uint112 noShares, uint32 lastActivity)',
@@ -1651,6 +1689,7 @@ const CHAINLINK_ABI = [
   'function decimals() view returns (uint8)'
 ];
 
+
 // Op enum: 0=LT, 1=GT, 2=LTE, 3=GTE, 4=EQ, 5=NEQ
 const OP = { LT: 0, GT: 1, LTE: 2, GTE: 3, EQ: 4, NEQ: 5 };
 
@@ -1695,6 +1734,9 @@ let liquiditySources = {
 
 // ENS reverse lookup cache
 const ensCache = new Map();
+
+// Market data cache (noId is immutable, marketSummary refreshes on load)
+const marketDataCache = new Map(); // marketId -> { noId, lastLoaded, summary, breakdown }
 
 // Token logos - extensible registry mapping address (lowercase) to SVG
 // Add new tokens here as needed
@@ -1742,28 +1784,75 @@ function isOurLabeledMarket(description) {
 
 const LEGACY_FEE_BPS = 30; // 0.3% fee for legacy markets
 
+// Constants for poolId calculation
+const MAX_UINT256 = (1n << 256n) - 1n;
+const FLAG_BEFORE = 1n << 255n;
+const FLAG_AFTER = 1n << 254n;
+
+// Calculate ZAMM poolId from marketId for hooked pools
+// PoolKey = {id0, id1, token0, token1, feeOrHook} where:
+// - id0/id1 = ordered(marketId, noId) where noId = keccak256("PMARKET:NO", marketId)
+// - token0 = token1 = PAMM address
+// - feeOrHook = hookAddress | FLAG_BEFORE | FLAG_AFTER
+function calculatePoolId(marketId, isHooked = true) {
+  const marketIdBig = BigInt(marketId);
+  // noId = keccak256(abi.encodePacked("PMARKET:NO", marketId)) - matches PAMM.getNoId()
+  const noId = BigInt(ethers.keccak256(ethers.solidityPacked(['string', 'uint256'], ['PMARKET:NO', marketIdBig])));
+  const [id0, id1] = marketIdBig < noId ? [marketIdBig, noId] : [noId, marketIdBig];
+
+  let feeOrHook;
+  if (isHooked) {
+    feeOrHook = BigInt(CONTRACTS.PM_FEE_HOOK) | FLAG_BEFORE | FLAG_AFTER;
+  } else {
+    feeOrHook = BigInt(LEGACY_FEE_BPS);
+  }
+
+  // Manual ABI encoding (5 x 32 bytes)
+  const toBytes32 = (val) => {
+    let hex = BigInt(val).toString(16);
+    if (hex.length > 64) hex = hex.slice(-64);
+    return hex.padStart(64, '0');
+  };
+  const addrToBytes32 = (addr) => addr.slice(2).toLowerCase().padStart(64, '0');
+
+  const encoded = '0x' +
+    toBytes32(id0) +
+    toBytes32(id1) +
+    addrToBytes32(CONTRACTS.PAMM) +
+    addrToBytes32(CONTRACTS.PAMM) +
+    toBytes32(feeOrHook);
+
+  return ethers.keccak256(encoded);
+}
+
 // Quote buying YES shares with ETH (constant product formula)
 // collateralIn → YES shares out
+// Process: mint YES+NO with collateral, sell NO to pool for more YES
 function quoteBuyYes(collateralInWei, rYes, rNo, feeBps = LEGACY_FEE_BPS) {
   if (rYes === 0n || rNo === 0n) return 0n;
   // fee applied to input
   const feeMultiplier = 10000n - BigInt(feeBps);
   const amountInWithFee = collateralInWei * feeMultiplier / 10000n;
-  // Mint YES+NO, sell NO to pool: out = rNo - (rYes * rNo) / (rYes + amountInWithFee)
-  // Simplified: sharesOut ≈ collateralIn * rNo / (rYes + collateralIn)
-  const numerator = amountInWithFee * rNo;
-  const denominator = rYes + amountInWithFee;
-  return numerator / denominator;
+  // 1. Mint: collateralIn YES + collateralIn NO
+  // 2. Swap NO for YES: yesFromSwap = (noIn * rYes) / (rNo + noIn)
+  // 3. Total YES = minted + swapped
+  const mintedShares = amountInWithFee; // 1:1 mint
+  const swappedYes = (amountInWithFee * rYes) / (rNo + amountInWithFee);
+  return mintedShares + swappedYes;
 }
 
 // Quote buying NO shares with ETH
+// Process: mint YES+NO with collateral, sell YES to pool for more NO
 function quoteBuyNo(collateralInWei, rYes, rNo, feeBps = LEGACY_FEE_BPS) {
   if (rYes === 0n || rNo === 0n) return 0n;
   const feeMultiplier = 10000n - BigInt(feeBps);
   const amountInWithFee = collateralInWei * feeMultiplier / 10000n;
-  const numerator = amountInWithFee * rYes;
-  const denominator = rNo + amountInWithFee;
-  return numerator / denominator;
+  // 1. Mint: collateralIn YES + collateralIn NO
+  // 2. Swap YES for NO: noFromSwap = (yesIn * rNo) / (rYes + yesIn)
+  // 3. Total NO = minted + swapped
+  const mintedShares = amountInWithFee; // 1:1 mint
+  const swappedNo = (amountInWithFee * rNo) / (rYes + amountInWithFee);
+  return mintedShares + swappedNo;
 }
 
 // Quote selling YES shares for ETH
@@ -1814,6 +1903,22 @@ let walletConnectProvider = null;
 let isConnecting = false;
 const eip6963Providers = new Map();
 
+// Set up EIP-6963 listener immediately to catch early wallet announcements
+if (typeof window !== 'undefined') {
+  window.addEventListener('eip6963:announceProvider', (event) => {
+    try {
+      const { info, provider } = event.detail || {};
+      if (info?.uuid && provider) {
+        eip6963Providers.set(info.uuid, { info, provider });
+      }
+    } catch (e) {
+      console.warn('EIP-6963 announce error:', e);
+    }
+  });
+  // Request providers now (wallets that already announced will re-announce)
+  window.dispatchEvent(new Event('eip6963:requestProvider'));
+}
+
 // RPC provider for read-only calls with fallbacks
 const RPC_ENDPOINTS = [
   'https://eth.llamarpc.com',
@@ -1850,6 +1955,67 @@ const WALLET_CONFIG = {
 
 const $ = id => document.getElementById(id);
 
+// ======================== TOAST NOTIFICATIONS ========================
+let toastTimeout = null;
+
+function showToast(message, type = '', duration = 5000, link = null) {
+  const toast = $('toast');
+  if (!toast) return;
+
+  // Clear any existing timeout
+  if (toastTimeout) clearTimeout(toastTimeout);
+
+  // Build toast content
+  let html = `<span>${message}</span>`;
+  if (link) {
+    html += ` <a href="${link}" target="_blank" rel="noopener">View on Etherscan →</a>`;
+  }
+  html += `<span class="toast-close" onclick="hideToast()">×</span>`;
+
+  toast.innerHTML = html;
+
+  // Update type class while preserving 'show' state
+  toast.classList.remove('pending', 'success', 'error');
+  if (type) toast.classList.add(type);
+
+  // Ensure toast is visible
+  if (!toast.classList.contains('show')) {
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+    });
+  }
+
+  // Auto-hide after duration (0 = don't auto-hide)
+  if (duration > 0) {
+    toastTimeout = setTimeout(hideToast, duration);
+  }
+}
+
+function hideToast() {
+  const toast = $('toast');
+  if (toast) {
+    toast.classList.remove('show');
+  }
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+    toastTimeout = null;
+  }
+}
+
+function showTxPending(hash) {
+  const etherscanUrl = `https://etherscan.io/tx/${hash}`;
+  showToast('Transaction pending...', 'pending', 0, etherscanUrl);
+}
+
+function showTxSuccess(message, hash) {
+  const etherscanUrl = `https://etherscan.io/tx/${hash}`;
+  showToast(message, 'success', 8000, etherscanUrl);
+}
+
+function showTxError(message) {
+  showToast(message, 'error', 6000);
+}
+
 // ======================== INIT ========================
 async function init() {
   if (dark) { document.documentElement.dataset.theme = 'dark'; $('theme').textContent = 'light'; }
@@ -1871,9 +2037,7 @@ async function init() {
   render();
   startCountdownTimer();
   startAutoRefresh();
-  loadPositions();
-  loadResolutionStatus();
-  loadPriceChart();
+  loadAllMarketData(); // Combined loader for positions, resolution, and price chart
 }
 
 // ======================== DEEP LINKING ========================
@@ -2050,7 +2214,7 @@ async function loadMarkets() {
 
           const parsed = parseMarketDescription(description);
           const total = yesSupply + noSupply;
-          const yPct = total > 0n ? Number((noSupply * 100n) / total) : 50;
+          const yPct = total > 0n ? Number((yesSupply * 100n) / total) : 50;
 
           allFetched.push({
             id: marketId.slice(-6),
@@ -2128,7 +2292,7 @@ async function loadMarketById(marketIdStr) {
     const noId = await pamm.getNoId(marketId);
     const noSupply = await pamm.totalSupplyId(noId);
     const total = yesSupply + noSupply;
-    const yPct = total > 0n ? Number((noSupply * 100n) / total) : 50;
+    const yPct = total > 0n ? Number((yesSupply * 100n) / total) : 50;
 
     // Try to get description from Quoter or use generic
     let description = '';
@@ -2210,24 +2374,18 @@ function formatBalance(val, decimals = 1) {
 function parseMarketDescription(description) {
   if (!description) return { question: 'Unknown market', color: '#627EEA', logo: 'eth', threshold: 0, raw: '' };
 
-  // For non-standard descriptions, clean up raw thresholds and format nicely
+  // For non-standard (legacy/external) descriptions, extract just the question part
   let displayDesc = description;
   let threshold = 0;
 
-  // Strip raw threshold patterns like ">= 40000000000000000000000000" from display
-  const threshMatch = displayDesc.match(/\s*(>=|<=|>|<|=)\s*(\d{10,})/);
-  if (threshMatch) {
-    const rawThresh = BigInt(threshMatch[2]);
-    threshold = Number(rawThresh);
-    // Format large numbers nicely (assume 18 decimals for most tokens)
-    const scaled = Number(rawThresh / 10n**18n);
-    const formatted = scaled >= 1e9 ? (scaled/1e9).toFixed(1) + 'B' :
-                      scaled >= 1e6 ? (scaled/1e6).toFixed(1) + 'M' :
-                      scaled >= 1e3 ? (scaled/1e3).toFixed(1) + 'K' : scaled.toString();
-    displayDesc = displayDesc.replace(/\s*(>=|<=|>|<|=)\s*\d{10,}/, ` ${threshMatch[1]} ${formatted}`);
+  // Extract question up to first '?' for cleaner display
+  const qMatch = description.match(/^(.+?\?)/);
+  if (qMatch) {
+    displayDesc = qMatch[1];
+  } else if (description.length > 100) {
+    displayDesc = description.slice(0, 97) + '...';
   }
 
-  if (displayDesc.length > 120) displayDesc = displayDesc.slice(0, 117) + '...';
   const defaults = { question: displayDesc, color: '#888', logo: '?', threshold, raw: description };
   try {
     const p = description.split('|');
@@ -2337,7 +2495,7 @@ function render() {
   $('yBar').style.width = m.y + '%';
   $('nBar').textContent = `N ${100 - m.y}%`;
   $('nBar').style.width = (100 - m.y) + '%';
-  $('logo').textContent = m.logo || m.id;
+  // Keep "eth" text, just change underline color based on market type
   $('logo').style.textDecorationColor = m.c;
 
   // Add resolved class to odds container
@@ -2350,14 +2508,15 @@ function render() {
 
   if (m.marketId) {
     const status = m.resolved ? 'resolved' : `<span id="countdown">${formatCountdown(m.close)}</span>`;
-    const tvlText = m.tvl ? ` | ${m.tvl.toFixed(3)} ETH` : '';
+    const tvlText = m.tvl ? ` | ${m.tvl < 1 ? m.tvl.toFixed(4) : m.tvl.toFixed(2)} ETH` : '';
     const shareBtn = `<span id="shareBtn" onclick="shareMarket()" style="cursor:pointer;margin-left:4px" title="Share market">&#128279;</span>`;
-    // Add subtle raw description button if we have raw description
-    const rawBtn = m.description ? `<span class="raw-desc-btn" onclick="showRawDescription(event)" title="View raw description">&#x22EF;</span>` : '';
+    // Add subtle raw description button only for legacy/external markets (not our labeled ones)
+    const isLabeled = m.description && /^(PRICE|GAS|ETHBAL|TOKBAL)\|/.test(m.description);
+    const rawBtn = (m.description && !isLabeled) ? `<span class="raw-desc-btn" onclick="showRawDescription(event)" title="View raw description">&#x22EF;</span>` : '';
     $('meta').innerHTML = `<a href="${getMarketUrl(m.marketId)}" onclick="event.preventDefault();shareMarket()">#${m.marketId.slice(0,8)}...</a>${shareBtn}${rawBtn} | ${status}${tvlText}${countText}`;
 
-    // Show resolver info below meta (async ENS lookup)
-    updateResolverDisplay(m);
+    // Resolver info now shown in resolution panel, hide separate display
+    $('resolverInfo').style.display = 'none';
   } else {
     $('meta').innerHTML = m.isDemo ? `demo market (create to trade)${countText}` : countText;
     $('resolverInfo').style.display = 'none';
@@ -2448,10 +2607,15 @@ function showRawDescription(event) {
 function next() {
   currentIndex = (currentIndex + 1) % markets.length;
   closeDrop();
+  resetResolvePanel();
   render();
-  loadPositions();
-  loadResolutionStatus();
-  loadPriceChart();
+  loadAllMarketData(); // Combined loader replaces 3 separate calls
+}
+
+function resetResolvePanel() {
+  resolveDetailsOpen = false;
+  $('resolveToggle')?.classList.remove('expanded');
+  $('resolveDetails')?.classList.remove('expanded');
 }
 
 function vote(d) {
@@ -2573,7 +2737,7 @@ async function fetchQuote(amount, m) {
     if (tradeMode === 'buy') {
       const collateralIn = ethers.parseEther(amount.toString());
       // Use sweep quote to check orderbook + vault/amm routing
-      const quote = await quoter.quoteBuyWithSweep(m.marketId, buyYes, collateralIn, 10000); // maxPrice 100%
+      const quote = await quoter.quoteBuyWithSweep(m.marketId, buyYes, collateralIn, 9999, { gasLimit: 5000000 }); // maxPrice 99.99% (10000 would skip pools)
       console.log('quoteBuyWithSweep result:', {
         totalSharesOut: quote.totalSharesOut.toString(),
         poolSharesOut: quote.poolSharesOut.toString(),
@@ -2584,6 +2748,67 @@ async function fetchQuote(amount, m) {
       const sharesOut = Number(quote.totalSharesOut) / 1e18;
       const poolShares = Number(quote.poolSharesOut) / 1e18;
       const poolLevels = Number(quote.poolLevelsFilled);
+      const pmShares = Number(quote.pmSharesOut) / 1e18;
+      const pmSource = decodeSource(quote.pmSource);
+
+      // Get detailed breakdown if PM portion exists
+      let breakdown = null;
+      let vaultSharesMinted = 0;
+      if (quote.pmSharesOut > 0n) {
+        // Call quoteBootstrapBuy to get vaultSharesMinted
+        try {
+          const pmQuote = await quoter.quoteBootstrapBuy(m.marketId, buyYes, collateralIn - (quote.totalSharesOut - quote.pmSharesOut), 0, { gasLimit: 5000000 });
+          vaultSharesMinted = Number(pmQuote.vaultSharesMinted) / 1e18;
+        } catch (e) {
+          console.log('quoteBootstrapBuy failed:', e.message);
+        }
+
+        // For multi source, get liquidity breakdown to calculate actual split
+        let vaultAmount = 0, ammAmount = 0;
+        if (pmSource === 'multi' || pmSource === 'pm') {
+          try {
+            const liq = await quoter.getLiquidityBreakdown(m.marketId, buyYes, { gasLimit: 5000000 });
+            const vaultOtcShares = Number(liq.vaultOtcShares) / 1e18;
+            console.log('getLiquidityBreakdown (buy):', {
+              vaultOtcShares,
+              vaultOtcAvailable: liq.vaultOtcAvailable,
+              vaultOtcPriceBps: Number(liq.vaultOtcPriceBps),
+              ammYesReserve: Number(liq.ammYesReserve) / 1e18,
+              ammNoReserve: Number(liq.ammNoReserve) / 1e18,
+              pmShares
+            });
+            // Vault OTC is used first, then AMM for remainder
+            if (liq.vaultOtcAvailable && vaultOtcShares > 0) {
+              vaultAmount = Math.min(pmShares, vaultOtcShares);
+              ammAmount = Math.max(0, pmShares - vaultOtcShares);
+            } else {
+              ammAmount = pmShares; // No vault available, all goes to AMM
+            }
+          } catch (e) {
+            console.log('getLiquidityBreakdown failed:', e.message);
+            // Fallback to 50/50 estimate
+            vaultAmount = pmShares * 0.5;
+            ammAmount = pmShares * 0.5;
+          }
+        } else if (pmSource === 'vault') {
+          vaultAmount = pmShares;
+        } else if (pmSource === 'amm') {
+          ammAmount = pmShares;
+        }
+
+        breakdown = {
+          poolAmount: poolShares,
+          vaultAmount,
+          ammAmount,
+          mintAmount: isMintSource(quote.pmSource) ? pmShares : 0,
+          pmAmount: 0, // No longer needed since we split it
+          vaultSharesMinted: vaultSharesMinted,
+          vaultSide: buyYes ? 'NO' : 'YES', // Mint deposits opposite side
+          isBuy: true // For unit display (shares for buys)
+        };
+      } else if (poolShares > 0) {
+        breakdown = { poolAmount: poolShares, vaultAmount: 0, ammAmount: 0, mintAmount: 0, pmAmount: 0, vaultSharesMinted: 0, isBuy: true };
+      }
 
       // Store quote for execution (include expected output for slippage protection)
       lastQuote = {
@@ -2592,17 +2817,19 @@ async function fetchQuote(amount, m) {
         amount,
         expectedOut: quote.totalSharesOut, // For minSharesOut
         isBuy: true,
-        isLegacy: false
+        isLegacy: false,
+        vaultSharesMinted,
+        breakdown
       };
 
       // Build source description
       let sourceName = '';
       if (poolLevels > 0 && quote.pmSharesOut > 0) {
-        sourceName = `pool(${poolLevels})+pm`;
+        sourceName = `pool(${poolLevels})+${pmSource}`;
       } else if (poolLevels > 0) {
         sourceName = `pool(${poolLevels})`;
       } else {
-        sourceName = decodeSource(quote.pmSource);
+        sourceName = pmSource;
       }
 
       // Calculate effective price vs spot
@@ -2611,14 +2838,64 @@ async function fetchQuote(amount, m) {
       const slippage = effectivePrice - spotPrice;
 
       $('out').textContent = formatQuoteOutput(sharesOut);
-      updateQuoteInfo(sourceName, slippage, poolShares > 0 ? poolShares : null);
+      updateQuoteInfo(sourceName, slippage, null, breakdown);
     } else {
       const sharesIn = ethers.parseEther(amount.toString());
       // Use sweep quote to check bid pools + vault/amm routing
-      const quote = await quoter.quoteSellWithSweep(m.marketId, buyYes, sharesIn, 0); // minPrice 0%
+      const quote = await quoter.quoteSellWithSweep(m.marketId, buyYes, sharesIn, 1, { gasLimit: 5000000 }); // minPrice 0.01% (0 would skip pools)
+      console.log('quoteSellWithSweep result:', {
+        totalCollateralOut: quote.totalCollateralOut.toString(),
+        poolCollateralOut: quote.poolCollateralOut.toString(),
+        poolLevelsFilled: quote.poolLevelsFilled.toString(),
+        pmCollateralOut: quote.pmCollateralOut.toString(),
+        pmSource: quote.pmSource
+      });
       const collateralOut = Number(quote.totalCollateralOut) / 1e18;
       const poolCollateral = Number(quote.poolCollateralOut) / 1e18;
       const poolLevels = Number(quote.poolLevelsFilled);
+      const pmCollateral = Number(quote.pmCollateralOut) / 1e18;
+      const pmSource = decodeSource(quote.pmSource);
+
+      // Build breakdown for display
+      let breakdown = null;
+      if (pmCollateral > 0 || poolCollateral > 0) {
+        // For multi source, get liquidity breakdown to calculate actual split
+        let vaultAmount = 0, ammAmount = 0;
+        if ((pmSource === 'multi' || pmSource === 'pm') && pmCollateral > 0) {
+          try {
+            // For sells, we're selling YES shares, so check vault's YES side availability
+            const liq = await quoter.getLiquidityBreakdown(m.marketId, buyYes, { gasLimit: 5000000 });
+            const vaultOtcShares = Number(liq.vaultOtcShares) / 1e18;
+            // Estimate based on vault availability (vault takes shares, gives collateral)
+            if (liq.vaultOtcAvailable && vaultOtcShares > 0) {
+              // Rough estimate: if vault has shares to give, we can sell to it
+              const estVaultPct = Math.min(1, vaultOtcShares / (pmCollateral * 2)); // Rough
+              vaultAmount = pmCollateral * estVaultPct;
+              ammAmount = pmCollateral * (1 - estVaultPct);
+            } else {
+              ammAmount = pmCollateral;
+            }
+          } catch (e) {
+            console.log('getLiquidityBreakdown failed:', e.message);
+            vaultAmount = pmCollateral * 0.5;
+            ammAmount = pmCollateral * 0.5;
+          }
+        } else if (pmSource === 'vault') {
+          vaultAmount = pmCollateral;
+        } else if (pmSource === 'amm') {
+          ammAmount = pmCollateral;
+        }
+
+        breakdown = {
+          poolAmount: poolCollateral,
+          vaultAmount,
+          ammAmount,
+          mintAmount: 0, // No mint path for sells
+          pmAmount: 0,
+          vaultSharesMinted: 0,
+          isBuy: false // For unit display (ETH for sells)
+        };
+      }
 
       // Store quote for execution (include expected output for slippage protection)
       lastQuote = {
@@ -2627,17 +2904,18 @@ async function fetchQuote(amount, m) {
         amount,
         expectedOut: quote.totalCollateralOut, // For minCollateralOut
         isBuy: false,
-        isLegacy: false
+        isLegacy: false,
+        breakdown
       };
 
       // Build source description
       let sourceName = '';
       if (poolLevels > 0 && quote.pmCollateralOut > 0) {
-        sourceName = `bid(${poolLevels})+pm`;
+        sourceName = `bid(${poolLevels})+${pmSource}`;
       } else if (poolLevels > 0) {
         sourceName = `bid(${poolLevels})`;
       } else {
-        sourceName = decodeSource(quote.pmSource);
+        sourceName = pmSource;
       }
 
       // Calculate effective price vs spot
@@ -2646,7 +2924,7 @@ async function fetchQuote(amount, m) {
       const slippage = spotPrice - effectivePrice;
 
       $('out').textContent = formatQuoteOutput(collateralOut, true);
-      updateQuoteInfo(sourceName, slippage, poolCollateral > 0 ? poolCollateral : null);
+      updateQuoteInfo(sourceName, slippage, null, breakdown);
     }
   } catch (e) {
     console.log('Quote error:', e.message);
@@ -2745,20 +3023,108 @@ function decodeSource(source) {
   return 'pm';
 }
 
-function updateQuoteInfo(source, slippage, poolFill) {
+function isMintSource(source) {
+  if (!source) return false;
+  const hex = source.toLowerCase();
+  return hex === '0x6d696e74' || hex.includes('mint');
+}
+
+function updateQuoteInfo(source, slippage, poolFill, breakdown = null) {
   let el = document.getElementById('slippageInfo');
   if (!el) {
     const tradeInfo = $('tradeInfo');
     el = document.createElement('span');
     el.id = 'slippageInfo';
-    el.style.cssText = 'font-size:10px;opacity:0.7;margin-left:6px;';
+    el.style.cssText = 'font-size:10px;margin-left:6px;';
     tradeInfo.appendChild(el);
   }
 
   const slipStr = slippage > 0.01 ? `+${slippage.toFixed(2)}%` : slippage < -0.01 ? `${slippage.toFixed(2)}%` : '';
-  const color = Math.abs(slippage) > 1 ? '#f66' : Math.abs(slippage) > 0.5 ? '#fa0' : '';
-  const poolStr = poolFill ? ` <span style="color:#0f0">${poolFill.toFixed(2)} pool</span>` : '';
-  el.innerHTML = slipStr ? `<span style="color:${color}">${slipStr}</span> ${source}${poolStr}` : `${source}${poolStr}`;
+  // For sells (negative slippage), use white for readability on red background
+  // For buys (positive = overpaying), use red/orange warning
+  let color = '';
+  if (slippage < 0) {
+    color = '#fff'; // White on red sell box
+  } else {
+    color = Math.abs(slippage) > 1 ? '#f66' : Math.abs(slippage) > 0.5 ? '#fa0' : '';
+  }
+  const poolStr = poolFill ? ` <span style="color:#0f0">${poolFill.toFixed(4)} pool</span>` : '';
+
+  let html = slipStr ? `<span style="color:${color}">${slipStr}</span> ${source}${poolStr}` : `${source}${poolStr}`;
+
+  // Show breakdown if available
+  if (breakdown) {
+    const unit = breakdown.isBuy ? '' : 'Ξ'; // ETH symbol for sells, blank for shares
+    const parts = [];
+    if (breakdown.poolAmount > 0) parts.push(`${breakdown.poolAmount.toFixed(4)}${unit} pool`);
+    if (breakdown.vaultAmount > 0) parts.push(`${breakdown.vaultAmount.toFixed(4)}${unit} vault`);
+    if (breakdown.ammAmount > 0) parts.push(`${breakdown.ammAmount.toFixed(4)}${unit} amm`);
+    if (breakdown.mintAmount > 0) parts.push(`<span style="color:#fa0">${breakdown.mintAmount.toFixed(4)} mint</span>`);
+    if (parts.length > 0) {
+      html += `<br><span style="font-size:9px;opacity:0.6">${parts.join(' + ')}</span>`;
+    }
+    // Alert for mint (user receives vault shares)
+    if (breakdown.mintAmount > 0 && breakdown.vaultSharesMinted > 0) {
+      html += `<br><span style="color:#fa0;font-size:9px">⚠ +${breakdown.vaultSharesMinted.toFixed(4)} ${breakdown.vaultSide} vault LP</span>`;
+    }
+  }
+
+  el.innerHTML = html;
+
+  // Update waterfall visualization
+  updateWaterfall(breakdown);
+}
+
+function updateWaterfall(breakdown) {
+  const el = $('waterfall');
+  if (!el) return;
+
+  if (!breakdown) {
+    el.classList.remove('active');
+    el.innerHTML = '';
+    return;
+  }
+
+  const total = (breakdown.poolAmount || 0) + (breakdown.vaultAmount || 0) +
+                (breakdown.ammAmount || 0) + (breakdown.mintAmount || 0);
+
+  if (total <= 0) {
+    el.classList.remove('active');
+    el.innerHTML = '';
+    return;
+  }
+
+  const segments = [];
+  const unit = breakdown.isBuy ? '' : 'Ξ';
+
+  if (breakdown.poolAmount > 0) {
+    const pct = (breakdown.poolAmount / total * 100).toFixed(0);
+    const label = pct >= 15 ? `POOL ${breakdown.poolAmount.toFixed(4)}${unit}` : pct >= 8 ? 'POOL' : '';
+    segments.push({ type: 'pool', pct, label, amount: breakdown.poolAmount });
+  }
+  if (breakdown.vaultAmount > 0) {
+    const pct = (breakdown.vaultAmount / total * 100).toFixed(0);
+    const label = pct >= 15 ? `VAULT ${breakdown.vaultAmount.toFixed(4)}${unit}` : pct >= 8 ? 'VAULT' : '';
+    segments.push({ type: 'vault', pct, label, amount: breakdown.vaultAmount });
+  }
+  if (breakdown.ammAmount > 0) {
+    const pct = (breakdown.ammAmount / total * 100).toFixed(0);
+    const label = pct >= 15 ? `AMM ${breakdown.ammAmount.toFixed(4)}${unit}` : pct >= 8 ? 'AMM' : '';
+    segments.push({ type: 'amm', pct, label, amount: breakdown.ammAmount });
+  }
+  if (breakdown.mintAmount > 0) {
+    const pct = (breakdown.mintAmount / total * 100).toFixed(0);
+    const label = pct >= 15 ? `MINT ${breakdown.mintAmount.toFixed(4)}${unit}` : pct >= 8 ? 'MINT' : '';
+    segments.push({ type: 'mint', pct, label, amount: breakdown.mintAmount });
+  }
+
+  el.innerHTML = segments.map(s =>
+    `<div class="waterfall-segment ${s.type}" style="flex:${s.pct}" title="${s.type.toUpperCase()}: ${s.amount.toFixed(4)}${unit} (${s.pct}%)">
+      <span class="waterfall-label">${s.label}</span>
+    </div>`
+  ).join('');
+
+  el.classList.add('active');
 }
 
 function formatShares(wei) {
@@ -2773,9 +3139,9 @@ function formatShares(wei) {
 // Format quote output - show more decimals for small values
 function formatQuoteOutput(val, isEth = false) {
   if (val === 0) return '0.00';
-  if (val < 0.0001) return val.toExponential(2);
+  if (val < 0.0001) return val.toFixed(6);
   if (val < 0.01) return val.toFixed(4);
-  if (val < 1) return val.toFixed(isEth ? 4 : 3);
+  if (val < 1) return val.toFixed(isEth ? 4 : 4);
   if (val < 100) return val.toFixed(2);
   return val.toFixed(1);
 }
@@ -2866,7 +3232,14 @@ async function buy() {
     let tx;
 
     // Calculate minSharesOut with 1% slippage buffer (99% of quoted)
-    const minSharesOut = lastQuote?.expectedOut ? lastQuote.expectedOut * 99n / 100n : 0n;
+    if (!lastQuote?.expectedOut) {
+      alert('Please wait for quote to load before buying');
+      isTrading = false;
+      $('tradeBtn').disabled = false;
+      $('tradeBtn').textContent = 'BUY';
+      return;
+    }
+    const minSharesOut = lastQuote.expectedOut * 99n / 100n;
 
     // For legacy/external markets, use PM_ROUTER (atomic split+swap)
     if (lastQuote?.isLegacy) {
@@ -2890,53 +3263,50 @@ async function buy() {
       // No operator approval needed for ETH buys - router receives ETH directly
       const router = new ethers.Contract(CONTRACTS.MASTER_ROUTER, MASTER_ROUTER_ABI, signer);
 
-      // Use sweep if orderbook pools have liquidity, otherwise use regular buy
-      if (lastQuote?.useSweep) {
-        console.log('Using buyWithSweep for better execution');
-        tx = await router.buyWithSweep(
-          m.marketId,
-          buyYes,
-          collateralIn,
-          minSharesOut,
-          10000, // maxPriceBps (100% = accept any price)
-          connectedAddress,
-          deadline,
-          { value: collateralIn }
-        );
-      } else {
-        tx = await router.buy(
-          m.marketId,
-          buyYes,
-          collateralIn,
-          minSharesOut,
-          0, // poolPriceInBps (0 = skip orderbook, go to vault)
-          connectedAddress,
-          deadline,
-          { value: collateralIn }
-        );
-      }
+      // Always use buyWithSweep - handles no-pools gracefully and sweeps when available
+      console.log('Using buyWithSweep for optimal routing');
+      tx = await router.buyWithSweep(
+        m.marketId,
+        buyYes,
+        collateralIn,
+        minSharesOut,
+        9999, // maxPriceBps (9999 = accept any price, 10000 would skip pools)
+        connectedAddress,
+        deadline,
+        { value: collateralIn }
+      );
     }
 
+    // Save direction before closeDrop() clears it
+    const side = dir === 'Y' ? 'YES' : 'NO';
+
+    showTxPending(tx.hash);
     const receipt = await tx.wait();
     console.log('Buy tx:', receipt.hash);
 
-    // Refresh odds and positions
-    m.y = await loadMarketOdds(m.marketId);
-    await loadPositions();
-    render();
+    // Show success immediately after confirmation
+    showTxSuccess(`Bought ${side} shares!`, receipt.hash);
+
+    // Refresh odds and positions (don't let failures hide success toast)
+    try {
+      m.y = await loadMarketOdds(m.marketId);
+      await loadPositions();
+      render();
+    } catch (refreshErr) {
+      console.warn('Refresh after buy failed:', refreshErr);
+    }
 
     $('amt').value = '';
     $('out').textContent = '0.00';
     lastQuote = null;
     closeDrop();
 
-    alert(`Bought ${dir} shares! TX: ${receipt.hash.slice(0,10)}...`);
-
   } catch (e) {
     console.error('Buy failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
+    hideToast();
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Buy failed: ' + msg);
+      showTxError('Buy failed: ' + msg);
     }
   } finally {
     isTrading = false;
@@ -2979,7 +3349,14 @@ async function sell() {
     let tx;
 
     // Calculate minCollateralOut with 1% slippage buffer (99% of quoted)
-    const minCollateralOut = lastQuote?.expectedOut ? lastQuote.expectedOut * 99n / 100n : 0n;
+    if (!lastQuote?.expectedOut) {
+      alert('Please wait for quote to load before selling');
+      isTrading = false;
+      $('tradeBtn').disabled = false;
+      $('tradeBtn').textContent = 'SELL';
+      return;
+    }
+    const minCollateralOut = lastQuote.expectedOut * 99n / 100n;
 
     // For legacy/external markets, use PM_ROUTER (atomic swap+merge)
     if (lastQuote?.isLegacy) {
@@ -3014,56 +3391,409 @@ async function sell() {
 
       const router = new ethers.Contract(CONTRACTS.MASTER_ROUTER, MASTER_ROUTER_ABI, signer);
 
-      // Use sweep if bid pools have liquidity, otherwise use regular sell
-      if (lastQuote?.useSweep) {
-        console.log('Using sellWithSweep for better execution');
-        tx = await router.sellWithSweep(
-          m.marketId,
-          sellYes,
-          sharesIn,
-          minCollateralOut,
-          0, // minPriceBps (0% = accept any price)
-          connectedAddress,
-          deadline
-        );
-      } else {
-        tx = await router.sell(
-          m.marketId,
-          sellYes,
-          sharesIn,
-          minCollateralOut,
-          0, // bidPoolPriceInBps (0 = skip orderbook, go to vault)
-          connectedAddress,
-          deadline
-        );
-      }
+      // Always use sellWithSweep - handles no-pools gracefully and sweeps bid pools when available
+      console.log('Using sellWithSweep for optimal routing');
+      tx = await router.sellWithSweep(
+        m.marketId,
+        sellYes,
+        sharesIn,
+        minCollateralOut,
+        1, // minPriceBps (1 = accept any price, 0 would skip pools)
+        connectedAddress,
+        deadline
+      );
     }
 
+    // Save direction before closeDrop() clears it
+    const side = dir === 'Y' ? 'YES' : 'NO';
+
+    showTxPending(tx.hash);
     const receipt = await tx.wait();
     console.log('Sell tx:', receipt.hash);
 
-    // Refresh odds and positions
-    m.y = await loadMarketOdds(m.marketId);
-    await loadPositions();
-    render();
+    // Show success immediately after confirmation
+    showTxSuccess(`Sold ${side} shares!`, receipt.hash);
+
+    // Refresh odds and positions (don't let failures hide success toast)
+    try {
+      m.y = await loadMarketOdds(m.marketId);
+      await loadPositions();
+      render();
+    } catch (refreshErr) {
+      console.warn('Refresh after sell failed:', refreshErr);
+    }
 
     $('amt').value = '';
     $('out').textContent = '0.00';
     lastQuote = null;
     closeDrop();
 
-    alert(`Sold ${dir} shares! TX: ${receipt.hash.slice(0,10)}...`);
-
   } catch (e) {
     console.error('Sell failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
+    hideToast();
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Sell failed: ' + msg);
+      showTxError('Sell failed: ' + msg);
     }
   } finally {
     isTrading = false;
     $('tradeBtn').disabled = false;
     $('tradeBtn').textContent = 'SELL';
+  }
+}
+
+// ======================== COMBINED MARKET DATA LOADER ========================
+// Batches all RPC calls for a market into parallel requests
+async function loadAllMarketData() {
+  const m = markets[currentIndex];
+  if (!m?.marketId) return;
+
+  const rpc = provider || await getRpc();
+  const pamm = new ethers.Contract(CONTRACTS.PAMM, PAMM_ABI, rpc);
+  const isLabeled = isOurLabeledMarket(m.description);
+  const marketId = m.marketId;
+
+  // Get or fetch noId (immutable, safe to cache forever)
+  let cached = marketDataCache.get(marketId);
+  let noId;
+  if (cached?.noId) {
+    noId = cached.noId;
+  } else {
+    noId = await pamm.getNoId(marketId);
+    cached = { noId };
+    marketDataCache.set(marketId, cached);
+  }
+
+  const yesId = BigInt(marketId);
+  const yesIsId0 = yesId < noId;
+  const buyYes = dir !== 'N';
+
+  // Build parallel call array based on market type and connection state
+  const calls = [];
+  const callMap = {};
+
+  if (isLabeled) {
+    const quoter = new ethers.Contract(CONTRACTS.QUOTER, QUOTER_ABI, rpc);
+
+    // Always fetch market summary and liquidity breakdown
+    calls.push(quoter.getMarketSummary(marketId, { gasLimit: 5000000 }));
+    callMap.summary = calls.length - 1;
+
+    if (liqPanelOpen) {
+      calls.push(quoter.getLiquidityBreakdown(marketId, buyYes, { gasLimit: 5000000 }));
+      callMap.breakdown = calls.length - 1;
+    }
+
+    // User position data if connected
+    if (connectedAddress) {
+      calls.push(quoter.getUserFullPosition(marketId, connectedAddress, { gasLimit: 5000000 }));
+      callMap.userPos = calls.length - 1;
+    }
+  } else {
+    // Legacy market - fetch pool state
+    calls.push(pamm.getPoolState(marketId, LEGACY_FEE_BPS));
+    callMap.poolState = calls.length - 1;
+
+    // User balances if connected
+    if (connectedAddress) {
+      calls.push(pamm.balanceOf(connectedAddress, marketId));
+      callMap.yesBal = calls.length - 1;
+      calls.push(pamm.balanceOf(connectedAddress, noId));
+      callMap.noBal = calls.length - 1;
+    }
+  }
+
+  // AMM LP balance if connected
+  if (connectedAddress) {
+    const zamm = new ethers.Contract(CONTRACTS.ZAMM, ZAMM_ABI, rpc);
+    const poolId = calculatePoolId(marketId, isLabeled);
+    calls.push(zamm.balanceOf(connectedAddress, poolId));
+    callMap.ammLpBal = calls.length - 1;
+    calls.push(zamm.pools(poolId));
+    callMap.poolData = calls.length - 1;
+    cached.poolId = poolId;
+  }
+
+  // Execute all calls in parallel
+  const results = await Promise.all(calls.map(c => c.catch(e => ({ error: e }))));
+
+  // Store results in cache for use by render functions
+  cached.results = results;
+  cached.callMap = callMap;
+  cached.isLabeled = isLabeled;
+  cached.noId = noId;
+  cached.yesIsId0 = yesIsId0;
+  cached.lastLoaded = Date.now();
+  marketDataCache.set(marketId, cached);
+
+  // Sync odds bar immediately from AMM spot price (regardless of panel state)
+  try {
+    let spotBps = 0;
+    if (isLabeled && callMap.summary !== undefined) {
+      const summary = results[callMap.summary];
+      if (summary && !summary.error) {
+        spotBps = Number(summary.ammPriceYesBps);
+      }
+    } else if (callMap.poolState !== undefined) {
+      const poolState = results[callMap.poolState];
+      if (poolState && !poolState.error) {
+        const ammYes = Number(poolState.rYes) / 1e18;
+        const ammNo = Number(poolState.rNo) / 1e18;
+        const total = ammYes + ammNo;
+        spotBps = total > 0 ? Math.round((ammNo / total) * 10000) : 0;
+      }
+    }
+    if (spotBps > 0 && markets[currentIndex]?.marketId === marketId) {
+      m.y = Math.round(spotBps / 100);
+      $('yBar').textContent = `Y ${m.y}%`;
+      $('yBar').style.width = m.y + '%';
+      $('nBar').textContent = `N ${100 - m.y}%`;
+      $('nBar').style.width = (100 - m.y) + '%';
+    }
+  } catch (e) {
+    console.warn('Odds sync failed:', e);
+  }
+
+  // Now process results in parallel render functions
+  await Promise.all([
+    processPositionsData(m, cached),
+    processPriceChartData(m, cached),
+    processResolutionData(m, cached)
+  ]);
+}
+
+// Process positions from cached data
+async function processPositionsData(m, cached) {
+  if (!connectedAddress || !m?.marketId) {
+    userPositions = { yes: 0n, no: 0n };
+    lpPositions = { yesVault: 0n, noVault: 0n, ammLP: 0n, yesFees: 0n, noFees: 0n };
+    vaultStats = { yesTotalShares: 0n, noTotalShares: 0n, yesUnderlying: 0n, noUnderlying: 0n, yesTotalFees: 0n, noTotalFees: 0n };
+    poolStats = { reserve0: 0n, reserve1: 0n, totalSupply: 0n, userShare: 0, yesReserve: 0n, noReserve: 0n, impliedYesPrice: 50 };
+    renderPositions();
+    return;
+  }
+
+  const { results, callMap, isLabeled, noId, yesIsId0 } = cached;
+
+  try {
+    if (isLabeled) {
+      const summary = results[callMap.summary];
+      const userPos = results[callMap.userPos];
+
+      if (summary?.error || userPos?.error) throw summary?.error || userPos?.error;
+
+      userPositions = {
+        yes: BigInt(userPos.yesShareBalance),
+        no: BigInt(userPos.noShareBalance)
+      };
+
+      lpPositions.yesVault = BigInt(userPos.yesVaultLP);
+      lpPositions.noVault = BigInt(userPos.noVaultLP);
+      lpPositions.yesFees = BigInt(userPos.pendingYesCollateral);
+      lpPositions.noFees = BigInt(userPos.pendingNoCollateral);
+
+      vaultStats.yesTotalShares = BigInt(summary.totalYesVaultLP);
+      vaultStats.noTotalShares = BigInt(summary.totalNoVaultLP);
+      vaultStats.yesUnderlying = BigInt(summary.vaultYesShares);
+      vaultStats.noUnderlying = BigInt(summary.vaultNoShares);
+
+      poolStats.yesReserve = BigInt(summary.ammYesReserve);
+      poolStats.noReserve = BigInt(summary.ammNoReserve);
+      poolStats.reserve0 = yesIsId0 ? poolStats.yesReserve : poolStats.noReserve;
+      poolStats.reserve1 = yesIsId0 ? poolStats.noReserve : poolStats.yesReserve;
+      poolStats.impliedYesPrice = Number(summary.ammPriceYesBps) / 100;
+    } else {
+      const poolState = results[callMap.poolState];
+      const yesBal = results[callMap.yesBal];
+      const noBal = results[callMap.noBal];
+
+      if (poolState?.error) throw poolState.error;
+
+      userPositions = {
+        yes: BigInt(yesBal || 0n),
+        no: BigInt(noBal || 0n)
+      };
+
+      lpPositions.yesVault = 0n;
+      lpPositions.noVault = 0n;
+      lpPositions.yesFees = 0n;
+      lpPositions.noFees = 0n;
+      vaultStats = { yesTotalShares: 0n, noTotalShares: 0n, yesUnderlying: 0n, noUnderlying: 0n, yesTotalFees: 0n, noTotalFees: 0n };
+
+      poolStats.yesReserve = BigInt(poolState.rYes);
+      poolStats.noReserve = BigInt(poolState.rNo);
+      poolStats.reserve0 = yesIsId0 ? poolStats.yesReserve : poolStats.noReserve;
+      poolStats.reserve1 = yesIsId0 ? poolStats.noReserve : poolStats.yesReserve;
+      const total = poolStats.yesReserve + poolStats.noReserve;
+      poolStats.impliedYesPrice = total > 0n ? Number(poolStats.noReserve * 10000n / total) / 100 : 50;
+    }
+
+    // AMM LP balance
+    if (callMap.ammLpBal !== undefined) {
+      const userLpBal = results[callMap.ammLpBal];
+      const poolData = results[callMap.poolData];
+      if (!userLpBal?.error) {
+        lpPositions.ammLP = BigInt(userLpBal);
+        if (!poolData?.error && poolData.totalSupply > 0n) {
+          poolStats.totalSupply = BigInt(poolData.totalSupply);
+          poolStats.userShare = Number(lpPositions.ammLP * 10000n / poolStats.totalSupply) / 100;
+        }
+      }
+    }
+
+    renderPositions();
+  } catch (e) {
+    console.warn('Error processing positions:', e);
+    renderPositions();
+  }
+}
+
+// Process price chart from cached data
+async function processPriceChartData(m, cached) {
+  const chartSection = $('chartSection');
+
+  if (!m?.marketId || m.isDemo || !liqPanelOpen) {
+    chartSection.style.display = 'none';
+    return;
+  }
+
+  chartSection.style.display = 'block';
+
+  const { results, callMap, isLabeled, noId, yesIsId0, poolId } = cached;
+  const buyYes = dir !== 'N';
+
+  try {
+    let ammYes = 0, ammNo = 0, spotBps = 0, feeBps = 0;
+    let vaultShares = 0, vaultPrice = 0, hasVault = false;
+    let liqBreakdown = null;
+
+    if (isLabeled) {
+      const summary = results[callMap.summary];
+      const breakdown = callMap.breakdown !== undefined ? results[callMap.breakdown] : null;
+
+      if (summary?.error) throw summary.error;
+
+      spotBps = Number(summary.ammPriceYesBps);
+      priceChart.twapBps = Number(summary.twapPriceYesBps);
+      feeBps = Number(summary.feeBps);
+      ammYes = Number(summary.ammYesReserve) / 1e18;
+      ammNo = Number(summary.ammNoReserve) / 1e18;
+
+      if (breakdown && !breakdown.error) {
+        liqBreakdown = breakdown;
+        vaultShares = Number(breakdown.vaultOtcShares) / 1e18;
+        vaultPrice = Number(breakdown.vaultOtcPriceBps) / 100;
+        hasVault = breakdown.vaultOtcAvailable && vaultShares > 0;
+      }
+    } else {
+      const poolState = results[callMap.poolState];
+      if (poolState && !poolState.error) {
+        ammYes = Number(poolState.rYes) / 1e18;
+        ammNo = Number(poolState.rNo) / 1e18;
+        const total = ammYes + ammNo;
+        spotBps = total > 0 ? Math.round((ammNo / total) * 10000) : 0;
+        feeBps = LEGACY_FEE_BPS;
+        priceChart.twapBps = 0;
+      }
+      hasVault = false;
+    }
+
+    priceChart.spotBps = spotBps;
+    priceChart.poolId = poolId;
+
+    // Sync main odds bar with fresh spot price
+    if (spotBps > 0) {
+      m.y = Math.round(spotBps / 100);
+      $('yBar').textContent = `Y ${m.y}%`;
+      $('yBar').style.width = m.y + '%';
+      $('nBar').textContent = `N ${100 - m.y}%`;
+      $('nBar').style.width = (100 - m.y) + '%';
+    }
+
+    // Update spot/TWAP/fee display
+    $('chartSpot').textContent = spotBps > 0 ? (spotBps / 100).toFixed(1) + '%' : '--';
+    $('chartFee').textContent = feeBps > 0 ? (feeBps / 100).toFixed(2) + '%' : '--';
+
+    const twapRow = $('chartTwapRow');
+    if (priceChart.twapBps > 0) {
+      $('chartTwap').textContent = (priceChart.twapBps / 100).toFixed(1) + '%';
+      twapRow.style.display = '';
+    } else {
+      twapRow.style.display = 'none';
+    }
+
+    // Update liquidity breakdown display
+    updateLiquidityDisplay(ammYes, ammNo, hasVault, vaultShares, vaultPrice, liqBreakdown, buyYes, isLabeled, m);
+
+    // Update ZAMM link
+    if (poolId) {
+      const poolIdDecimal = BigInt(poolId).toString();
+      $('chartLink').href = `https://www.zamm.finance/p/1/${poolIdDecimal}`;
+    }
+
+    // Update liquidity sources
+    liquiditySources = { hasVault, hasBidPool: false, hasAmm: ammYes > 0 || ammNo > 0 };
+    updateLiquidityIndicator();
+
+    renderPriceChart();
+  } catch (e) {
+    console.warn('Error processing price chart:', e);
+    $('chartContainer').innerHTML = '<div class="chart-empty">Price data unavailable</div>';
+  }
+}
+
+// Process resolution data - delegates to existing loadResolutionStatus
+// (kept separate due to complex oracle type detection logic)
+async function processResolutionData(m, cached) {
+  // Resolution loading has complex oracle detection logic that may need
+  // additional RPC calls (token symbols, decimals), so delegate to existing function
+  await loadResolutionStatus();
+}
+
+// Helper to update liquidity breakdown display
+function updateLiquidityDisplay(ammYes, ammNo, hasVault, vaultShares, vaultPrice, liqBreakdown, buyYes, isLabeled, m) {
+  const liqSection = $('liquidityBreakdown');
+  liqSection.style.display = 'block';
+
+  const vaultRow = $('liqVaultRow');
+  if (hasVault) {
+    const vaultAmt = vaultShares < 0.01 ? vaultShares.toFixed(4) : vaultShares.toFixed(2);
+    $('liqVaultAmt').textContent = vaultAmt;
+    $('liqVaultPrice').textContent = vaultPrice.toFixed(1) + '%';
+    vaultRow.style.display = '';
+  } else {
+    vaultRow.style.display = 'none';
+  }
+
+  const ammRow = $('liqAmmRow');
+  const ammTotal = ammYes + ammNo;
+  if (ammTotal > 0.001) {
+    const ammAmt = ammTotal < 0.01 ? ammTotal.toFixed(4) : ammTotal.toFixed(2);
+    $('liqAmmAmt').textContent = ammAmt;
+    ammRow.style.display = '';
+  } else {
+    ammRow.style.display = 'none';
+  }
+
+  // Order book from breakdown if available
+  const bidPoolRow = $('liqBidPoolRow');
+  if (liqBreakdown) {
+    const askDepth = Number(liqBreakdown.poolAskDepth) / 1e18;
+    const bidDepth = Number(liqBreakdown.poolBidDepth) / 1e18;
+    const relevantDepth = buyYes ? askDepth : bidDepth;
+    const relevantPrice = buyYes ? Number(liqBreakdown.poolBestAskBps) / 100 : Number(liqBreakdown.poolBestBidBps) / 100;
+
+    if (relevantDepth > 0.001) {
+      const depthAmt = relevantDepth < 0.01 ? relevantDepth.toFixed(4) : relevantDepth.toFixed(2);
+      $('liqBidPoolAmt').textContent = depthAmt;
+      $('liqBidPoolPrice').textContent = relevantPrice.toFixed(1) + '%';
+      bidPoolRow.style.display = '';
+      liquiditySources.hasBidPool = true;
+    } else {
+      bidPoolRow.style.display = 'none';
+    }
+  } else {
+    bidPoolRow.style.display = 'none';
   }
 }
 
@@ -3095,8 +3825,8 @@ async function loadPositions() {
       // Single call for user positions + vault LP + pending fees (replaces ~6 calls)
       // Single call for market summary (replaces ~5 calls)
       const [userPos, marketSummary] = await Promise.all([
-        quoter.getUserFullPosition(m.marketId, connectedAddress),
-        quoter.getMarketSummary(m.marketId)
+        quoter.getUserFullPosition(m.marketId, connectedAddress, { gasLimit: 5000000 }),
+        quoter.getMarketSummary(m.marketId, { gasLimit: 5000000 })
       ]);
 
       // User trading positions
@@ -3157,16 +3887,9 @@ async function loadPositions() {
       poolStats.impliedYesPrice = total > 0n ? Number(poolStats.noReserve * 10000n / total) / 100 : 50;
     }
 
-    // Determine feeOrHook for pool ID calculation
-    const feeOrHook = isLabeled ? CONTRACTS.PM_FEE_HOOK : LEGACY_FEE_BPS;
-
     // AMM LP balance still needs separate call (not in quoter)
     try {
-      const [id0, id1] = yesIsId0 ? [yesId, noId] : [noId, yesId];
-      const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint256', 'uint256', 'address', 'address', 'uint256'],
-        [id0, id1, CONTRACTS.PAMM, CONTRACTS.PAMM, feeOrHook]
-      ));
+      const poolId = calculatePoolId(m.marketId, isLabeled);
 
       const [userLpBal, poolData] = await Promise.all([
         zamm.balanceOf(connectedAddress, poolId),
@@ -3215,24 +3938,7 @@ function renderPositions() {
     $('noVaultBalance').textContent = formatShares(lpPositions.noVault);
     $('ammLpBalance').textContent = formatShares(lpPositions.ammLP);
 
-    // Display vault stats (total fees and yield)
-    $('yesVaultTotalFees').textContent = formatFeesETH(vaultStats.yesTotalFees);
-    $('noVaultTotalFees').textContent = formatFeesETH(vaultStats.noTotalFees);
-
-    // Calculate yield % = (totalFees / underlying) * 100
-    const yesYield = vaultStats.yesUnderlying > 0n
-      ? (Number(vaultStats.yesTotalFees) / Number(vaultStats.yesUnderlying) * 100).toFixed(2)
-      : '0.00';
-    const noYield = vaultStats.noUnderlying > 0n
-      ? (Number(vaultStats.noTotalFees) / Number(vaultStats.noUnderlying) * 100).toFixed(2)
-      : '0.00';
-    $('yesVaultYield').textContent = `${yesYield}% yield`;
-    $('noVaultYield').textContent = `${noYield}% yield`;
-
-    // Show vault stats only if there's vault activity
-    $('vaultStats').style.display = (vaultStats.yesTotalShares > 0n || vaultStats.noTotalShares > 0n) ? 'flex' : 'none';
-
-    // Display pending fees
+    // Display pending fees (earned, harvestable)
     $('yesVaultFees').textContent = lpPositions.yesFees > 0n ? `+${formatFeesETH(lpPositions.yesFees)}` : '';
     $('noVaultFees').textContent = lpPositions.noFees > 0n ? `+${formatFeesETH(lpPositions.noFees)}` : '';
 
@@ -3312,25 +4018,27 @@ async function claim() {
   try {
     const pamm = new ethers.Contract(CONTRACTS.PAMM, PAMM_ABI, signer);
     const tx = await pamm.claim(m.marketId, connectedAddress);
-    const receipt = await tx.wait();
 
+    showTxPending(tx.hash);
+    const receipt = await tx.wait();
     console.log('Claim tx:', receipt.hash);
 
-    // Refresh positions
+    // Refresh positions and UI
     await loadPositions();
+    render();
 
     // Update claim UI to show claimed state
     $('claimBtn').textContent = 'CLAIMED';
     $('claimBtn').classList.add('claimed');
     $('claimInfo').textContent = 'Successfully claimed!';
 
-    alert(`Claimed! TX: ${receipt.hash.slice(0,10)}...`);
+    showTxSuccess('Claimed winnings!', receipt.hash);
 
   } catch (e) {
     console.error('Claim failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Claim failed: ' + msg);
+      showTxError('Claim failed: ' + msg);
     }
     $('claimBtn').disabled = false;
     $('claimBtn').textContent = 'CLAIM';
@@ -3338,26 +4046,66 @@ async function claim() {
 }
 
 // ======================== RESOLUTION ========================
+let resolveDetailsOpen = false;
+
+function toggleResolveDetails() {
+  resolveDetailsOpen = !resolveDetailsOpen;
+  $('resolveToggle').classList.toggle('expanded', resolveDetailsOpen);
+  $('resolveDetails').classList.toggle('expanded', resolveDetailsOpen);
+}
+
 async function loadResolutionStatus() {
   const m = markets[currentIndex];
   const resolveSection = $('resolveSection');
+  const toggleStatus = $('resolveToggleStatus');
 
-  if (!m?.marketId || m.resolved) {
+  if (!m?.marketId) {
     resolveSection.style.display = 'none';
     return;
   }
+
+  // Set resolver label with link
+  const toggleLabel = $('resolveToggleLabel');
+  if (m.resolver) {
+    const isOurResolver = m.resolver.toLowerCase() === CONTRACTS.RESOLVER.toLowerCase();
+    const resolverName = isOurResolver ? 'Oracle Resolver' : `${m.resolver.slice(0,6)}...${m.resolver.slice(-4)}`;
+    const etherscanUrl = `https://etherscan.io/address/${m.resolver}`;
+    toggleLabel.innerHTML = `⚙ <a href="${etherscanUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:inherit;text-decoration:underline;text-decoration-color:#0FF;">${resolverName}</a>`;
+  } else {
+    toggleLabel.textContent = '⚙ Resolution';
+  }
+
+  // For resolved markets, show toggle with RESOLVED status
+  if (m.resolved) {
+    const winner = m.outcome ? 'YES' : 'NO';
+    toggleStatus.textContent = `RESOLVED ${winner}`;
+    toggleStatus.className = 'resolve-toggle-status resolved';
+    $('resolveDetails').innerHTML = `
+      <div style="text-align:center;padding:12px;">
+        <div style="font-size:24px;margin-bottom:8px;">${m.outcome ? '✓' : '✗'}</div>
+        <div style="font-weight:bold;color:${m.outcome ? '#0F0' : '#F00'};">${winner} WINS</div>
+      </div>
+    `;
+    resolveSection.style.display = 'block';
+    return;
+  }
+
+  // Set up loading state
+  const detailsEl = $('resolveDetails');
+  detailsEl.innerHTML = `<div style="text-align:center;padding:12px;opacity:0.5;">Loading oracle data...</div>`;
+  detailsEl.classList.remove('ready');
+  resolveSection.style.display = 'block';
 
   try {
     const rpc = provider || await getRpc();
     const resolver = new ethers.Contract(CONTRACTS.RESOLVER, RESOLVER_ABI, rpc);
 
-    // Get resolution preview
-    const [value, condTrue, ready] = await resolver.preview(m.marketId);
-
-    // Get condition details from market
-    const [condData] = await Promise.all([
+    // Get resolution preview and condition details in parallel
+    const [previewResult, condData] = await Promise.all([
+      resolver.preview(m.marketId),
       resolver.conditions(m.marketId)
     ]);
+    const [value, condTrue, ready] = previewResult;
 
     resolutionStatus.value = value;
     resolutionStatus.threshold = condData.threshold;
@@ -3466,29 +4214,67 @@ async function loadResolutionStatus() {
       return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
-    // Update oracle display
-    if (oracleHtml) {
-      $('resolveOracle').innerHTML = oracleHtml;
-      $('resolveOracleRow').style.display = '';
+    // Calculate progress percentage (capped at 100% for display)
+    const progressPct = thresholdFormatted > 0
+      ? Math.min(100, (valueFormatted / thresholdFormatted) * 100)
+      : 0;
+    const progressText = progressPct.toFixed(1) + '%';
+
+    // Build human-readable condition description
+    const conditionVerb = condData.op >= 2 ? 'reaches' : 'falls below';
+    const conditionTarget = oracleHtml || 'Oracle value';
+
+    // Deadline info
+    const now = Math.floor(Date.now() / 1000);
+    const isClosed = m.close && m.close <= now;
+    const daysUntilClose = m.close ? Math.floor((m.close - now) / 86400) : 0;
+    const closePreposition = daysUntilClose > 30 ? 'on' : 'in'; // "on 4/1/2026" vs "in 2d 4h"
+    const deadlineText = isClosed
+      ? '<span style="color:#0F0">Market closed</span>'
+      : m.close ? `Closes ${closePreposition} <span style="color:#F50">${formatCountdown(m.close)}</span>` : '';
+
+    // Build new layout with progress bar
+    detailsEl.innerHTML = `
+      <div class="resolve-condition">
+        <div class="resolve-condition-target">${conditionTarget}</div>
+        <div style="margin-top:6px;">
+          ${conditionVerb} <span class="resolve-condition-thresh">${opName} ${prefix}${formatVal(thresholdFormatted)}${suffix}</span>
+        </div>
+      </div>
+      <div class="resolve-progress">
+        <div class="resolve-progress-bar${condTrue ? ' met' : ''}">
+          <span class="filled">${'█'.repeat(Math.round(progressPct / 5))}</span><span class="empty">${'░'.repeat(20 - Math.round(progressPct / 5))}</span>
+        </div>
+        <div class="resolve-progress-text">
+          <span><span class="resolve-condition-val">${prefix}${formatVal(valueFormatted)}${suffix}</span></span>
+          <span>${progressText}</span>
+        </div>
+      </div>
+      ${deadlineText ? `<div style="text-align:center;font-size:11px;margin-bottom:12px;font-family:monospace;opacity:0.8">[${deadlineText}]</div>` : ''}
+      <button class="resolve-btn" id="resolveBtn" onclick="resolveMarket()" ${ready ? '' : 'disabled'}>
+        ${ready ? 'RESOLVE MARKET' : 'RESOLVE MARKET'}
+      </button>
+      <div class="resolve-hint">${ready
+        ? 'Condition met! Click to settle the market.'
+        : isClosed ? 'Market closed - can resolve with current value' : 'Unlocks when threshold reached or market closes'}</div>
+    `;
+
+    // Update toggle status badge
+    // ready = true when condition met OR close time passed (either way, can resolve)
+    const toggleStatus = $('resolveToggleStatus');
+    if (ready && condTrue) {
+      toggleStatus.textContent = 'READY';
+      toggleStatus.className = 'resolve-toggle-status ready';
+    } else if (ready && !condTrue) {
+      toggleStatus.textContent = 'CLOSED'; // market closed, condition not met
+      toggleStatus.className = 'resolve-toggle-status ready';
     } else {
-      $('resolveOracleRow').style.display = 'none';
+      toggleStatus.textContent = 'PENDING';
+      toggleStatus.className = 'resolve-toggle-status pending';
     }
 
-    $('resolveValue').textContent = prefix + formatVal(valueFormatted) + suffix;
-    $('resolveThreshold').textContent = opName + ' ' + prefix + formatVal(thresholdFormatted) + suffix;
-
-    $('resolveCondition').textContent = condTrue ? 'YES' : 'NO';
-    $('resolveCondition').className = 'resolve-status-val ' + (condTrue ? 'yes' : 'no');
-
-    $('resolveStatus').textContent = ready ? 'READY' : 'PENDING';
-    $('resolveStatus').className = 'resolve-status-val ' + (ready ? 'ready' : 'pending');
-
-    $('resolveBtn').disabled = !ready;
-    $('resolveHint').textContent = ready
-      ? 'Click to resolve and settle the market'
-      : 'Waiting for close time or condition to be met';
-
-    resolveSection.style.display = 'block';
+    // Add ready class to details panel
+    detailsEl.classList.toggle('ready', ready);
   } catch (e) {
     console.warn('Failed to load resolution status:', e);
     resolveSection.style.display = 'none';
@@ -3510,8 +4296,9 @@ async function resolveMarket() {
 
     const resolver = new ethers.Contract(CONTRACTS.RESOLVER, RESOLVER_ABI, resolverSigner);
     const tx = await resolver.resolveMarket(m.marketId);
-    const receipt = await tx.wait();
 
+    showTxPending(tx.hash);
+    const receipt = await tx.wait();
     console.log('Resolve tx:', receipt.hash);
 
     // Update local state
@@ -3522,13 +4309,13 @@ async function resolveMarket() {
     await loadPositions();
     render();
 
-    alert(`Market resolved! Outcome: ${m.outcome ? 'YES' : 'NO'}\nTX: ${receipt.hash.slice(0,10)}...`);
+    showTxSuccess(`Market resolved: ${m.outcome ? 'YES' : 'NO'}!`, receipt.hash);
 
   } catch (e) {
     console.error('Resolution failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Resolution failed: ' + msg);
+      showTxError('Resolution failed: ' + msg);
     }
     $('resolveBtn').disabled = !resolutionStatus.ready;
     $('resolveBtn').textContent = 'RESOLVE MARKET';
@@ -3551,6 +4338,7 @@ async function loadPriceChart() {
     const rpc = provider || await getRpc();
     const quoter = new ethers.Contract(CONTRACTS.QUOTER, QUOTER_ABI, rpc);
     const pamm = new ethers.Contract(CONTRACTS.PAMM, PAMM_ABI, rpc);
+    const hookRouter = new ethers.Contract(CONTRACTS.PM_HOOK_ROUTER, PM_HOOK_ROUTER_ABI, rpc);
 
     // Detect if this is our labeled market or external
     const isOurMarket = m.description && /^(PRICE|ETHBAL|TOKBAL|GAS)\|/.test(m.description);
@@ -3565,10 +4353,30 @@ async function loadPriceChart() {
     if (isOurMarket) {
       // Use Quoter for our labeled markets (they use PM_FEE_HOOK)
       const [summary, breakdown] = await Promise.all([
-        quoter.getMarketSummary(m.marketId),
-        quoter.getLiquidityBreakdown(m.marketId, buyYes)
+        quoter.getMarketSummary(m.marketId, { gasLimit: 5000000 }),
+        quoter.getLiquidityBreakdown(m.marketId, buyYes, { gasLimit: 5000000 })
       ]);
       liqBreakdown = breakdown;
+      // Also fetch vault state for debugging
+      const [totalYesVault, totalNoVault, vaultBudget] = await Promise.all([
+        hookRouter.totalYesVaultShares(m.marketId),
+        hookRouter.totalNoVaultShares(m.marketId),
+        hookRouter.rebalanceCollateralBudget(m.marketId)
+      ]);
+      console.log('Vault state:', {
+        totalYesVaultShares: Number(totalYesVault) / 1e18,
+        totalNoVaultShares: Number(totalNoVault) / 1e18,
+        rebalanceBudget: Number(vaultBudget) / 1e18,
+        vaultOtcShares: Number(breakdown.vaultOtcShares) / 1e18,
+        vaultOtcPriceBps: Number(breakdown.vaultOtcPriceBps),
+        vaultOtcAvailable: breakdown.vaultOtcAvailable,
+        ammYesReserve: Number(summary.ammYesReserve) / 1e18,
+        ammNoReserve: Number(summary.ammNoReserve) / 1e18,
+        poolAskDepth: Number(breakdown.poolAskDepth) / 1e18,
+        poolBestAskBps: Number(breakdown.poolBestAskBps),
+        poolBidDepth: Number(breakdown.poolBidDepth) / 1e18,
+        poolBestBidBps: Number(breakdown.poolBestBidBps)
+      });
       spotBps = Number(summary.ammPriceYesBps);
       priceChart.twapBps = Number(summary.twapPriceYesBps);
       feeBps = Number(summary.feeBps);
@@ -3578,15 +4386,15 @@ async function loadPriceChart() {
       vaultPrice = Number(breakdown.vaultOtcPriceBps) / 100;
       hasVault = breakdown.vaultOtcAvailable && vaultShares > 0;
     } else {
-      // External market - query PAMM directly with 30 bps fee
+      // External market - query PAMM directly with legacy fee
       try {
-        const poolState = await pamm.getPoolState(m.marketId, 30);
+        const poolState = await pamm.getPoolState(m.marketId, LEGACY_FEE_BPS);
         ammYes = Number(poolState.rYes) / 1e18;
         ammNo = Number(poolState.rNo) / 1e18;
         // Compute spot price from reserves
         const total = ammYes + ammNo;
         spotBps = total > 0 ? Math.round((ammNo / total) * 10000) : 0;
-        feeBps = 30;
+        feeBps = LEGACY_FEE_BPS;
         priceChart.twapBps = 0; // No TWAP for external
       } catch (e) {
         console.log('External pool query failed:', e.message);
@@ -3596,6 +4404,15 @@ async function loadPriceChart() {
     }
 
     priceChart.spotBps = spotBps;
+
+    // Sync main odds bar with fresh spot price
+    if (spotBps > 0) {
+      m.y = Math.round(spotBps / 100);
+      $('yBar').textContent = `Y ${m.y}%`;
+      $('yBar').style.width = m.y + '%';
+      $('nBar').textContent = `N ${100 - m.y}%`;
+      $('nBar').style.width = (100 - m.y) + '%';
+    }
 
     // Update spot/TWAP/fee display
     $('chartSpot').textContent = spotBps > 0 ? (spotBps / 100).toFixed(1) + '%' : '--';
@@ -3614,10 +4431,12 @@ async function loadPriceChart() {
     const liqSection = $('liquidityBreakdown');
     liqSection.style.display = 'block';
 
-    // Vault OTC liquidity - hide row if no vault
+    // Vault OTC liquidity - hide row if no meaningful vault liquidity
     const vaultRow = $('liqVaultRow');
-    if (hasVault) {
-      $('liqVault').textContent = `${vaultShares.toFixed(2)} @ ${vaultPrice.toFixed(1)}%`;
+    const hasVaultLiquidity = hasVault && vaultShares >= 0.0001; // Hide if effectively zero
+    if (hasVaultLiquidity) {
+      const vaultAmt = vaultShares < 0.01 ? vaultShares.toFixed(4) : vaultShares.toFixed(2);
+      $('liqVault').textContent = `${vaultAmt} @ ${vaultPrice.toFixed(1)}%`;
       vaultRow.style.display = '';
     } else {
       vaultRow.style.display = 'none';
@@ -3626,8 +4445,9 @@ async function loadPriceChart() {
     // AMM liquidity (use already computed values)
     const ammSpot = spotBps / 100;
     const hasAmm = ammYes > 0.001 || ammNo > 0.001;
+    const fmtAmm = (v) => v < 1 ? v.toFixed(4) : v.toFixed(2);
     $('liqAmm').textContent = hasAmm
-      ? `${ammYes.toFixed(2)}Y / ${ammNo.toFixed(2)}N @ ${ammSpot.toFixed(1)}%`
+      ? `${fmtAmm(ammYes)}Y / ${fmtAmm(ammNo)}N @ ${ammSpot.toFixed(1)}%`
       : 'no pool';
 
     // Fetch and display orderbook levels (only for our markets)
@@ -3637,7 +4457,7 @@ async function loadPriceChart() {
       // External markets don't use our bid pool system
       orderbookEl.innerHTML = '';
     } else try {
-      const levels = await quoter.getActiveLevels(m.marketId, buyYes, 5);
+      const levels = await quoter.getActiveLevels(m.marketId, buyYes, 5, { gasLimit: 5000000 });
       const { askPrices, askDepths, bidPrices, bidDepths } = levels;
 
       let html = '';
@@ -3686,20 +4506,12 @@ async function loadPriceChart() {
     updateLiquidityIndicator();
 
     // Compute pool ID for ZAMM link
-    // Use PM_FEE_HOOK for our labeled markets, 30 bps for external markets
-    const yesId = BigInt(m.marketId);
-    const yesIsId0 = yesId < noId;
-    const [id0, id1] = yesIsId0 ? [yesId, noId] : [noId, yesId];
-    const feeOrHook = isOurMarket ? CONTRACTS.PM_FEE_HOOK : 30; // 30 bps default for external
-    const poolId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
-      ['uint256', 'uint256', 'address', 'address', 'uint256'],
-      [id0, id1, CONTRACTS.PAMM, CONTRACTS.PAMM, feeOrHook]
-    ));
+    const poolId = calculatePoolId(m.marketId, isOurMarket);
     priceChart.poolId = poolId;
 
     // Set ZAMM link (use decimal pool ID)
     const poolIdDecimal = BigInt(poolId).toString();
-    $('chartLink').href = `https://zamm.finance/p/${poolIdDecimal}`;
+    $('chartLink').href = `https://www.zamm.finance/p/1/${poolIdDecimal}`;
 
     // Render simple price visualization
     renderPriceChart();
@@ -3737,7 +4549,7 @@ function renderPriceChart() {
   `;
 
   // Update footer
-  $('chartOldest').textContent = priceChart.twapBps > 0 ? `TWAP: ${(priceChart.twapBps / 100).toFixed(1)}%` : '';
+  $('chartOldest').textContent = '';
   $('chartNewest').textContent = 'now';
 }
 
@@ -4228,8 +5040,8 @@ async function createMarket() {
     return;
   }
 
-  const collateralForLP = ethers.parseEther(seedAmount.toString());
-  const totalWei = ethers.parseEther(totalCollateral.toString());
+  const collateralForLP = ethers.parseEther(seedAmount.toFixed(18));
+  const totalWei = ethers.parseEther(totalCollateral.toFixed(18));
   const deadline = Math.floor(Date.now() / 1000) + 3600;
   const vaultParams = getVaultParams();
   const buyParams = getInitialBuyParams();
@@ -4889,29 +5701,35 @@ function handleCreateError(e) {
 
 // ======================== WALLET ========================
 function initEIP6963() {
-  if (typeof window === 'undefined') return;
-  window.addEventListener('eip6963:announceProvider', (event) => {
-    const { info, provider } = event.detail;
-    eip6963Providers.set(info.uuid, { info, provider });
-  });
-  window.dispatchEvent(new Event('eip6963:requestProvider'));
+  // Listener already set up at script load time
+  // Just re-request in case any new wallets appeared
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+  }
 }
 
 function detectWallets() {
   const detected = [];
   const seenNames = new Set();
 
+  // Step 1: Check WALLET_CONFIG for known wallets via window.ethereum flags
   for (const [key, config] of Object.entries(WALLET_CONFIG)) {
     if (key === 'walletconnect') continue;
-    if (config.detect && config.detect()) {
-      detected.push({ key, ...config });
-      seenNames.add(config.name.toLowerCase());
+    try {
+      if (config.detect && config.detect()) {
+        detected.push({ key, ...config });
+        seenNames.add(config.name.toLowerCase());
+      }
+    } catch (e) {
+      // Ignore detection errors
     }
   }
 
+  // Step 2: Add EIP-6963 providers not already seen
   for (const [uuid, { info, provider }] of eip6963Providers.entries()) {
-    if (!seenNames.has(info.name.toLowerCase())) {
-      const safeName = (info.name || 'Unknown').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+    const name = info?.name || 'Unknown';
+    if (!seenNames.has(name.toLowerCase())) {
+      const safeName = name.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
       const iconUrl = info.icon && (info.icon.startsWith('data:') || info.icon.startsWith('https://')) ? info.icon : null;
       const safeIconUrl = iconUrl ? iconUrl.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])) : null;
       detected.push({
@@ -4920,24 +5738,68 @@ function detectWallets() {
         icon: safeIconUrl ? `<img src="${safeIconUrl}" style="width:1.5rem;height:1.5rem;border-radius:4px;">` : '🔌',
         getProvider: () => provider
       });
-      seenNames.add(info.name.toLowerCase());
+      seenNames.add(name.toLowerCase());
     }
   }
 
+  // Step 3: Check window.ethereum.providers array (multi-wallet setups)
+  if (window.ethereum?.providers?.length) {
+    for (let i = 0; i < window.ethereum.providers.length; i++) {
+      const p = window.ethereum.providers[i];
+      const name = p.isMetaMask ? 'MetaMask' : p.isCoinbaseWallet ? 'Coinbase' : p.isRabby ? 'Rabby' : null;
+      if (name && !seenNames.has(name.toLowerCase())) {
+        detected.push({ key: `provider_${i}`, name, icon: '🔗', getProvider: () => p });
+        seenNames.add(name.toLowerCase());
+      }
+    }
+  }
+
+  // Step 4: Fallback to generic window.ethereum if no wallets found yet
   if (detected.length === 0 && window.ethereum) {
     detected.push({ key: 'injected', name: 'Browser Wallet', icon: '🔗', getProvider: () => window.ethereum });
   }
 
+  // Step 5: Always add WalletConnect if available
   const wcModule = (typeof globalThis !== 'undefined' ? globalThis : window)['@walletconnect/ethereum-provider'];
   if (wcModule?.EthereumProvider) {
     detected.push({ key: 'walletconnect', name: 'WalletConnect', icon: '📱', isWalletConnect: true });
   }
 
+  console.log('detectWallets:', {
+    detected: detected.map(w => w.name),
+    eip6963Count: eip6963Providers.size,
+    hasWindowEthereum: !!window.ethereum
+  });
+
   return detected;
 }
 
 function showWalletModal() {
-  const wallets = detectWallets();
+  $('walletModal').classList.add('active');
+
+  // Show loading state
+  $('walletOptions').innerHTML = '<div style="padding:12px;text-align:center;">Detecting wallets...</div>';
+
+  // Re-request EIP-6963 providers
+  window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+  // Detect after short delay, with retry for slow wallets
+  const doDetect = (attempt = 1) => {
+    const wallets = detectWallets();
+    const hasBrowserWallet = wallets.some(w => w.key !== 'walletconnect');
+
+    // Retry once if no browser wallets found (some inject async)
+    if (!hasBrowserWallet && attempt < 2) {
+      setTimeout(() => doDetect(attempt + 1), 250);
+    } else {
+      renderWalletModal(wallets);
+    }
+  };
+
+  setTimeout(() => doDetect(), 150);
+}
+
+function renderWalletModal(wallets) {
   const container = $('walletOptions');
 
   if (connectedAddress) {
@@ -4958,8 +5820,6 @@ function showWalletModal() {
       </div>
     `).join('') : '<div style="padding:12px;text-align:center;">No wallets detected. Install MetaMask or use WalletConnect.</div>';
   }
-
-  $('walletModal').classList.add('active');
 }
 
 function closeWalletModal() {
@@ -5185,11 +6045,11 @@ async function provideLiquidity() {
     return;
   }
 
-  // Calculate allocation in wei
-  const collateralWei = ethers.parseEther(amount.toString());
-  const yesWei = ethers.parseEther((amount * lpAllocation.yes / 100).toString());
-  const noWei = ethers.parseEther((amount * lpAllocation.no / 100).toString());
-  const ammWei = ethers.parseEther((amount * lpAllocation.amm / 100).toString());
+  // Calculate allocation in wei (use toFixed to avoid floating point precision issues)
+  const collateralWei = ethers.parseEther(amount.toFixed(18));
+  const yesWei = ethers.parseEther((amount * lpAllocation.yes / 100).toFixed(18));
+  const noWei = ethers.parseEther((amount * lpAllocation.no / 100).toFixed(18));
+  const ammWei = ethers.parseEther((amount * lpAllocation.amm / 100).toFixed(18));
 
   const deadline = Math.floor(Date.now() / 1000) + 3600;
 
@@ -5246,6 +6106,7 @@ async function provideLiquidity() {
       );
     }
 
+    showTxPending(tx.hash);
     const receipt = await tx.wait();
     console.log('Provide liquidity tx:', receipt.hash);
 
@@ -5255,13 +6116,13 @@ async function provideLiquidity() {
     render();
 
     closeLPModal();
-    alert(`Liquidity provided! TX: ${receipt.hash.slice(0,10)}...`);
+    showTxSuccess('Liquidity provided!', receipt.hash);
 
   } catch (e) {
     console.error('Provide liquidity failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Provide liquidity failed: ' + msg);
+      showTxError('Provide liquidity failed: ' + msg);
     }
   } finally {
     $('lpBtn').disabled = false;
@@ -5301,19 +6162,21 @@ async function withdrawVault(isYes) {
       deadline
     );
 
+    showTxPending(tx.hash);
     const receipt = await tx.wait();
     console.log('Withdraw vault tx:', receipt.hash);
 
-    // Refresh positions
+    // Refresh positions and UI
     await loadPositions();
+    render();
 
-    alert(`Withdrew ${isYes ? 'YES' : 'NO'} vault! TX: ${receipt.hash.slice(0,10)}...`);
+    showTxSuccess(`Withdrew ${isYes ? 'YES' : 'NO'} vault!`, receipt.hash);
 
   } catch (e) {
     console.error('Withdraw vault failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Withdraw failed: ' + msg);
+      showTxError('Withdraw failed: ' + msg);
     }
   } finally {
     $(btnId).disabled = false;
@@ -5345,20 +6208,22 @@ async function harvestFees(isYes) {
 
     const tx = await hookRouter.harvestVaultFees(m.marketId, isYes);
 
+    showTxPending(tx.hash);
     const receipt = await tx.wait();
     console.log('Harvest fees tx:', receipt.hash);
 
-    // Refresh positions
+    // Refresh positions and UI
     await loadPositions();
+    render();
 
     const harvestedEth = formatFeesETH(pendingFees);
-    alert(`Harvested ${harvestedEth}! TX: ${receipt.hash.slice(0,10)}...`);
+    showTxSuccess(`Harvested ${harvestedEth}!`, receipt.hash);
 
   } catch (e) {
     console.error('Harvest fees failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Harvest failed: ' + msg);
+      showTxError('Harvest failed: ' + msg);
     }
   } finally {
     $(btnId).disabled = false;
@@ -5397,12 +6262,15 @@ async function withdrawAmmLP() {
     const deadline = Math.floor(Date.now() / 1000) + 3600;
 
     // Determine feeOrHook based on market type
+    // For hooked pools, feeOrHook = hookAddress | FLAG_BEFORE | FLAG_AFTER
     const isLabeled = isOurLabeledMarket(m.description);
-    const feeOrHook = isLabeled ? CONTRACTS.PM_FEE_HOOK : LEGACY_FEE_BPS;
+    const feeOrHook = isLabeled
+      ? (BigInt(CONTRACTS.PM_FEE_HOOK) | FLAG_BEFORE | FLAG_AFTER)
+      : BigInt(LEGACY_FEE_BPS);
 
     const tx = await pamm.removeLiquidityToCollateral(
       m.marketId,
-      feeOrHook,                 // feeOrHook (hook for our markets, 30 bps for legacy)
+      feeOrHook,                 // feeOrHook (hook with flags for our markets, 30 bps for legacy)
       lpPositions.ammLP,         // liquidity
       0,                          // amount0Min
       0,                          // amount1Min
@@ -5411,19 +6279,21 @@ async function withdrawAmmLP() {
       deadline
     );
 
+    showTxPending(tx.hash);
     const receipt = await tx.wait();
     console.log('Withdraw AMM LP tx:', receipt.hash);
 
-    // Refresh positions
+    // Refresh positions and UI
     await loadPositions();
+    render();
 
-    alert(`Withdrew AMM LP! TX: ${receipt.hash.slice(0,10)}...`);
+    showTxSuccess('Withdrew AMM LP!', receipt.hash);
 
   } catch (e) {
     console.error('Withdraw AMM LP failed:', e);
     const msg = e.reason || e.message || 'Unknown error';
     if (!msg.toLowerCase().includes('user rejected')) {
-      alert('Withdraw failed: ' + msg);
+      showTxError('Withdraw failed: ' + msg);
     }
   } finally {
     $('ammLpWithdrawBtn').disabled = false;
@@ -5555,6 +6425,7 @@ function selectMarket(idx) {
   currentIndex = idx;
   closeBrowserModal();
   closeDrop();
+  resetResolvePanel();
   render();
   loadPositions();
   loadResolutionStatus();
